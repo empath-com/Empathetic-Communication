@@ -126,11 +126,20 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (newMessage !== null) {
       if (currentSessionId === session.session_id) {
-        setMessages((prevItems) => [...prevItems, newMessage]);
+        // Check if this message already exists in the messages array to prevent duplication
+        const messageExists = messages.some(msg => 
+          msg.message_id === newMessage.message_id || 
+          (msg.message_content === newMessage.message_content && 
+           msg.student_sent === newMessage.student_sent)
+        );
+        
+        if (!messageExists) {
+          setMessages((prevItems) => [...prevItems, newMessage]);
+        }
       }
       setNewMessage(null);
     }
-  }, [session, newMessage, currentSessionId]);
+  }, [session, newMessage, currentSessionId, messages]);
 
   useEffect(() => {
     const fetchPatient = async () => {

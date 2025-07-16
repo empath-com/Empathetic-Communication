@@ -95,7 +95,6 @@ def get_student_query(raw_query: str) -> str:
     str: The formatted query string ready for further processing.
     """
     student_query = f"""
-    user
     {raw_query}
     
     """
@@ -113,7 +112,6 @@ def get_initial_student_query(patient_name: str) -> str:
     str: The formatted initial query string for the student.
     """
     student_query = f"""
-    user
     Greet me and then ask me a question related to the patient: {patient_name}. 
     """
     return student_query
@@ -291,7 +289,7 @@ def get_response(
             else:
                 empathy_feedback += "**Feedback:** System temporarily unavailable.\n"
                 
-            empathy_feedback += "---\n\n**Patient Response:**\n"
+            empathy_feedback += "---\n\n" # Clean separator between feedback and AI response
     
     completion_string = """
                 Once I, the pharmacy student, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -452,16 +450,19 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
     """
 
     completion_sentence = " Congratulations! You have provided the proper diagnosis for me, the patient I am pretending to be! Please try other mock patients to continue your diagnosis skills! :)"
+    
+    # Add Patient Response header to the AI response, but not as part of empathy feedback
+    patient_response_header = "**Patient Response:**\n"
 
     if not llm_completion:
         return dict(
-            llm_output=empathy_feedback + response,
+            llm_output=empathy_feedback + patient_response_header + response,
             llm_verdict=False
         )
     
     elif "PROPER DIAGNOSIS ACHIEVED" not in response:
         return dict(
-            llm_output=empathy_feedback + response,
+            llm_output=empathy_feedback + patient_response_header + response,
             llm_verdict=False
         )
     
@@ -475,12 +476,12 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
                 
                 if sentences[i-1][-1] == '?':
                     return dict(
-                        llm_output=empathy_feedback + llm_response,
+                        llm_output=empathy_feedback + patient_response_header + llm_response,
                         llm_verdict=False
                     )
                 else:
                     return dict(
-                        llm_output=empathy_feedback + llm_response + completion_sentence,
+                        llm_output=empathy_feedback + patient_response_header + llm_response + completion_sentence,
                         llm_verdict=True
                     )
 
