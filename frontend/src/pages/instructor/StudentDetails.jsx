@@ -34,13 +34,23 @@ const handleBackClick = () => {
 };
 
 // Formatting messages for PDF export
-const formatMessagesForPDF = (messages, studentName, patientName) =>
-  messages
+const formatMessagesForPDF = (messages, studentName, patientName) => {
+  // Simple deduplication by content
+  const seen = new Set();
+  const uniqueMessages = messages.filter(msg => {
+    const key = msg.message_content.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  
+  return uniqueMessages
     .map(
       (msg) =>
         `${msg.student_sent ? `${studentName} (Student)` : `${patientName} (LLM)`}: ${msg.message_content.trim()}`
     )
     .join("\n");
+};
 
 const formatNotesForPDF = (notes) =>
   `Notes: ${notes || "No notes taken."}`;
@@ -59,7 +69,16 @@ const formatMessages = (messages, studentName, patientName) => {
       .replace(/\//g, "-");
   };
 
-  const groupedMessages = messages.reduce((acc, message) => {
+  // Simple deduplication by content
+  const seen = new Set();
+  const uniqueMessages = messages.filter(message => {
+    const key = message.message_content.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  
+  const groupedMessages = uniqueMessages.reduce((acc, message) => {
     const date = formatDate(message.time_sent);
     if (!acc[date]) {
       acc[date] = [];
@@ -92,7 +111,7 @@ const formatMessages = (messages, studentName, patientName) => {
         </Box>
       ))}
     </Box>
-  ));
+  ))
 };
 
 // Helper function to format notes consistently
