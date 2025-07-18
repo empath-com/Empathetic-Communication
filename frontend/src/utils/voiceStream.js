@@ -153,13 +153,17 @@ export function playAudio(audioBytes) {
       clearTimeout(bufferTimeout);
     }
     
-    // Set a timeout to play the buffered audio if we're not already playing
+    // Wait for more chunks to arrive before playing
+    // This is the key to smooth playback - collect more data before starting
+    const bufferThreshold = 5; // Collect more chunks for smoother playback
+    const initialDelay = 300; // Longer initial delay for better buffering
+    
     if (!isPlaying) {
-      bufferTimeout = setTimeout(playBufferedAudio, 200); // Wait 200ms to collect more chunks
+      bufferTimeout = setTimeout(playBufferedAudio, initialDelay);
     }
     
     // If we have enough chunks already, play immediately
-    if (audioBuffer.length >= 3 && !isPlaying) {
+    if (audioBuffer.length >= bufferThreshold && !isPlaying) {
       clearTimeout(bufferTimeout);
       playBufferedAudio();
     }
@@ -243,6 +247,11 @@ function playBufferedAudio() {
     audio.src = URL.createObjectURL(wavBlob);
     audio.volume = 1.0; // Ensure volume is at maximum
     
+    // Store the current buffer for potential reuse
+    const currentBuffer = [...audioBuffer];
+    // Clear the buffer for new incoming chunks
+    audioBuffer = [];
+    
     audio.onloadedmetadata = () => {
       console.log("🔊 Audio metadata loaded, duration:", audio.duration);
     };
@@ -255,18 +264,19 @@ function playBufferedAudio() {
       console.log("🔊 Audio playback completed");
       URL.revokeObjectURL(audio.src);
       isPlaying = false;
-      audioBuffer = []; // Clear the buffer after playing
       
       // Check if new chunks arrived during playback
-      if (audioBuffer.length > 0) {
-        setTimeout(playBufferedAudio, 100);
+      if (audioBuffer.length >= 3) {
+        setTimeout(playBufferedAudio, 50);
+      } else if (audioBuffer.length > 0) {
+        // Wait a bit longer for more chunks if we don't have enough
+        setTimeout(playBufferedAudio, 200);
       }
     };
     
     audio.onerror = (e) => {
       console.error("🔊 Audio playback error:", e);
       isPlaying = false;
-      audioBuffer = []; // Clear the buffer on error
     };
     
     // Play the audio
