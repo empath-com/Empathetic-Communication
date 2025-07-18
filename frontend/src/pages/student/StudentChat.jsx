@@ -32,6 +32,8 @@ import DescriptionIcon from "@mui/icons-material/Description";
 import InfoIcon from "@mui/icons-material/Info";
 import KeyIcon from "@mui/icons-material/Key";
 import MicIcon from "@mui/icons-material/Mic";
+import CloseIcon from "@mui/icons-material/Close";
+
 import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 
 // Importing l-mirage animation
@@ -66,6 +68,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [novaStarted, setNovaStarted] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
+  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false);
+  const [micStartPos, setMicStartPos] = useState(null);
+  const micRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [novaTextInput, setNovaTextInput] = useState("");
@@ -1056,13 +1061,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               if (isRecording) {
                 stopSpokenLLM();
                 setIsRecording(false);
+                setShowVoiceOverlay(false);
               } else {
+                setShowVoiceOverlay(true);
                 const voice_id = "lennart";
                 startSpokenLLM(voice_id);
                 setIsRecording(true);
               }
             }}
-            className={`ml-2 mr-2 transition duration-200 focus:outline-none focus:ring-0 hover:outline-none hover:ring-0 border-none ${
+            className={`ml-2 mr-2 transition duration-200 focus:outline-none hover:outline-none ${
               isRecording
                 ? "text-red-600 hover:text-red-800"
                 : "text-gray-600 hover:text-black"
@@ -1171,6 +1178,25 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           </Button>
         </DialogActions>
       </Dialog>
+      {showVoiceOverlay && (
+        <div className="fixed inset-0 bg-white z-50 flex items-end justify-center pb-8">
+          <button
+            onClick={() => {
+              stopSpokenLLM();
+              setIsRecording(false);
+              setShowVoiceOverlay(false);
+            }}
+            className="animate-fade-slide-up focus:outline-none border-none bg-[#f3f3f3] rounded-full shadow-md w-16 h-16 flex items-center justify-center hover:bg-[#e7e7e7] transition-colors duration-200"
+          >
+            <CloseIcon
+              style={{
+                fontSize: 28,
+                color: "#333",
+              }}
+            />
+          </button>
+        </div>
+      )}
     </div> //
   );
 };
