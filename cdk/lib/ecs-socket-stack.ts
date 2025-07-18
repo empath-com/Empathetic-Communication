@@ -43,16 +43,13 @@ export class EcsSocketStack extends Stack {
                 "bedrock:InvokeModelWithBidirectionalStream",
                 "bedrock:Converse",
                 "bedrock:ConverseStream",
-                "bedrock:InvokeModelWithResponseStream"
+                "bedrock:InvokeModelWithResponseStream",
               ],
               resources: ["*"],
             }),
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
-              actions: [
-                "sts:AssumeRole",
-                "sts:GetCallerIdentity"
-              ],
+              actions: ["sts:AssumeRole", "sts:GetCallerIdentity"],
               resources: ["*"],
             }),
             new iam.PolicyStatement({
@@ -90,8 +87,8 @@ export class EcsSocketStack extends Stack {
           cpu: 512,
           memoryLimitMiB: 1024,
           desiredCount: 1,
-          listenerPort: 443,
-          protocol: elbv2.ApplicationProtocol.HTTPS,
+          listenerPort: 80,
+          protocol: elbv2.ApplicationProtocol.HTTP,
           taskImageOptions: {
             image: ecs.ContainerImage.fromAsset("./socket-server"),
             containerPort: 3000,
@@ -111,10 +108,10 @@ export class EcsSocketStack extends Stack {
     });
 
     // Enable sticky sessions for WebSocket
-    fargateService.targetGroup.setAttribute('stickiness.enabled', 'true');
-    fargateService.targetGroup.setAttribute('stickiness.type', 'lb_cookie');
+    fargateService.targetGroup.setAttribute("stickiness.enabled", "true");
+    fargateService.targetGroup.setAttribute("stickiness.type", "lb_cookie");
 
-    this.socketUrl = `https://${fargateService.loadBalancer.loadBalancerDnsName}`;
+    this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
 
     // Export the socket URL
     new cdk.CfnOutput(this, "SocketUrl", {

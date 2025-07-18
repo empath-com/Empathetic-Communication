@@ -1,34 +1,35 @@
-import asyncio
-import json
+import os
 import sys
+import asyncio
 import base64
+import json
 import uuid
 import random
-import os
+import boto3
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
 from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
 from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
 
-# from smithy_aws_core.auth.identity import DefaultAwsCredentialIdentityResolver
-import boto3
-import logging
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# Audio config
+INPUT_SAMPLE_RATE = 16000
+OUTPUT_SAMPLE_RATE = 24000
+CHANNELS = 1
+CHUNK_SIZE = 1024
 
 session = boto3.Session()
 creds = session.get_credentials()
 frozen_creds = creds.get_frozen_credentials()
 
-os.environ['AWS_ACCESS_KEY_ID'] = frozen_creds.access_key
-os.environ['AWS_SECRET_ACCESS_KEY'] = frozen_creds.secret_key
+os.environ['AWS_ACCESS_KEY_ID'] = creds.access_key
+os.environ['AWS_SECRET_ACCESS_KEY'] = creds.secret_key
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 if creds.token:
     os.environ['AWS_SESSION_TOKEN'] = creds.token
 
+
 class NovaSonic:
+
     def refresh_env_credentials(self):
         global creds, frozen_creds
         # Refresh AWS credentials from the environment
@@ -36,16 +37,13 @@ class NovaSonic:
         creds = session.get_credentials()
         frozen_creds = creds.get_frozen_credentials()
         
-        os.environ['AWS_ACCESS_KEY_ID'] = frozen_creds.access_key
-        os.environ['AWS_SECRET_ACCESS_KEY'] = frozen_creds.secret_key
+        os.environ['AWS_ACCESS_KEY_ID'] = creds.access_key
+        os.environ['AWS_SECRET_ACCESS_KEY'] = creds.secret_key
         if creds.token:
             os.environ['AWS_SESSION_TOKEN'] = creds.token
-        
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1'):
+
+    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_client=None):
         self.refresh_env_credentials()
-        os.environ['AWS_DEFAULT_REGION'] = region
-        
-        
         self.model_id = model_id
         self.region = region
         self.client = None
@@ -55,25 +53,13 @@ class NovaSonic:
         self.prompt_name = str(uuid.uuid4())
         self.content_name = str(uuid.uuid4())
         self.audio_content_name = str(uuid.uuid4())
+        self.audio_queue = asyncio.Queue()
         self.role = None
-        self.display_assistant_text = False
+        self.display_assistant_text = False  # maybe change later?
 
-def _init_client(self):
-    try:
-        logger.info("🔄 Refreshing AWS credentials and initializing Bedrock client")
-        session = boto3.Session()
-        creds = session.get_credentials().get_frozen_credentials()
-
-        # Write creds to environment
-        os.environ['AWS_ACCESS_KEY_ID'] = creds.access_key
-        os.environ['AWS_SECRET_ACCESS_KEY'] = creds.secret_key
-        os.environ['AWS_DEFAULT_REGION'] = self.region
-        if creds.token:
-            os.environ['AWS_SESSION_TOKEN'] = creds.token
-        else:
-            os.environ.pop('AWS_SESSION_TOKEN', None)
-
-        # Recreate the credentials resolver so smithy reloads env vars
+    def _init_client(self):
+        """Initialize the Bedrock Client for Nova"""
+        self.refresh_env_credentials()
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
@@ -82,45 +68,50 @@ def _init_client(self):
             http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
         )
         self.client = BedrockRuntimeClient(config=config)
-        logger.info("✅ Bedrock client initialized")
-    except Exception as e:
-        logger.error(f"Client init error: {str(e)}")
+        print(f"Initialized Bedrock client for model {self.model_id} in region {self.region}")
+
+    async def send_event(self, event_json):
+        """Send an event to the stream"""
+        event = InvokeModelWithBidirectionalStreamInputChunk(
+            value=BidirectionalInputPayloadPart(bytes_=event_json.encode('utf-8'))
+        )
+        await self.stream.input_stream.send(event)
 
     async def start_session(self):
-        self._init_client() # Comment out later, redeploy required
-        if self.stream and self.is_active:
-            return
-            
+        """Start a new Nova Sonic session"""
         if not self.client:
             self._init_client()
 
-        try:
-            self.stream = await self.client.invoke_model_with_bidirectional_stream(
-                InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
-            )
-            self.is_active = True
-        except Exception as e:
-            print(json.dumps({"type": "error", "text": f"Session start error: {str(e)}"}), flush=True)
-            return
+        # Init stream
+        self.stream = await self.client.invoke_model_with_bidirectional_stream(
+            InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
+        )
+        print("✅ Bidirectional stream initialized with Nova Sonic", flush=True)
 
-        # Session start
+        
+        self.is_active = True
+
+        # Send session start event
         session_start = '''
         {
             "event": {
                 "sessionStart": {
                 "inferenceConfiguration": {
-                    "maxTokens": 1024,
-                    "topP": 0.9,
-                    "temperature": 0.7
+                    "maxTokens": 2048,
+                    "topP": 1.0,
+                    "temperature": 0.8,
+                    "stopSequences": []
                     }
                 }
             }
         }
         '''
+
         await self.send_event(session_start)
         
-        # Prompt start with audio
+        # Send prompt start event
         voice_ids = {"feminine": ["amy", "tiffany", "lupe"], "masculine": ["matthew", "carlos"]}
+
         prompt_start = f'''
         {{
           "event": {{
@@ -134,17 +125,18 @@ def _init_client(self):
                 "sampleRateHertz": 24000,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
-                "voiceId": "{random.choice(voice_ids["feminine"])}",
+                "voiceId": "amy",
                 "encoding": "base64",
                 "audioType": "SPEECH"
               }}
             }}
           }}
         }}
-        '''
+        ''' # Using a fixed voice ID for reliability
+
         await self.send_event(prompt_start)
 
-        # System prompt
+        # Send system prompt
         text_content_start = f'''
         {{
             "event": {{
@@ -161,9 +153,10 @@ def _init_client(self):
             }}
         }}
         '''
+
         await self.send_event(text_content_start)
 
-        system_prompt = "You are to act as a concerned patient with a diagnosis (choose a random disease, pretend like you're not aware what it is until I say 'simulation over' and ask about it). I will ask you questions to help diagnose your condition. Please answer as accurately as possible. Sound distressed if you are in pain or uncomfortable. If you are not in distress, please respond calmly and clearly."
+        system_prompt = "You are to act as a concerned patient with a diagnosis of migraine headaches. I will ask you questions to help diagnose your condition. Please answer as accurately as possible. Sound distressed if you are in pain or uncomfortable. If you are not in distress, please respond calmly and clearly. IMPORTANT: Always respond with both text and audio. Do not remain silent. Speak directly to me as if we are having a conversation."
         
         text_input = f'''
         {{
@@ -189,30 +182,17 @@ def _init_client(self):
         }}
         '''
         await self.send_event(text_content_end)
-        
-        # Start response processing
+
+        # Start processing responses
         self.response = asyncio.create_task(self._process_responses())
-        
-        # Send prompt end to trigger initial response
-        prompt_end = f'''
-        {{
-            "event": {{
-                "promptEnd": {{
-                    "promptName": "{self.prompt_name}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(prompt_end)
-        
-        # Auto-start audio input after session is ready
-        await asyncio.sleep(1.0)
-        await self.start_audio_input()
+
+        print(f"✅ Nova Sonic session started (Prompt ID: {self.prompt_name})", flush=True)
+
 
     async def start_audio_input(self):
-        if not self.stream:
-            return
-            
+        """Start audio input stream."""
+
+        self.audio_content_name = str(uuid.uuid4())  # NEW valid name
         audio_content_start = f'''
         {{
             "event": {{
@@ -237,32 +217,26 @@ def _init_client(self):
         await self.send_event(audio_content_start)
     
     async def send_audio_chunk(self, audio_bytes):
-        try:
-            if not self.is_active or not self.stream:
-                return
-                
-            if len(audio_bytes) == 0:
-                return
-                
-            # Encode audio as base64 and send as JSON event
-            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-            audio_input = f'''
-            {{
-                "event": {{
-                    "audioInput": {{
-                        "promptName": "{self.prompt_name}",
-                        "contentName": "{self.audio_content_name}",
-                        "content": "{audio_b64}"
-                    }}
+        """Send an audio chunk to the stream."""
+        if not self.is_active:
+            return
+            
+        blob = base64.b64encode(audio_bytes)
+        audio_event = f'''
+        {{
+            "event": {{
+                "audioInput": {{
+                    "promptName": "{self.prompt_name}",
+                    "contentName": "{self.audio_content_name}",
+                    "content": "{blob.decode('utf-8')}"
                 }}
             }}
-            '''
-            await self.send_event(audio_input)
-            
-        except Exception as e:
-            print(json.dumps({"type": "error", "text": f"Audio chunk error: {str(e)}"}), flush=True)
+        }}
+        '''
+        await self.send_event(audio_event)
     
     async def end_audio_input(self):
+        """End audio input stream."""
         audio_content_end = f'''
         {{
             "event": {{
@@ -274,8 +248,12 @@ def _init_client(self):
         }}
         '''
         await self.send_event(audio_content_end)
-        
-        # Send prompt end to trigger response generation
+    
+    async def end_session(self):
+        """End the session."""
+        if not self.is_active:
+            return
+            
         prompt_end = f'''
         {{
             "event": {{
@@ -287,70 +265,103 @@ def _init_client(self):
         '''
         await self.send_event(prompt_end)
         
-        # Send prompt end to trigger response after audio
-        prompt_end = f'''
-        {{
-            "event": {{
-                "promptEnd": {{
-                    "promptName": "{self.prompt_name}"
-                }}
-            }}
-        }}
+        session_end = '''
+        {
+            "event": {
+                "sessionEnd": {}
+            }
+        }
         '''
-        await self.send_event(prompt_end)
+        await self.send_event(session_end)
+        # close the stream
+        await self.stream.input_stream.close()
 
     async def _process_responses(self):
+        """Process responses from the stream."""
         try:
             while self.is_active:
                 output = await self.stream.await_output()
                 result = await output[1].receive()
 
-                try:
-                    decoded = result.value.bytes_.decode("utf-8")
-                    json_data = json.loads(decoded)
+                if result.value and result.value.bytes_:
+                    response_data = result.value.bytes_.decode("utf-8")
+                    print("🟡 RAW RESPONSE:", response_data, flush=True)
 
-                    if 'event' in json_data:
-                        if 'textOutput' in json_data['event']:
-                            text = json_data['event']['textOutput']['content']
-                            print(json.dumps({"type": "text", "text": text}), flush=True)
+                    try:
+                        json_data = json.loads(response_data)
+                        print("🟢 PARSED JSON:", json.dumps(json_data, indent=2), flush=True)
 
-                        elif 'audioOutput' in json_data['event']:
-                            audio_content = json_data['event']['audioOutput']['content']
-                            print(json.dumps({"type": "audio", "data": audio_content}), flush=True)
+                        if 'event' in json_data:
+                            if 'contentStart' in json_data['event']:
+                                content_start = json_data['event']['contentStart']
+                                self.role = content_start['role']
+                                if 'additionalModelFields' in content_start:
+                                    additional_fields = json.loads(content_start['additionalModelFields'])
+                                    self.display_assistant_text = (
+                                        additional_fields.get("generationStage") == "SPECULATIVE"
+                                    )
 
-                        elif 'contentStart' in json_data['event']:
-                            self.role = json_data['event']['contentStart'].get("role", "Unknown")
+                            elif 'textOutput' in json_data['event']:
+                                text = json_data['event']['textOutput']['content']
+                                if self.role == "ASSISTANT":
+                                    print(f"Assistant: {text}", flush=True)
+                                    print(json.dumps({ "type": "text", "text": text }), flush=True)
+                                elif self.role == "USER":
+                                    print(f"User: {text}", flush=True)
 
-                except Exception as e:
-                    pass
+                            elif 'audioOutput' in json_data['event']:
+                                audio_content = json_data['event']['audioOutput']['content']
+                                audio_bytes = base64.b64decode(audio_content)
+                                await self.audio_queue.put(audio_bytes)
+                                print("🔊 AUDIO OUTPUT RECEIVED, size:", len(audio_bytes), flush=True)
+                                print(json.dumps({
+                                    "type": "audio",
+                                    "data": base64.b64encode(audio_bytes).decode("utf-8"),
+                                    "size": len(audio_bytes)
+                                }), flush=True)
+
+                    except Exception as e:
+                        print(f"❌ Failed to parse response: {e}", flush=True)
+                        print(f"❌ Raw data was: {response_data}", flush=True)
         except Exception as e:
-            print(json.dumps({"type": "error", "text": f"Response processing error: {str(e)}"}), flush=True)
+            print(f"🔥 Error in _process_responses(): {e}", flush=True)
+
+async def handle_stdin(nova_client):
+    reader = asyncio.StreamReader()
+    loop = asyncio.get_event_loop()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+    while True:
+        line = await reader.readline()
+        if not line:
+            break
+
+        try:
+            msg = json.loads(line.decode("utf-8"))
+            if msg["type"] == "audio":
+                audio_bytes = base64.b64decode(msg["data"])
+                await nova_client.send_audio_chunk(audio_bytes)
+            elif msg["type"] == "start_audio":
+                await nova_client.start_audio_input()
+            elif msg["type"] == "end_audio":
+                await nova_client.end_audio_input()
+        except Exception as e:
+            print(f"❌ Failed to process stdin input: {e}", flush=True)
 
 async def main():
-    nova = NovaSonic()
-    print(json.dumps({"type": "text", "text": "Nova Sonic ready!"}), flush=True)
-    
-    while True:
-        try:
-            line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-            if not line:
-                break
-                
-            data = json.loads(line.strip())
-            if data['type'] == 'start_session':
-                await nova.start_session()
-            elif data['type'] == 'start_audio':
-                await nova.start_audio_input()
-            elif data['type'] == 'audio':
-                print(json.dumps({"type": "debug", "text": f"Processing audio chunk, size: {len(data['data'])}"}), flush=True)
-                audio_bytes = base64.b64decode(data['data'])
-                await nova.send_audio_chunk(audio_bytes)
-            elif data['type'] == 'end_audio':
-                print(json.dumps({"type": "debug", "text": "Ending audio input"}), flush=True)
-                await nova.end_audio_input()
-                
-        except Exception as e:
-            print(json.dumps({"type": "error", "text": str(e)}), flush=True)
+    nova_client = NovaSonic()
+    await nova_client.start_session()
 
+    print("Nova session started. Listening for stdin input...")
+    
+
+    stdin_task = asyncio.create_task(handle_stdin(nova_client))
+    await stdin_task
+
+    await nova_client.end_session()
+    print("Session ended")
+
+    
 if __name__ == "__main__":
     asyncio.run(main())

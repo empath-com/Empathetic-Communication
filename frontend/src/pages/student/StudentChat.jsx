@@ -8,7 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import DraggableNotes from "./DraggableNotes";
 import FilesPopout from "./FilesPopout";
-import { io } from "socket.io-client";
+import { socket } from "../../utils/socket";
 
 import { signOut } from "aws-amplify/auth";
 
@@ -58,6 +58,7 @@ function titleCase(str) {
 const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -70,6 +71,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [newMessage, setNewMessage] = useState(null);
   const [isAItyping, setIsAItyping] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [recorderReady, setRecorderReady] = useState(false);
 
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
@@ -195,39 +197,44 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       .some((message) => !message.student_sent);
   };
 
-  // Connect to WebSocket server
-  const socket = io(import.meta.env.VITE_SOCKET_URL, {
-    transports: ["websocket"],
-  });
+  useEffect(() => {
+    if (!socket.connected) socket.connect();
 
-  // Debug WebSocket connection
-  socket.on("connect", () => {
-    console.log("✅ WebSocket connected:", socket.id);
-  });
+    const handleConnect = () => {
+      console.log("✅ WebSocket connected:", socket.id);
+    };
 
-  socket.on("disconnect", () => {
-    console.log("❌ WebSocket disconnected");
-  });
+    const handleDisconnect = () => {
+      console.log("❌ WebSocket disconnected");
+    };
 
-  socket.on("connect_error", (error) => {
-    console.error("🔥 WebSocket connection error:", error);
-  });
+    const handleError = (error) => {
+      console.error("🔥 WebSocket connection error:", error);
+    };
 
-  // Debug all socket events
-  socket.onAny((event, ...args) => {
-    console.log("📡 Socket event:", event, args);
-  });
+    const handleText = (data) => {
+      console.log("💬 Nova Sonic:", data.text);
+    };
 
-  // Listen for Nova Sonic audio
-  socket.on("audio-chunk", (data) => {
-    console.log("🎵 Received audio chunk:", data);
-    playAudio(data.data); // data.data is already base64
-  });
+    const handleAudio = (data) => {
+      console.log("🎵 Received audio chunk, length:", data.data?.length || 0);
+      if (data.data) playAudio(data.data);
+    };
 
-  // Listen for text messages
-  socket.on("text-message", (data) => {
-    console.log("💬 Nova Sonic:", data.text);
-  });
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleError);
+    socket.on("text-message", handleText);
+    socket.on("audio-chunk", handleAudio);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleError);
+      socket.off("text-message", handleText);
+      socket.off("audio-chunk", handleAudio);
+    };
+  }, []);
 
   // Start Nova Sonic session
   async function startSpokenLLM() {
@@ -235,7 +242,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     console.log("Socket URL:", import.meta.env.VITE_SOCKET_URL);
     console.log("Socket connected:", socket.connected);
 
-    // Start microphone
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
@@ -252,39 +258,68 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           reader.readAsArrayBuffer(event.data);
         }
       };
-      
+
       recorder.onstop = () => {
         socket.emit("end-audio");
       };
 
-      recorder.start(250); // Send audio chunks every 250ms
+      // Store recorder for later use
+      mediaRecorderRef.current = recorder;
       setMediaRecorder(recorder);
       setIsRecording(true);
 
+      // Tell server to start Nova
       socket.emit("start-nova-sonic");
       console.log("📡 Emitted start-nova-sonic event");
-      
-        // Send a dummy audio chunk to satisfy Nova's requirement
-      setTimeout(() => {
-        const dummyAudio = new ArrayBuffer(1024);
-        const uint8Array = new Uint8Array(dummyAudio);
-        const base64 = btoa(String.fromCharCode.apply(null, uint8Array));
-        socket.emit("audio-input", { data: base64 });
-        console.log("📡 Sent initial audio chunk");
-      }, 3000);
     } catch (error) {
       console.error("🎤 Microphone access denied:", error);
     }
   }
 
-  // Stop recording
+  useEffect(() => {
+    const handleNovaStarted = () => {
+      console.log("✅ Nova backend ready!");
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state === "inactive") {
+        recorder.start(250); // Stream every 250ms
+        console.log("🎙️ Recording started");
+      } else {
+        console.warn("📛 Recorder is not ready or already active");
+      }
+    };
+
+    socket.on("nova-started", () => {
+      try {
+        handleNovaStarted();
+      } catch (err) {
+        console.error("Nova started handler failed:", err);
+      }
+    });
+
+    return () => {
+      socket.off("nova-started");
+    };
+  }, []);
+
   function stopSpokenLLM() {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+    const recorder = mediaRecorderRef.current;
+
+    console.log("🛑 Attempting to stop recorder");
+    if (!recorder) {
+      console.warn("❌ Recorder ref is null");
+    } else {
+      console.log("🎙️ Recorder state:", recorder.state);
+    }
+
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      recorder.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
       setIsRecording(false);
       setMediaRecorder(null);
       console.log("🛑 Stopped recording");
+    } else {
+      console.warn("🛑 Tried to stop recording, but recorder not active.");
     }
   }
 
@@ -299,10 +334,33 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   function playAudio(audioBytes) {
     try {
+      console.log(
+        "🔊 Playing audio, data length:",
+        audioBytes ? audioBytes.length : 0
+      );
       const audio = new Audio(`data:audio/wav;base64,${audioBytes}`);
-      audio.play().catch(err => console.error("Audio play failed:", err));
+
+      audio.oncanplay = () => {
+        console.log("🔊 Audio ready to play");
+      };
+
+      audio.onplay = () => {
+        console.log("🔊 Audio playback started");
+      };
+
+      audio.onended = () => {
+        console.log("🔊 Audio playback completed");
+      };
+
+      audio.onerror = (err) => {
+        console.error("🔊 Audio play error:", err);
+      };
+
+      audio.play().catch((err) => {
+        console.error("🔊 Audio play failed:", err);
+      });
     } catch (error) {
-      console.error("Audio processing failed:", error);
+      console.error("🔊 Audio processing failed:", error);
     }
   }
 

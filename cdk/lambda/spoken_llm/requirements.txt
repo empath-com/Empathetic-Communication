@@ -1,2 +1,0 @@
-python-socketio[asyncio_client]
-aws-sdk-bedrock-runtime
