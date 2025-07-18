@@ -1179,7 +1179,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         </DialogActions>
       </Dialog>
       {showVoiceOverlay && (
-        <div className="fixed inset-0 bg-white z-50 flex items-end justify-center pb-8">
+        <div className="fixed animate-fade inset-0 bg-white z-50 flex items-end justify-center pb-8">
           <button
             onClick={() => {
               stopSpokenLLM();
