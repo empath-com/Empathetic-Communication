@@ -13,7 +13,7 @@ const server = createServer(app);
 // Configure Socket.IO with proper CORS settings
 const io = new Server(server, {
   cors: {
-    origin: process.env.ALLOWED_ORIGINS || "*",
+    origin: "*", // Allow all origins for simplicity
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -22,7 +22,7 @@ const io = new Server(server, {
 
 // Add middleware to handle CORS for Express
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.header('Access-Control-Allow-Credentials', 'true');

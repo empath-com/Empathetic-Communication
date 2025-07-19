@@ -18,11 +18,8 @@ export function startSpokenLLM(voice_id = "matthew") {
   // Initialize socket with the specified voice
   const socket = initializeSocket(voice_id);
 
-  // Clean up any existing listeners to prevent duplicates
-  socket.off("nova-started");
-
-  // Use once instead of on to ensure the handler runs only once
-  socket.once("nova-started", () => {
+  // Set up a one-time event listener for nova-started
+  const onNovaStarted = (data) => {
     if (novaStarted) return;
     console.log("✅ Nova backend ready!");
     novaStarted = true;
@@ -58,10 +55,13 @@ export function startSpokenLLM(voice_id = "matthew") {
           console.error("🎤 Microphone access denied:", err);
         });
     }, 500);
-  });
+  };
 
   // Socket connection and Nova startup are now handled by the socketConnection utility
   console.log("🚀 Requesting Nova Sonic startup with voice: " + voice_id);
+  
+  // Add the nova-started event listener
+  socket.on("nova-started", onNovaStarted);
 }
 
 export function stopSpokenLLM() {

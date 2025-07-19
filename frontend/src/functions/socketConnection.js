@@ -1,100 +1,177 @@
-import { io } from 'socket.io-client';
-
 // Get the WebSocket URL from environment variables
 // For Vite, use import.meta.env instead of process.env
-let SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 
-                window.SOCKET_URL || 
-                'http://localhost:3000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 
+                  window.SOCKET_URL || 
+                  'http://localhost:3000';
 
-// Convert HTTP to WebSocket protocol
-if (SOCKET_URL.startsWith('https://')) {
-  SOCKET_URL = SOCKET_URL.replace('https://', 'wss://');
-} else if (SOCKET_URL.startsWith('http://')) {
-  SOCKET_URL = SOCKET_URL.replace('http://', 'ws://');
+// Create a proxy iframe for WebSocket communication
+let proxyFrame;
+let isProxyReady = false;
+let pendingMessages = [];
+let eventListeners = {};
+let voiceIdToUse = 'lennart';
+
+// Initialize the proxy iframe
+function initializeProxy() {
+  if (proxyFrame) return;
+  
+  // Create hidden iframe
+  proxyFrame = document.createElement('iframe');
+  proxyFrame.style.display = 'none';
+  proxyFrame.src = '/proxy.html';
+  document.body.appendChild(proxyFrame);
+  
+  // Listen for messages from the proxy
+  window.addEventListener('message', handleProxyMessage);
 }
 
-// Create a socket instance
-let socket;
+// Handle messages from the proxy iframe
+function handleProxyMessage(event) {
+  // Only accept messages from our proxy
+  if (event.source !== proxyFrame.contentWindow) return;
+  
+  const data = event.data;
+  
+  switch (data.type) {
+    case 'PROXY_READY':
+      console.log('WebSocket proxy ready');
+      isProxyReady = true;
+      // Initialize socket connection
+      proxyFrame.contentWindow.postMessage({
+        type: 'SOCKET_INIT',
+        url: SOCKET_URL
+      }, '*');
+      break;
+      
+    case 'SOCKET_CONNECTED':
+      console.log('Socket connected successfully');
+      // Start Nova Sonic session
+      proxyFrame.contentWindow.postMessage({
+        type: 'SOCKET_EMIT',
+        event: 'start-nova-sonic',
+        payload: { voice_id: voiceIdToUse }
+      }, '*');
+      // Process any pending messages
+      processPendingMessages();
+      break;
+      
+    case 'SOCKET_DISCONNECTED':
+      console.log('Socket disconnected');
+      triggerEvent('disconnect');
+      break;
+      
+    case 'SOCKET_ERROR':
+      console.error('Socket error:', data.error);
+      triggerEvent('error', data.error);
+      break;
+      
+    case 'NOVA_STARTED':
+      console.log('Nova session started:', data.data);
+      triggerEvent('nova-started', data.data);
+      break;
+      
+    case 'TEXT_MESSAGE':
+      console.log('Received text message:', data.data);
+      triggerEvent('text-message', data.data);
+      break;
+      
+    case 'AUDIO_CHUNK':
+      console.log('Received audio chunk, size:', data.data?.data ? data.data.data.length : 0);
+      triggerEvent('audio-chunk', data.data);
+      break;
+  }
+}
+
+// Process any pending messages
+function processPendingMessages() {
+  while (pendingMessages.length > 0) {
+    const msg = pendingMessages.shift();
+    proxyFrame.contentWindow.postMessage(msg, '*');
+  }
+}
+
+// Trigger event for listeners
+function triggerEvent(event, data) {
+  if (eventListeners[event]) {
+    eventListeners[event].forEach(callback => callback(data));
+  }
+}
+
+// Socket-like interface
+const socket = {
+  connected: false,
+  on: (event, callback) => {
+    if (!eventListeners[event]) {
+      eventListeners[event] = [];
+    }
+    eventListeners[event].push(callback);
+  },
+  off: (event) => {
+    if (eventListeners[event]) {
+      delete eventListeners[event];
+    }
+  },
+  emit: (event, payload) => {
+    const message = {
+      type: 'SOCKET_EMIT',
+      event,
+      payload
+    };
+    
+    if (isProxyReady) {
+      proxyFrame.contentWindow.postMessage(message, '*');
+    } else {
+      pendingMessages.push(message);
+    }
+  },
+  disconnect: () => {
+    if (proxyFrame) {
+      proxyFrame.contentWindow.postMessage({
+        type: 'SOCKET_EMIT',
+        event: 'disconnect'
+      }, '*');
+    }
+  }
+};
 
 export const initializeSocket = (voiceId = 'lennart') => {
-  if (!socket) {
-    console.log(`Connecting to socket server at: ${SOCKET_URL}`);
-    
-    // Create WebSocket connection
-    socket = io(SOCKET_URL, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      secure: SOCKET_URL.startsWith('https') || SOCKET_URL.startsWith('wss'),
-    });
-
-    // Connection event handlers
-    socket.on('connect', () => {
-      console.log('Socket connected successfully');
-      
-      // Start Nova Sonic session with the specified voice
-      socket.emit('start-nova-sonic', { voice_id: voiceId });
-    });
-
-    socket.on('disconnect', () => {
-      console.log('Socket disconnected');
-    });
-
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
-    });
-    
-    // Set up event listeners for Nova responses
-    socket.on('nova-started', (data) => {
-      console.log('Nova session started:', data);
-    });
-    
-    socket.on('text-message', (data) => {
-      console.log('Received text message:', data);
-    });
-    
-    socket.on('audio-chunk', (data) => {
-      console.log('Received audio chunk, size:', data.data ? data.data.length : 0);
-    });
+  voiceIdToUse = voiceId;
+  
+  // Initialize the proxy if not already done
+  if (!proxyFrame) {
+    initializeProxy();
   }
   
   return socket;
 };
 
 export const getSocket = () => {
-  if (!socket) {
+  if (!proxyFrame) {
     return initializeSocket();
   }
   return socket;
 };
 
 export const closeSocket = () => {
-  if (socket) {
+  if (proxyFrame) {
     socket.disconnect();
-    socket = null;
+    window.removeEventListener('message', handleProxyMessage);
+    document.body.removeChild(proxyFrame);
+    proxyFrame = null;
+    isProxyReady = false;
+    pendingMessages = [];
+    eventListeners = {};
   }
 };
 
 export const sendAudioInput = (audioData) => {
-  const socket = getSocket();
-  if (socket && socket.connected) {
-    socket.emit('audio-input', { data: audioData });
-  } else {
-    console.error('Cannot send audio - socket not connected');
-  }
+  socket.emit('audio-input', { data: audioData });
 };
 
 export const endAudioInput = () => {
-  const socket = getSocket();
-  if (socket && socket.connected) {
-    socket.emit('end-audio');
-  }
+  socket.emit('end-audio');
 };
 
 export const startAudioInput = () => {
-  const socket = getSocket();
-  if (socket && socket.connected) {
-    socket.emit('start-audio');
-  }
+  socket.emit('start-audio');
 };

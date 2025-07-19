@@ -7,17 +7,15 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
-import * as route53 from "aws-cdk-lib/aws-route53";
-import * as targets from "aws-cdk-lib/aws-route53-targets";
 import { VpcStack } from "./vpc-stack";
 
 export interface EcsSocketStackProps extends StackProps {
-  certificateArn?: string;
+  // No special props needed
 }
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
-  public readonly secureSocketUrl: string;
+  // Only using HTTP URL
 
   constructor(
     scope: Construct,
@@ -85,11 +83,7 @@ export class EcsSocketStack extends Stack {
       maxCapacity: 0,
     });
 
-    // Create a self-signed certificate for development
-    const certificate = new acm.Certificate(this, "Certificate", {
-      domainName: "*.elb.amazonaws.com",
-      validation: acm.CertificateValidation.fromEmail(),
-    });
+    // No certificate needed for HTTP
 
     // Fargate service with load balancer
     const fargateService =
@@ -101,10 +95,8 @@ export class EcsSocketStack extends Stack {
           cpu: 512,
           memoryLimitMiB: 1024,
           desiredCount: 1,
-          listenerPort: 443,
-          protocol: certificate ? elbv2.ApplicationProtocol.HTTPS : elbv2.ApplicationProtocol.HTTP,
-          certificate: certificate,
-          redirectHTTP: certificate ? true : false,
+          listenerPort: 80,
+          protocol: elbv2.ApplicationProtocol.HTTP,
           taskImageOptions: {
             image: ecs.ContainerImage.fromAsset("./socket-server"),
             containerPort: 3000,
@@ -131,21 +123,14 @@ export class EcsSocketStack extends Stack {
     fargateService.targetGroup.setAttribute("stickiness.enabled", "true");
     fargateService.targetGroup.setAttribute("stickiness.type", "lb_cookie");
 
-    // Use the load balancer DNS name for the socket URLs
+    // Use the load balancer DNS name for the socket URL
     this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
-    this.secureSocketUrl = `https://${fargateService.loadBalancer.loadBalancerDnsName}`;
 
-    // Export the socket URLs
+    // Export the socket URL
     new cdk.CfnOutput(this, "SocketUrl", {
       value: this.socketUrl,
-      description: "Socket.IO server HTTP URL",
+      description: "Socket.IO server URL",
       exportName: `${id}-SocketUrl`,
-    });
-    
-    new cdk.CfnOutput(this, "SecureSocketUrl", {
-      value: this.secureSocketUrl,
-      description: "Socket.IO server HTTPS URL",
-      exportName: `${id}-SecureSocketUrl`,
     });
   }
 }
