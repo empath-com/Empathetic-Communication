@@ -1,47 +1,48 @@
-# Database Migrations
+# How to Add a New Table to the Database
 
-This directory contains the database initialization and migration scripts for the Virtual Care Interaction project.
+This guide explains how to add a new table to the database in the Virtual Care Interaction project.
 
-## How to Add New Tables or Modify Schema
+## Adding a New Table
 
-To add new tables or modify the existing database schema, follow these steps:
+To add a new table, you only need to modify the `migrations.py` file:
 
-1. Open the `migrations.py` file
-2. Add a new migration entry in the `get_all_migrations()` function with an incremental version number
-3. Write your SQL statements for the new migration
+1. Define a function that returns the SQL for your new table
+2. Register the migration in the `get_all_migrations()` function
 
-Example:
+### Example
 
 ```python
-# Add your new migrations here with incremental version numbers
-migrations["003_add_new_feature_table"] = """
-    CREATE TABLE IF NOT EXISTS "new_feature" (
-        "id" uuid PRIMARY KEY DEFAULT (uuid_generate_v4()),
-        "name" varchar NOT NULL,
-        "description" text,
-        "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
+# 1. Define a function that returns the SQL for your new table
+def get_analytics_table_sql():
+    """SQL for creating the analytics table"""
+    return """
+    CREATE TABLE IF NOT EXISTS "analytics" (
+        "analytics_id" uuid PRIMARY KEY DEFAULT (uuid_generate_v4()),
+        "user_id" uuid,
+        "page_viewed" varchar,
+        "time_spent" integer,
+        "recorded_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("user_id") REFERENCES "users" ("user_id") ON DELETE CASCADE ON UPDATE CASCADE
     );
-    
-    -- Add any foreign key relationships
-    ALTER TABLE "new_feature" ADD FOREIGN KEY ("id") REFERENCES "another_table" ("id") ON DELETE CASCADE;
-"""
+    """
+
+# 2. In the get_all_migrations function, add this line:
+register_migration("add_analytics_table", get_analytics_table_sql())
 ```
 
-## How Migrations Work
+That's it! The migration will be applied automatically during deployment.
 
-1. Each migration is tracked in a `schema_migrations` table in the database
-2. Migrations are only applied once, even if you redeploy the stack multiple times
-3. Migrations are applied in order based on their version number (e.g., 001, 002, 003)
-4. If a migration fails, the transaction is rolled back to prevent partial schema changes
+## How It Works
+
+- The system automatically assigns version numbers based on registration order
+- Migrations are tracked in the database, so they're only applied once
+- The system works in both new deployments and existing deployments
+- No need to worry about file system access in Lambda environments
 
 ## Best Practices
 
-1. Always use `CREATE TABLE IF NOT EXISTS` to avoid errors if the table already exists
-2. For altering tables, use conditional logic to check if the column/constraint exists first
-3. Keep migrations small and focused on a single change
-4. Never modify existing migrations that have been deployed - create a new migration instead
-5. Test your migrations locally before deploying to production
-
-## Deployment
-
-When you deploy or redeploy the database stack, the migrations will automatically run. The Lambda function is configured to run on every deployment, applying any new migrations that haven't been applied yet.
+- Use descriptive names for your migration functions and registrations
+- Include `IF NOT EXISTS` in your CREATE TABLE statements
+- For column additions, check if the column exists before adding it
+- Always include appropriate foreign key constraints
+- Test your migrations locally before deploying
