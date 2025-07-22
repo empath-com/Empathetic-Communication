@@ -449,7 +449,7 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
     flag indicating whether proper diagnosis has been achieved.
     """
 
-    completion_sentence = " Congratulations! You have provided the proper diagnosis for me, the patient I am pretending to be! Please try other mock patients to continue your diagnosis skills! :)"
+    completion_sentence = " Thank you for your assessment. You have correctly identified my diagnosis. You may continue practicing with other patients to further develop your clinical and communication skills."
     
     # Add Patient Response header to the AI response, but not as part of empathy feedback
     patient_response_header = "**Patient Response:**\n"
