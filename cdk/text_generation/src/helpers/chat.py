@@ -456,13 +456,13 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
 
     if not llm_completion:
         return dict(
-            llm_output=empathy_feedback + patient_response_header + response,
+            llm_output=response,
             llm_verdict=False
         )
     
     elif "PROPER DIAGNOSIS ACHIEVED" not in response:
         return dict(
-            llm_output=empathy_feedback + patient_response_header + response,
+            llm_output=response,
             llm_verdict=False
         )
     
@@ -476,12 +476,12 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
                 
                 if sentences[i-1][-1] == '?':
                     return dict(
-                        llm_output=empathy_feedback + patient_response_header + llm_response,
+                        llm_output=llm_response,
                         llm_verdict=False
                     )
                 else:
                     return dict(
-                        llm_output=empathy_feedback + patient_response_header + llm_response + completion_sentence,
+                        llm_output=llm_response + completion_sentence,
                         llm_verdict=True
                     )
 

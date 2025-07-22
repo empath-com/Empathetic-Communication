@@ -79,7 +79,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
               <TableCell colSpan={2}>
-                <Typography variant="h6">Empathy Evaluation Summary</Typography>
+                <Typography variant="h6">Empathy Coach Summary</Typography>
               </TableCell>
             </TableRow>
           </TableHead>
