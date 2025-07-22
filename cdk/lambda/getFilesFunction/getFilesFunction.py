@@ -97,7 +97,7 @@ def generate_presigned_url(bucket, key):
         return s3.generate_presigned_url(
             ClientMethod="get_object",
             Params={"Bucket": bucket, "Key": key},
-            ExpiresIn=300,
+            ExpiresIn=7200,  # Increased from 300 seconds (5 minutes) to 7200 seconds (2 hours)
             HttpMethod="GET",
         )
     except Exception as e:
