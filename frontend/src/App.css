@@ -3,9 +3,12 @@
   width: 100%;
   margin: 0 auto;
   text-align: center;
-  
 }
 
 .read-the-docs {
   color: #e00f0f;
+}
+
+.hidden {
+  display: none;
 }

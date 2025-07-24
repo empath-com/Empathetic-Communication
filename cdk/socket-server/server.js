@@ -2,9 +2,46 @@ const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { spawn } = require("child_process");
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
-const server = createServer(app);
+// const server = createServer(app);
+
+let server;
+
+try {
+  console.log("Attempting to create HTTPS server with certificates...");
+  // Check if certificates exist
+  const keyPath = "/etc/certs/server.key";
+  const certPath = "/etc/certs/server.crt";
+  
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    console.log("Certificate files found!");
+    
+    // Read certificate files
+    const key = fs.readFileSync(keyPath);
+    const cert = fs.readFileSync(certPath);
+    
+    // Create HTTPS server
+    server = https.createServer(
+      {
+        key: key,
+        cert: cert,
+      },
+      app
+    );
+    console.log("HTTPS server created successfully");
+  } else {
+    throw new Error(`Certificate files not found: ${keyPath} or ${certPath}`);
+  }
+} catch (error) {
+  console.error("Failed to create HTTPS server:", error.message);
+  console.log("Falling back to HTTP server");
+  server = createServer(app);
+}
+
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -15,8 +52,20 @@ const io = new Server(server, {
 let novaProcess = null;
 let novaReady = false;
 
+// Improved health check endpoint
 app.get("/health", (req, res) => {
-  res.json({ status: "healthy" });
+  // Check if we can properly serve requests
+  const serverOk = server ? true : false;
+  const socketOk = io ? true : false;
+  
+  // Return detailed health status
+  res.json({ 
+    status: "healthy",
+    server_type: server instanceof https.Server ? "HTTPS" : "HTTP",
+    server_ok: serverOk,
+    socket_ok: socketOk,
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get("/debug", (req, res) => {
@@ -59,20 +108,25 @@ io.on("connection", (socket) => {
     });
 
     console.log("📡 Nova process spawned with PID:", novaProcess.pid);
-    
+
     // Send voice configuration if provided
     if (config.voice_id) {
       console.log(`🎙️ Setting voice to: ${config.voice_id}`);
       setTimeout(() => {
         if (novaProcess && novaProcess.stdin.writable) {
-          const voiceConfig = JSON.stringify({ 
-            type: "set_voice", 
-            voice_id: config.voice_id 
-          }) + "\n";
+          const voiceConfig =
+            JSON.stringify({
+              type: "set_voice",
+              voice_id: config.voice_id,
+            }) + "\n";
           novaProcess.stdin.write(voiceConfig);
-          console.log(`💬 Voice configuration sent to Nova: ${config.voice_id}`);
+          console.log(
+            `💬 Voice configuration sent to Nova: ${config.voice_id}`
+          );
         } else {
-          console.error("❌ Cannot send voice config - Nova process not writable");
+          console.error(
+            "❌ Cannot send voice config - Nova process not writable"
+          );
         }
       }, 500); // Short delay to ensure process is ready
     }
@@ -272,7 +326,16 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 443;
+
+// Add error handling for server startup
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+// Start the server with proper error handling
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Socket server running on port ${PORT}`);
+  console.log(`Server type: ${server instanceof https.Server ? "HTTPS" : "HTTP"}`);
+  console.log(`Health check available at: ${server instanceof https.Server ? "https" : "http"}://localhost:${PORT}/health`);
 });

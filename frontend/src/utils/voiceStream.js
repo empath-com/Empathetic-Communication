@@ -7,9 +7,12 @@ let processor;
 let input;
 let globalStream;
 let novaStarted = false;
+let analyser;
+let dataArray;
+let animationId;
 let novaStartListenerAttached = false;
 
-export function startSpokenLLM(voice_id = "matthew") {
+export function startSpokenLLM(voice_id = "matthew", setLoading) {
   if (novaStarted) {
     console.warn("🔁 Nova Sonic is already started.");
     return;
@@ -49,9 +52,11 @@ export function startSpokenLLM(voice_id = "matthew") {
 
           input.connect(processor);
           processor.connect(audioContext.destination);
+          setLoading(false);
           console.log("🎤 Microphone connected and streaming");
         })
         .catch((err) => {
+          setLoading(false);
           console.error("🎤 Microphone access denied:", err);
         });
     }, 500);
@@ -250,6 +255,20 @@ function playBufferedAudio() {
     audio.src = URL.createObjectURL(wavBlob);
     audio.volume = 1.0; // Ensure volume is at maximum
 
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaElementSource(audio);
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048; // High resolution for smooth waveform
+    const bufferLength = analyser.fftSize;
+    dataArray = new Uint8Array(bufferLength);
+
+    source.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    // Start smooth line waveform
+    startWaveformVisualizer(bufferLength);
+
     // Store the current buffer for potential reuse
     const currentBuffer = [...audioBuffer];
     // Clear the buffer for new incoming chunks
@@ -291,5 +310,48 @@ function playBufferedAudio() {
     console.error("🔊 Audio buffer processing failed:", error);
     isPlaying = false;
     audioBuffer = []; // Clear the buffer on error
+  }
+
+  function startWaveformVisualizer(bufferLength) {
+    const canvas = document.getElementById("audio-visualizer");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0, 180, 255, 0.8)";
+
+    function draw() {
+      animationId = requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(dataArray);
+
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.beginPath();
+
+      const sliceWidth = WIDTH / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0; // Normalize [0, 255] -> [0.0, 2.0]
+        const y = (v * HEIGHT) / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      ctx.lineTo(WIDTH, HEIGHT / 2);
+      ctx.stroke();
+    }
+
+    draw();
   }
 }

@@ -891,6 +891,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   return (
     <div className="flex flex-row h-screen">
       {/* Sidebar */}
+
+      {/* Voice overlay - no z-index unless needed */}
+
+      {/* Loading screen - always rendered last and above everything */}
+
       <div
         className="flex flex-col bg-[#99DFB2] h-full"
         style={{ width: sidebarWidth }}
@@ -1064,11 +1069,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 stopSpokenLLM();
                 setIsRecording(false);
                 setShowVoiceOverlay(false);
+                setLoading(false);
               } else {
                 setShowVoiceOverlay(true);
                 const voice_id = "lennart";
-                startSpokenLLM(voice_id);
+                startSpokenLLM(voice_id, setLoading);
                 setIsRecording(true);
+                setLoading(true);
               }
             }}
             className={`ml-2 mr-2 transition duration-200 focus:outline-none hover:outline-none ${
@@ -1180,28 +1187,53 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           </Button>
         </DialogActions>
       </Dialog>
-      {showVoiceOverlay && (
-        <div className="fixed animate-fade inset-0 bg-white z-50 flex items-end justify-center pb-8">
-          <audio ref={audioRef} hidden />
-          <NovaVisualizer audio={audioRef.current} />
-          <button
-            onClick={() => {
-              stopSpokenLLM();
-              setIsRecording(false);
-              setShowVoiceOverlay(false);
-            }}
-            className="animate-fade-slide-up focus:outline-none border-none bg-[#f3f3f3] rounded-full shadow-md w-16 h-16 flex items-center justify-center hover:bg-[#e7e7e7] transition-colors duration-200"
-          >
-            <CloseIcon
-              style={{
-                fontSize: 28,
-                color: "#333",
-              }}
-            />
-          </button>
+      {/* Loading screen - always rendered last and above everything */}
+      {/* 🔒 LOADING SCREEN (lower z-index) */}
+      {loading && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 z-[2000] flex flex-col items-center justify-center"
+          style={{ pointerEvents: "auto" }}
+        >
+          <l-mirage size="60" speed="2.5" color="white" />
+          <p className="text-white mt-4 font-semibold text-lg">
+            Starting conversation...
+          </p>
         </div>
       )}
-    </div> //
+
+      {/* 🛑 CLOSE BUTTON (highest z-index, AFTER loading JSX) */}
+      {showVoiceOverlay && (
+        <button
+          onClick={() => {
+            stopSpokenLLM();
+            setIsRecording(false);
+            setShowVoiceOverlay(false);
+            setLoading(false);
+          }}
+          className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[3000] bg-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg hover:bg-gray-200 transition"
+        >
+          <CloseIcon style={{ fontSize: 28, color: "#333" }} />
+        </button>
+      )}
+
+      {showVoiceOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/10 backdrop-blur-md border border-white/20">
+          <canvas
+            id="audio-visualizer"
+            width={window.innerWidth}
+            height={window.innerHeight}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              pointerEvents: "none",
+              zIndex: 1000,
+              opacity: 0.8,
+            }}
+          ></canvas>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -5,20 +5,36 @@ WORKDIR /app
 # Install Python and pip
 RUN apk add --no-cache python3 py3-pip
 
-# Copy and install Node.js dependencies
+# Install Node.js dependencies
 COPY package.json ./
 RUN npm install
 
-# Copy Nova Sonic files
+# Copy Python files and install requirements
 COPY *.py ./
 COPY requirements.txt ./
 RUN pip3 install --break-system-packages -r requirements.txt
 
+# Copy certs for HTTPS
+COPY certs /etc/certs
+# Ensure proper permissions for certificates and ownership
+RUN chmod 600 /etc/certs/server.key && \
+    chmod 644 /etc/certs/server.crt && \
+    ls -la /etc/certs
+
 # Copy server files
-COPY server.js nova_sonic.py nova_boto3.py ./
+COPY server.js ./
 
 ENV AWS_DEFAULT_REGION=us-east-1
 
-EXPOSE 3000
+# Listen on HTTPS port
+EXPOSE 443
 
-CMD ["npm", "start"]
+# Add container health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-check-certificate -qO- https://localhost:443/health || exit 1
+
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
+# Launch your HTTPS + WebSocket server
+CMD ["node", "server.js"]
