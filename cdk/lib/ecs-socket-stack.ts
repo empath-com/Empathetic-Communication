@@ -6,6 +6,8 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as certificatemanager from "aws-cdk-lib/aws-certificatemanager";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { VpcStack } from "./vpc-stack";
 
 export class EcsSocketStack extends Stack {
@@ -24,6 +26,9 @@ export class EcsSocketStack extends Stack {
 
     // ECS cluster
     const cluster = new ecs.Cluster(this, "SocketCluster", { vpc });
+
+    // IAM certificate
+    // const certificate = elbv2.ListenerCertificate.fromArn();
 
     // Create task role with Bedrock permissions
     const taskRole = new iam.Role(this, "SocketTaskRole", {
@@ -67,6 +72,27 @@ export class EcsSocketStack extends Stack {
       },
     });
 
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:LivekitSSLCertArn-*`,
+        ],
+      })
+    );
+
+    const secret = secretsmanager.Secret.fromSecretCompleteArn(
+      this,
+      "LivekitCertSecret",
+      "arn:aws:secretsmanager:us-east-1:574643567854:secret:LivekitSSLCertArn-hGy5Sx"
+    );
+
+    const certificate = certificatemanager.Certificate.fromCertificateArn(
+      this,
+      "ImportedSSLCert",
+      secret.secretValue.unsafeUnwrap()
+    );
+
     // Enable execute command on cluster
     cluster.addCapacity("DefaultAutoScalingGroup", {
       instanceType: ec2.InstanceType.of(
@@ -87,8 +113,9 @@ export class EcsSocketStack extends Stack {
           cpu: 512,
           memoryLimitMiB: 1024,
           desiredCount: 1,
-          listenerPort: 80,
-          protocol: elbv2.ApplicationProtocol.HTTP,
+          listenerPort: 443,
+          certificate: certificate,
+          protocol: elbv2.ApplicationProtocol.HTTPS,
           taskImageOptions: {
             image: ecs.ContainerImage.fromAsset("./socket-server"),
             containerPort: 3000,
@@ -111,7 +138,7 @@ export class EcsSocketStack extends Stack {
     fargateService.targetGroup.setAttribute("stickiness.enabled", "true");
     fargateService.targetGroup.setAttribute("stickiness.type", "lb_cookie");
 
-    this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
+    this.socketUrl = `https://${fargateService.loadBalancer.loadBalancerDnsName}`;
 
     // Export the socket URL
     new cdk.CfnOutput(this, "SocketUrl", {
