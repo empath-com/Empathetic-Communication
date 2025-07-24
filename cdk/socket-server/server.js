@@ -16,14 +16,14 @@ try {
   // Check if certificates exist
   const keyPath = "/etc/certs/server.key";
   const certPath = "/etc/certs/server.crt";
-  
+
   if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     console.log("Certificate files found!");
-    
+
     // Read certificate files
     const key = fs.readFileSync(keyPath);
     const cert = fs.readFileSync(certPath);
-    
+
     // Create HTTPS server
     server = https.createServer(
       {
@@ -57,14 +57,14 @@ app.get("/health", (req, res) => {
   // Check if we can properly serve requests
   const serverOk = server ? true : false;
   const socketOk = io ? true : false;
-  
+
   // Return detailed health status
-  res.json({ 
+  res.json({
     status: "healthy",
     server_type: server instanceof https.Server ? "HTTPS" : "HTTP",
     server_ok: serverOk,
     socket_ok: socketOk,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -329,13 +329,19 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 443;
 
 // Add error handling for server startup
-server.on('error', (err) => {
-  console.error('Server error:', err);
+server.on("error", (err) => {
+  console.error("Server error:", err);
 });
 
 // Start the server with proper error handling
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Socket server running on port ${PORT}`);
-  console.log(`Server type: ${server instanceof https.Server ? "HTTPS" : "HTTP"}`);
-  console.log(`Health check available at: ${server instanceof https.Server ? "https" : "http"}://localhost:${PORT}/health`);
+  console.log(
+    `Server type: ${server instanceof https.Server ? "HTTPS" : "HTTP"}`
+  );
+  console.log(
+    `Health check available at: ${
+      server instanceof https.Server ? "https" : "http"
+    }://localhost:${PORT}/health`
+  );
 });
