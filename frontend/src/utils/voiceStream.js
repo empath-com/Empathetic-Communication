@@ -169,22 +169,23 @@ export function initWaveform(canvasId) {
   draw();
 }
 
-// Expose a playAudio function for StudentChat.jsx to consume raw base64 chunks
 export function playAudio(data) {
   if (!audioContext) return;
   try {
-    // Decode base64 to Int16 PCM
+    // decode base64 → Uint8Array of 16‑bit PCM bytes
     const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
     const samples = new Int16Array(bytes.buffer);
-    // Create an AudioBuffer at 24kHz sample rate
+
+    // build an AudioBuffer at 24kHz
     const buffer = audioContext.createBuffer(1, samples.length, 24000);
-    const channel = buffer.getChannelData(0);
+    const ch = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) {
-      channel[i] = samples[i] / 0x8000;
+      ch[i] = samples[i] / 0x8000;
     }
-    // Schedule playback
+
+    // schedule it
     scheduleBuffer(buffer);
-  } catch (e) {
-    console.error("🔊 playAudio failed:", e);
+  } catch (err) {
+    console.error("🔊 playAudio error:", err);
   }
 }
