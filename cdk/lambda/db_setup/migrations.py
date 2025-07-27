@@ -136,6 +136,36 @@ def get_update_feedback_table_sql():
     END $$;
     """
 
+def get_patient_voice_column_sql():
+    """SQL for adding patient_voice column to patients table with default 'tiffany'."""
+    return """
+    DO $$
+    BEGIN
+        -- 1) If the column doesn't exist, add it with DEFAULT 'tiffany'
+        IF NOT EXISTS (
+            SELECT 1
+              FROM information_schema.columns
+             WHERE table_name = 'patients'
+               AND column_name = 'voice_id'
+        ) THEN
+            ALTER TABLE patients
+                ADD COLUMN voice_id varchar DEFAULT 'tiffany';
+        END IF;
+
+        -- 2) For any existing rows where voice_id IS NULL, set it to 'tiffany'
+        UPDATE patients
+           SET voice_id = 'tiffany'
+         WHERE voice_id IS NULL;
+
+        -- 3) Ensure the default remains 'tiffany' for future inserts
+        ALTER TABLE patients
+            ALTER COLUMN voice_id
+            SET DEFAULT 'tiffany';
+    END
+    $$;
+    """
+
+
 def get_all_migrations():
     """Return a dictionary of all migrations in order they should be applied"""
     # Initialize with the core schema if not already initialized
@@ -147,6 +177,7 @@ def get_all_migrations():
         register_migration("add_feedback_table", get_feedback_table_sql())
         register_migration("add_empathy_flag", get_empathy_flag_sql())
         register_migration("update_feedback_table", get_update_feedback_table_sql())
+        register_migration("add_patient_voice_column", get_patient_voice_column_sql())
         # Add more migrations as needed
     
     # Create a new ordered dictionary with version numbers
