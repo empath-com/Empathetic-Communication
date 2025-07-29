@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "data-ingestion"
+version = "0.1.0"
+description = "Data ingestion service for empathetic communication"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+boto3 = "*"
+botocore = "*"
+langchain = "*"
+langchain-aws = "*"
+langchain-core = "*"
+langchain-experimental = "*"
+langchain-postgres = "*"
+python-dotenv = "*"
+sqlalchemy = "*"
+Pillow = "*"
+PyMuPDF = "1.24.10"
+psycopg = {extras = ["binary", "pool"], version = "*"}
+psycopg2-binary = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
