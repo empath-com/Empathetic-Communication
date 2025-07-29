@@ -95,7 +95,6 @@ def get_student_query(raw_query: str) -> str:
     str: The formatted query string ready for further processing.
     """
     student_query = f"""
-    user
     {raw_query}
     
     """
@@ -113,7 +112,6 @@ def get_initial_student_query(patient_name: str) -> str:
     str: The formatted initial query string for the student.
     """
     student_query = f"""
-    user
     Greet me and then ask me a question related to the patient: {patient_name}. 
     """
     return student_query
@@ -157,22 +155,36 @@ def get_response(
         empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
         
         if empathy_evaluation:
-            empathy_score = empathy_evaluation.get('empathy_score', 'unknown')
+            # Calculate overall empathy score as average of all dimensions
+            pt_score = empathy_evaluation.get('perspective_taking', 3)
+            er_score = empathy_evaluation.get('emotional_resonance', 3)
+            ack_score = empathy_evaluation.get('acknowledgment', 3)
+            lang_score = empathy_evaluation.get('language_communication', 3)
+            cognitive_score = empathy_evaluation.get('cognitive_empathy', 3)
+            affective_score = empathy_evaluation.get('affective_empathy', 3)
+            
+            # Calculate average and round to nearest whole number
+            overall_score = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
+            
             realism_flag = empathy_evaluation.get('realism_flag', 'unknown')
             feedback = empathy_evaluation.get('feedback', '')
             
             # Use markdown formatting with star ratings and icons
             empathy_feedback = f"**Empathy Coach:**\n\n"
             
-            # Add star rating based on empathy score
-            if empathy_score == "bad":
-                stars = ""
-            elif empathy_score == "ok":
-                stars = "⭐"
-            elif empathy_score == "good":
-                stars = "⭐⭐"
+            # Add star rating based on calculated overall score
+            if overall_score == 1:
+                stars = "⭐ (1/5)"
+            elif overall_score == 2:
+                stars = "⭐⭐ (2/5)"
+            elif overall_score == 3:
+                stars = "⭐⭐⭐ (3/5)"
+            elif overall_score == 4:
+                stars = "⭐⭐⭐⭐ (4/5)"
+            elif overall_score == 5:
+                stars = "⭐⭐⭐⭐⭐ (5/5)"
             else:
-                stars = "⭐⭐⭐"
+                stars = "⭐⭐⭐ (3/5)"  # Default fallback
                 
             # Add icon for realism
             if realism_flag == "unrealistic":
@@ -180,12 +192,65 @@ def get_response(
             else:
                 realism_icon = "✅"
                 
-            empathy_feedback += f"Your empathy score is {empathy_score} {stars}\n"
-            empathy_feedback += f"Your response is {realism_flag} {realism_icon}\n"
+            # Display overall score and breakdown
+            overall_level = get_empathy_level_name(overall_score)
+            empathy_feedback += f"**Overall Empathy Score:** {overall_level} {stars}\n\n"
             
-            # Add detailed feedback with reasoning
+            # Display individual category scores
+            empathy_feedback += f"**Category Breakdown:**\n"
+            
+            # Perspective-Taking
+            pt_score = empathy_evaluation.get('perspective_taking', 3)
+            pt_level = get_empathy_level_name(pt_score)
+            pt_stars = "⭐" * pt_score + f" ({pt_score}/5)"
+            empathy_feedback += f"• Perspective-Taking: {pt_level} {pt_stars}\n"
+            
+            # Emotional Resonance
+            er_score = empathy_evaluation.get('emotional_resonance', 3)
+            er_level = get_empathy_level_name(er_score)
+            er_stars = "⭐" * er_score + f" ({er_score}/5)"
+            empathy_feedback += f"• Emotional Resonance/Compassionate Care: {er_level} {er_stars}\n"
+            
+            # Acknowledgment
+            ack_score = empathy_evaluation.get('acknowledgment', 3)
+            ack_level = get_empathy_level_name(ack_score)
+            ack_stars = "⭐" * ack_score + f" ({ack_score}/5)"
+            empathy_feedback += f"• Acknowledgment of Patient's Experience: {ack_level} {ack_stars}\n"
+            
+            # Language & Communication
+            lang_score = empathy_evaluation.get('language_communication', 3)
+            lang_level = get_empathy_level_name(lang_score)
+            lang_stars = "⭐" * lang_score + f" ({lang_score}/5)"
+            empathy_feedback += f"• Language & Communication: {lang_level} {lang_stars}\n\n"
+            
+            # Add Cognitive vs Affective Empathy breakdown (already calculated above)
+            cognitive_level = get_empathy_level_name(cognitive_score)
+            affective_level = get_empathy_level_name(affective_score)
+            cognitive_stars = "⭐" * cognitive_score + f" ({cognitive_score}/5)"
+            affective_stars = "⭐" * affective_score + f" ({affective_score}/5)"
+            
+            empathy_feedback += f"**Empathy Type Analysis:**\n"
+            empathy_feedback += f"• Cognitive Empathy (Understanding): {cognitive_level} {cognitive_stars}\n"
+            empathy_feedback += f"• Affective Empathy (Feeling): {affective_level} {affective_stars}\n\n"
+            
+            empathy_feedback += f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\n\n"
+            
+            # Add LLM-as-a-Judge reasoning and detailed feedback
+            judge_reasoning = empathy_evaluation.get('judge_reasoning', {})
+            if judge_reasoning:
+                empathy_feedback += f"**Coach Assessment:**\n"
+                if 'overall_assessment' in judge_reasoning:
+                    # Convert third-person to second-person and soften tone
+                    assessment = judge_reasoning['overall_assessment']
+                    assessment = assessment.replace("The student's response", "Your response")
+                    assessment = assessment.replace("The student", "You")
+                    assessment = assessment.replace("demonstrates", "show")
+                    assessment = assessment.replace("fails to", "could better")
+                    assessment = assessment.replace("lacks", "would benefit from more")
+                    empathy_feedback += f"{assessment}\n\n"
+            
             if feedback:
-                if isinstance(feedback, dict):  # Structured feedback from Nova Pro
+                if isinstance(feedback, dict):  # Structured feedback from LLM Judge
                     # Add strengths
                     if 'strengths' in feedback and feedback['strengths']:
                         empathy_feedback += f"**Strengths:**\n"
@@ -200,7 +265,7 @@ def get_response(
                             empathy_feedback += f"• {area}\n"
                         empathy_feedback += "\n"
                     
-                    # Add why realistic/unrealistic
+                    # Add why realistic/unrealistic with judge reasoning
                     if 'why_realistic' in feedback and feedback['why_realistic']:
                         empathy_feedback += f"**Your response is {realism_flag} because:** {feedback['why_realistic']}\n\n"
                     elif 'why_unrealistic' in feedback and feedback['why_unrealistic']:
@@ -208,14 +273,14 @@ def get_response(
                     
                     # Add improvement suggestions
                     if 'improvement_suggestions' in feedback and feedback['improvement_suggestions']:
-                        empathy_feedback += f"**Improvement suggestions:**\n"
+                        empathy_feedback += f"**Coach Recommendations:**\n"
                         for suggestion in feedback['improvement_suggestions']:
                             empathy_feedback += f"• {suggestion}\n"
                         empathy_feedback += "\n"
                     
                     # Add alternative phrasing
                     if 'alternative_phrasing' in feedback and feedback['alternative_phrasing']:
-                        empathy_feedback += f"**Try this approach:** *{feedback['alternative_phrasing']}*\n\n"
+                        empathy_feedback += f"**Coach-Recommended Approach:** *{feedback['alternative_phrasing']}*\n\n"
                         
                 elif isinstance(feedback, str) and len(feedback) > 10:  # Simple string feedback
                     empathy_feedback += f"**Feedback:** {feedback}\n"
@@ -224,7 +289,7 @@ def get_response(
             else:
                 empathy_feedback += "**Feedback:** System temporarily unavailable.\n"
                 
-            empathy_feedback += "---\n\n**Patient Response:**\n"
+            empathy_feedback += "---\n\n" # Clean separator between feedback and AI response
     
     completion_string = """
                 Once I, the pharmacy student, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -292,6 +357,13 @@ def get_response(
     if empathy_evaluation:
         result["empathy_evaluation"] = empathy_evaluation
     
+    # Save student message with empathy evaluation to PostgreSQL
+    if query.strip() and "Greet me" not in query:
+        save_message_to_db(session_id, True, query, empathy_evaluation)
+    
+    # Save AI response to PostgreSQL
+    save_message_to_db(session_id, False, result["llm_output"], None)
+    
     return result
 
 def generate_response(conversational_rag_chain: object, query: str, session_id: str) -> str:
@@ -315,6 +387,54 @@ def generate_response(conversational_rag_chain: object, query: str, session_id: 
         },  # constructs a key "session_id" in `store`.
     )["answer"]
 
+def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
+    """
+    Save message with empathy evaluation to PostgreSQL messages table.
+    """
+    try:
+        import psycopg2
+        import json
+        import os
+        import boto3
+        
+        # Get database credentials
+        secrets_client = boto3.client('secretsmanager')
+        db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+        rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+        
+        if not db_secret_name or not rds_endpoint:
+            logger.warning("Database credentials not available for message storage")
+            return
+            
+        secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+        secret = json.loads(secret_response['SecretString'])
+        
+        # Connect to database
+        conn = psycopg2.connect(
+            host=rds_endpoint,
+            port=secret['port'],
+            database=secret['dbname'],
+            user=secret['username'],
+            password=secret['password']
+        )
+        
+        cursor = conn.cursor()
+        
+        # Insert message with empathy evaluation
+        cursor.execute(
+            'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
+            (session_id, student_sent, message_content, json.dumps(empathy_evaluation) if empathy_evaluation else None)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Message saved to database with empathy evaluation: {bool(empathy_evaluation)}")
+        
+    except Exception as e:
+        logger.error(f"Error saving message to database: {e}")
+
 def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = "") -> dict:
     """
     Processes the response from the LLM to determine if proper diagnosis has been achieved.
@@ -329,17 +449,20 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
     flag indicating whether proper diagnosis has been achieved.
     """
 
-    completion_sentence = " Congratulations! You have provided the proper diagnosis for me, the patient I am pretending to be! Please try other mock patients to continue your diagnosis skills! :)"
+    completion_sentence = " Thank you for your assessment. You have correctly identified my condition. You may continue practicing with other patients to further develop your clinical and communication skills."
+    
+    # Add Patient Response header to the AI response, but not as part of empathy feedback
+    patient_response_header = "**Patient Response:**\n"
 
     if not llm_completion:
         return dict(
-            llm_output=empathy_feedback + response,
+            llm_output=response,
             llm_verdict=False
         )
     
     elif "PROPER DIAGNOSIS ACHIEVED" not in response:
         return dict(
-            llm_output=empathy_feedback + response,
+            llm_output=response,
             llm_verdict=False
         )
     
@@ -353,12 +476,12 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
                 
                 if sentences[i-1][-1] == '?':
                     return dict(
-                        llm_output=empathy_feedback + llm_response,
+                        llm_output=llm_response,
                         llm_verdict=False
                     )
                 else:
                     return dict(
-                        llm_output=empathy_feedback + llm_response + completion_sentence,
+                        llm_output=llm_response + completion_sentence,
                         llm_verdict=True
                     )
 
@@ -381,9 +504,20 @@ def split_into_sentences(paragraph: str) -> list[str]:
     sentences = re.split(sentence_endings, paragraph)
     return sentences
 
+def get_empathy_level_name(score: int) -> str:
+    """Convert numeric empathy score to descriptive name."""
+    level_names = {
+        1: "Novice",
+        2: "Advanced Beginner", 
+        3: "Competent",
+        4: "Proficient",
+        5: "Extending"
+    }
+    return level_names.get(score, "Competent")
+
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
-    Evaluate empathy score and realism of student response.
+    LLM-as-a-Judge empathy evaluation using structured scoring methodology.
     
     Args:
     student_response (str): The student's response to evaluate
@@ -391,44 +525,96 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     bedrock_client: Bedrock client for Nova Pro
     
     Returns:
-    dict: Contains empathy_score, realism_flag, and feedback
+    dict: Contains empathy_score, realism_flag, and feedback with justifications
     """
 
     evaluation_prompt = f"""
-    You are an expert healthcare communication coach. Evaluate this pharmacy student's response.
+    You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
 
+    **EVALUATION CONTEXT:**
     Patient Context: {patient_context}
     Student Response: {student_response}
 
-    Evaluate the response for:
-    1. **Empathy Score**: bad, ok, good, or great
-       - Great: Deep understanding, validates emotions, highly supportive
-       - Good: Acknowledges concerns, shows care and understanding
-       - Ok: Basic acknowledgment but lacks emotional connection
-       - Bad: Dismissive, insensitive, or lacks empathy
+    **JUDGE INSTRUCTIONS:**
+    As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
+    1. A score (1-5 scale)
+    2. Clear justification for the score
+    3. Specific evidence from the student's response
+    4. Actionable improvement recommendations
+    
+    IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
 
-    2. **Realism Assessment**: realistic or unrealistic
-       - Unrealistic: False reassurances, impossible promises, dismissing serious symptoms, medical inaccuracies
-       - Realistic: Medically appropriate, honest, evidence-based responses
+    **SCORING CRITERIA:**
 
-    3. **Detailed Feedback**: Provide comprehensive, situation-specific feedback that includes:
-       - What the student did well (strengths)
-       - Specific areas for improvement based on THIS patient scenario
-       - WHY the response is realistic/unrealistic (specific to this situation)
-       - Alternative phrasing suggestion with example tailored to THIS patient's condition and concerns
-       - If unrealistic, explain the specific harm or consequences for THIS patient scenario
+    **Perspective-Taking (1-5):**
+    • 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
+    • 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
+    • 3-Competent: Shows awareness of patient's perspective with minor gaps
+    • 2-Advanced Beginner: Limited attempt to understand patient's perspective
+    • 1-Novice: Little or no effort to consider patient's viewpoint
 
-    Respond in JSON format:
+    **Emotional Resonance/Compassionate Care (1-5):**
+    • 5-Extending: Exceptional warmth, deeply attuned to emotional needs
+    • 4-Proficient: Genuine concern and sensitivity, warm and respectful
+    • 3-Competent: Expresses concern with slightly less empathetic tone
+    • 2-Advanced Beginner: Some emotional awareness but lacks warmth
+    • 1-Novice: Emotionally flat or dismissive response
+
+    **Acknowledgment of Patient's Experience (1-5):**
+    • 5-Extending: Deeply validates and honors patient's experience
+    • 4-Proficient: Clearly validates feelings in patient-centered way
+    • 3-Competent: Attempts validation with minor omissions
+    • 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
+    • 1-Novice: Ignores or invalidates patient's feelings
+
+    **Language & Communication (1-5):**
+    • 5-Extending: Masterful therapeutic communication, perfectly tailored
+    • 4-Proficient: Patient-friendly, non-judgmental, inclusive language
+    • 3-Competent: Mostly clear and respectful, minor improvements needed
+    • 2-Advanced Beginner: Some unclear/technical language, minor judgmental tone
+    • 1-Novice: Overly technical, dismissive, or insensitive language
+
+    **Cognitive Empathy (Understanding) (1-5):**
+    Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
+    Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
+
+    **Affective Empathy (Feeling) (1-5):**
+    Focus: Recognizing and responding to patient's emotions, providing emotional support
+    Evaluate: How well does the response show emotional attunement and comfort?
+
+    **Realism Assessment:**
+    • Realistic: Medically appropriate, honest, evidence-based responses
+    • Unrealistic: False reassurances, impossible promises, medical inaccuracies
+
+    **JUDGE OUTPUT FORMAT:**
+    Provide structured evaluation with detailed justifications for each score.
+
     {{
-        "empathy_score": "bad|ok|good|great",
+        "empathy_score": <integer 1-5>,
+        "perspective_taking": <integer 1-5>,
+        "emotional_resonance": <integer 1-5>,
+        "acknowledgment": <integer 1-5>,
+        "language_communication": <integer 1-5>,
+        "cognitive_empathy": <integer 1-5>,
+        "affective_empathy": <integer 1-5>,
         "realism_flag": "realistic|unrealistic",
+        "judge_reasoning": {{
+            "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
+            "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
+            "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
+            "language_justification": "Detailed explanation for language score with specific evidence",
+            "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
+            "affective_empathy_justification": "Detailed explanation for affective empathy score",
+            "realism_justification": "Detailed explanation for realism assessment",
+            "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
+        }},
         "feedback": {{
-            "strengths": ["List what the student did well"],
-            "areas_for_improvement": ["List specific areas to improve"],
-            "why_realistic": "Explain why response is realistic (if realistic)",
-            "why_unrealistic": "Explain why response is unrealistic (if unrealistic)",
-            "improvement_suggestions": ["List specific suggestions for improvement"],
-            "alternative_phrasing": "Provide better phrasing example tailored to this patient scenario"
+            "strengths": ["Specific strengths with evidence from response"],
+            "areas_for_improvement": ["Specific areas needing improvement with examples"],
+            "why_realistic": "Judge explanation for realistic assessment (if applicable)",
+            "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
+            "improvement_suggestions": ["Actionable, specific improvement recommendations"],
+            "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
         }}
     }}
     """
@@ -440,7 +626,7 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         }],
         "inferenceConfig": {
             "temperature": 0.1,
-            "maxTokens": 500
+            "maxTokens": 1200
         }
     }
     
@@ -456,24 +642,58 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         logger.info(f"LLM RESPONSE: {result}")
         response_text = result["output"]["message"]["content"][0]["text"]
         
-        # Clean response text and parse JSON
+        # Extract and clean JSON from response
         try:
-            evaluation = json.loads(response_text.strip())
-            return evaluation
+            # Try to find JSON in the response
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end > json_start:
+                json_text = response_text[json_start:json_end]
+                evaluation = json.loads(json_text)
+                
+                # Add judge metadata
+                evaluation["evaluation_method"] = "LLM-as-a-Judge"
+                evaluation["judge_model"] = bedrock_client["model_id"]
+                return evaluation
+            else:
+                raise json.JSONDecodeError("No JSON found", response_text, 0)
+                
         except json.JSONDecodeError:
             # Fallback if Nova Pro doesn't return valid JSON
             logger.warning(f"Invalid JSON from Nova Pro: {response_text}")
             return {
-                "empathy_score": "ok",
+                "empathy_score": 3,
+                "perspective_taking": 3,
+                "emotional_resonance": 3,
+                "acknowledgment": 3,
+                "language_communication": 3,
+                "cognitive_empathy": 3,
+                "affective_empathy": 3,
                 "realism_flag": "realistic",
-                "feedback": "System error - unable to parse evaluation. Please try again."
+                "evaluation_method": "LLM-as-a-Judge",
+                "judge_model": bedrock_client["model_id"],
+                "feedback": {
+                    "strengths": ["Response received but could not be evaluated"],
+                    "areas_for_improvement": ["System temporarily unavailable"],
+                    "improvement_suggestions": ["Please try again"],
+                    "alternative_phrasing": "System evaluation unavailable"
+                }
             }
         
     except Exception as e:
         logger.error(f"Error evaluating empathy: {e}")
         return {
-            "empathy_score": "ok",
+            "empathy_score": 3,
+            "perspective_taking": 3,
+            "emotional_resonance": 3,
+            "acknowledgment": 3,
+            "language_communication": 3,
+            "cognitive_empathy": 3,
+            "affective_empathy": 3,
             "realism_flag": "realistic",
+            "evaluation_method": "LLM-as-a-Judge",
+            "judge_model": bedrock_client["model_id"],
             "feedback": "System error - unable to evaluate. Please try again."
         }
 

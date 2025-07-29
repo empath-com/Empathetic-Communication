@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AccountBoxIcon from "@mui/icons-material/AccountBox";
 import { FaTrashAlt } from "react-icons/fa"; 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -6,6 +6,37 @@ import { dracula } from "react-syntax-highlighter/dist/cjs/styles/prism";
 
 const StudentMessage = ({ message, isMostRecent, onDelete, hasAiMessageAfter }) => {
   const [isHovered, setIsHovered] = useState(false);
+
+  // Process the message to remove duplicated content
+  const processedMessage = useMemo(() => {
+    if (!message) return "";
+    
+    // Check if the message starts with "user "
+    if (message.trim().startsWith("user ")) {
+      return message.trim().substring(5).trim();
+    }
+    
+    // Check for duplicated content
+    const lines = message.split('\n');
+    const uniqueLines = [];
+    const seenLines = new Set();
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      // Skip empty lines or very short lines
+      if (trimmedLine.length < 5) {
+        uniqueLines.push(line);
+        continue;
+      }
+      
+      if (!seenLines.has(trimmedLine)) {
+        seenLines.add(trimmedLine);
+        uniqueLines.push(line);
+      }
+    }
+    
+    return uniqueLines.join('\n');
+  }, [message]);
 
   const renderCodeBlock = (code, language) => {
     return (
@@ -34,7 +65,7 @@ const StudentMessage = ({ message, isMostRecent, onDelete, hasAiMessageAfter }) 
           className="ml-4 mr-2 p-4 bg-gray-100 text-black rounded-xl shadow-md text-left"
           style={{ maxWidth: "60vw", wordWrap: "break-word" }}
         >
-          {message.split("```").map((part, index) => {
+          {processedMessage.split("```").map((part, index) => {
             if (index % 2 === 1) {
               const [language, ...codeLines] = part.split("\n");
               const code = codeLines.join("\n");

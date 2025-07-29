@@ -1218,6 +1218,14 @@ exports.handler = async (event) => {
           });
         }
         break;
+      case "GET /student/empathy_summary":
+        // Import the studentEmpathySummary handler
+        const studentEmpathySummary = require('./studentEmpathySummary');
+        // Call the handler and return its response
+        const empathySummaryResponse = await studentEmpathySummary(event, sqlConnection);
+        response.statusCode = empathySummaryResponse.statusCode;
+        response.body = empathySummaryResponse.body;
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

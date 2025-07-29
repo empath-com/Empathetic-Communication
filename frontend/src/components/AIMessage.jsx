@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import PropTypes from "prop-types";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/cjs/styles/prism";
@@ -35,6 +35,42 @@ const MarkdownRender = ({ content }) => {
 };
 
 const AIMessage = ({ message, profilePicture, name = "AI" }) => {
+  // Process the message to remove duplicated content
+  const processedMessage = useMemo(() => {
+    // Check if the message contains duplicated text
+    if (!message) return "";
+    
+    // Split by "Patient Response:" if it exists multiple times
+    const parts = message.split("**Patient Response:**");
+    if (parts.length > 1) {
+      // Keep the empathy feedback (if any) and the last patient response
+      const empathyFeedback = parts[0];
+      const lastResponse = parts[parts.length - 1];
+      return empathyFeedback + "**Patient Response:**" + lastResponse;
+    }
+    
+    // Check for other types of duplications
+    const lines = message.split('\n');
+    const uniqueLines = [];
+    const seenLines = new Set();
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      // Skip empty lines or very short lines (likely not duplicates)
+      if (trimmedLine.length < 5) {
+        uniqueLines.push(line);
+        continue;
+      }
+      
+      if (!seenLines.has(trimmedLine)) {
+        seenLines.add(trimmedLine);
+        uniqueLines.push(line);
+      }
+    }
+    
+    return uniqueLines.join('\n');
+  }, [message]);
+  
   return (
     <div className="ml-16 mb-6 mr-16">
       <div className="flex flex-row flex-start">
@@ -59,7 +95,7 @@ const AIMessage = ({ message, profilePicture, name = "AI" }) => {
             whiteSpace: "pre-wrap",
           }}
         >
-          <MarkdownRender content={message} />
+          <MarkdownRender content={processedMessage} />
         </div>
       </div>
     </div>

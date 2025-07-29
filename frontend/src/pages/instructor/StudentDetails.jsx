@@ -34,13 +34,23 @@ const handleBackClick = () => {
 };
 
 // Formatting messages for PDF export
-const formatMessagesForPDF = (messages, studentName, patientName) =>
-  messages
+const formatMessagesForPDF = (messages, studentName, patientName) => {
+  // Simple deduplication by content
+  const seen = new Set();
+  const uniqueMessages = messages.filter(msg => {
+    const key = msg.message_content.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  
+  return uniqueMessages
     .map(
       (msg) =>
         `${msg.student_sent ? `${studentName} (Student)` : `${patientName} (LLM)`}: ${msg.message_content.trim()}`
     )
     .join("\n");
+};
 
 const formatNotesForPDF = (notes) =>
   `Notes: ${notes || "No notes taken."}`;
@@ -59,7 +69,16 @@ const formatMessages = (messages, studentName, patientName) => {
       .replace(/\//g, "-");
   };
 
-  const groupedMessages = messages.reduce((acc, message) => {
+  // Simple deduplication by content
+  const seen = new Set();
+  const uniqueMessages = messages.filter(message => {
+    const key = message.message_content.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  
+  const groupedMessages = uniqueMessages.reduce((acc, message) => {
     const date = formatDate(message.time_sent);
     if (!acc[date]) {
       acc[date] = [];
@@ -92,7 +111,7 @@ const formatMessages = (messages, studentName, patientName) => {
         </Box>
       ))}
     </Box>
-  ));
+  ))
 };
 
 // Helper function to format notes consistently
@@ -122,6 +141,9 @@ const StudentDetails = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [completionStatuses, setCompletionStatuses] = useState([]);
+  const [empathySummary, setEmpathySummary] = useState(null);
+  const [empathyDialogOpen, setEmpathyDialogOpen] = useState(false);
+  const [patientIds, setPatientIds] = useState({});
   const sessionRefs = useRef({});
   
 
@@ -148,6 +170,32 @@ const StudentDetails = () => {
           const data = await response.json();
           setSessions(data);
           setTabs(Object.keys(data)); // Tabs will represent patient names
+          
+          // Fetch patient IDs directly
+          const patientsResponse = await fetch(
+            `${import.meta.env.VITE_API_ENDPOINT}instructor/view_patients?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: token,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+          
+          if (patientsResponse.ok) {
+            const patientsData = await patientsResponse.json();
+            console.log('Patients data:', patientsData);
+            
+            // Create mapping of patient names to IDs
+            const patientIdMap = {};
+            patientsData.forEach(patient => {
+              patientIdMap[patient.patient_name] = patient.patient_id;
+            });
+            
+            console.log('Patient ID mapping:', patientIdMap);
+            setPatientIds(patientIdMap);
+          }
         } else {
           console.error("Failed to fetch student data:", response.statusText);
         }
@@ -180,7 +228,7 @@ const StudentDetails = () => {
   
         if (response.ok) {
           const data = await response.json();
-          console.log(data);
+          console.log('Completion statuses:', data);
           setCompletionStatuses(data); // Set state with completion statuses
         } else {
           console.error("Failed to fetch completion statuses:", response.statusText);
@@ -232,6 +280,14 @@ const StudentDetails = () => {
 
   const handleDialogClose = () => {
     setDialogOpen(false);
+  };
+
+  const handleEmpathyDialogOpen = () => {
+    setEmpathyDialogOpen(true);
+  };
+
+  const handleEmpathyDialogClose = () => {
+    setEmpathyDialogOpen(false);
   };
 
   const handleUnenroll = async () => {
@@ -344,6 +400,58 @@ const StudentDetails = () => {
     pdf.save(`${studentId}-${session.sessionName}-notes.pdf`);
   };
 
+  const fetchEmpathySummary = async (patientId = null) => {
+    try {
+      console.log('fetchEmpathySummary called with patientId:', patientId);
+      console.log('Current patientIds mapping:', patientIds);
+      
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      
+      // Build the URL with optional patient_id parameter
+      let url = `${import.meta.env.VITE_API_ENDPOINT}instructor/empathy_summary?simulation_group_id=${encodeURIComponent(
+        simulation_group_id
+      )}&student_email=${encodeURIComponent(student.email)}`;
+      
+      // Add patient_id if provided
+      if (patientId) {
+        url += `&patient_id=${encodeURIComponent(patientId)}`;
+        console.log(`Fetching empathy summary for specific patient: ${patientId}`);
+      } else {
+        console.log('Fetching overall empathy summary');
+      }
+      
+      console.log('Empathy summary URL:', url);
+      
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Empathy summary response:', data);
+        setEmpathySummary(data);
+        handleEmpathyDialogOpen();
+      } else {
+        console.error('Failed to fetch empathy summary:', await response.text());
+        toast.error("Failed to fetch empathy summary", {
+          position: "top-center",
+          autoClose: 3000,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching empathy summary:", error);
+      toast.error("Error fetching empathy summary", {
+        position: "top-center",
+        autoClose: 3000,
+      });
+    }
+  };
+
   
   
 
@@ -371,14 +479,22 @@ const StudentDetails = () => {
             <Divider sx={{ my: 2 }} />
             <Typography variant="body1">Email: {student.email}</Typography>
 
-            <Button
-              onClick={handleDialogOpen}
-              sx={{ marginBottom: 6 }}
-              variant="contained"
-              color="primary"
-            >
-              Unenroll Student
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2, marginBottom: 6 }}>
+              <Button
+                onClick={handleDialogOpen}
+                variant="contained"
+                color="primary"
+              >
+                Unenroll Student
+              </Button>
+              <Button
+                onClick={() => fetchEmpathySummary()}
+                variant="contained"
+                color="primary"
+              >
+                View Overall Empathy Summary
+              </Button>
+            </Box>
 
             <Dialog
               open={dialogOpen}
@@ -406,6 +522,67 @@ const StudentDetails = () => {
                   color="error"
                 >
                   Confirm
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            <Dialog
+              open={empathyDialogOpen}
+              onClose={handleEmpathyDialogClose}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>
+                Empathy Coach Summary - {studentId}
+                {empathySummary?.patient_name && ` (Patient: ${empathySummary.patient_name})`}
+              </DialogTitle>
+              <DialogContent>
+                {empathySummary ? (
+                  <Box>
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Overall Empathy Performance
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="body1" sx={{ mb: 1 }}>
+                        <strong>Average Empathy Score:</strong> {empathySummary.overall_score}/5 
+                        ({empathySummary.overall_level})
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 1 }}>
+                        <strong>Total Interactions:</strong> {empathySummary.total_interactions}
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        <strong>Interactions with Empathy Feedback:</strong> {empathySummary.empathy_interactions}
+                      </Typography>
+                    </Box>
+                    
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Category Breakdown
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="body2">• Perspective-Taking: {empathySummary.avg_perspective_taking}/5</Typography>
+                      <Typography variant="body2">• Emotional Resonance: {empathySummary.avg_emotional_resonance}/5</Typography>
+                      <Typography variant="body2">• Acknowledgment: {empathySummary.avg_acknowledgment}/5</Typography>
+                      <Typography variant="body2">• Language & Communication: {empathySummary.avg_language_communication}/5</Typography>
+                      <Typography variant="body2">• Cognitive Empathy: {empathySummary.avg_cognitive_empathy}/5</Typography>
+                      <Typography variant="body2">• Affective Empathy: {empathySummary.avg_affective_empathy}/5</Typography>
+                    </Box>
+
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Empathy Summary
+                    </Typography>
+                    <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                        {empathySummary.summary}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                ) : (
+                  <Typography>Loading empathy summary...</Typography>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={handleEmpathyDialogClose} color="primary">
+                  Close
                 </Button>
               </DialogActions>
             </Dialog>
@@ -468,9 +645,39 @@ const StudentDetails = () => {
                       onClick={() => handleDownloadNotesPDF(session)}
                       variant="contained"
                       color="secondary"
-                      sx={{ mt: 2 }}
+                      sx={{ mt: 2, mr: 2 }}
                     >
                       Download Notes PDF
+                    </Button>
+                    
+                    {/* Button for viewing patient-specific empathy summary */}
+                    <Button
+                      onClick={() => {
+                        // Get the patient name for the current tab
+                        const patientName = tabs[activeTab];
+                        console.log(`Current tab: ${activeTab}, Patient name: ${patientName}`);
+                        console.log('All patient IDs:', patientIds);
+                        
+                        // Get the patient ID from our mapping
+                        const patientId = patientIds[patientName];
+                        console.log(`Looking up patient ID for ${patientName}: ${patientId}`);
+                        
+                        if (patientId) {
+                          console.log(`Calling fetchEmpathySummary with patientId: ${patientId}`);
+                          fetchEmpathySummary(patientId);
+                        } else {
+                          console.error(`Patient ID not found for ${patientName}`);
+                          toast.error("Could not find patient data", {
+                            position: "top-center",
+                            autoClose: 3000,
+                          });
+                        }
+                      }}
+                      variant="contained"
+                      color="primary"
+                      sx={{ mt: 2 }}
+                    >
+                      View Patient Empathy Summary
                     </Button>
                   </AccordionDetails>
                 </Accordion>

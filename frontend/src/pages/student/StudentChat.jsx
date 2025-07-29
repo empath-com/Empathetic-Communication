@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import DraggableNotes from "./DraggableNotes";
 import FilesPopout from "./FilesPopout";
+import EmpathyCoachSummary from "../../components/EmpathyCoachSummary";
 import { socket } from "../../utils/socket";
 import NovaVisualizer from "../../components/NovaVisualizer";
 import {
@@ -34,6 +35,7 @@ import InfoIcon from "@mui/icons-material/Info";
 import KeyIcon from "@mui/icons-material/Key";
 import MicIcon from "@mui/icons-material/Mic";
 import CloseIcon from "@mui/icons-material/Close";
+import PsychologyIcon from '@mui/icons-material/Psychology';
 
 import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 
@@ -86,6 +88,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
   const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
+  const [empathySummary, setEmpathySummary] = useState(null);
+  const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
+
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
   const [isInfoLoading, setIsInfoLoading] = useState(false);
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
@@ -155,12 +161,40 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   useEffect(() => {
     if (newMessage !== null) {
-      if (currentSessionId === session.session_id) {
-        setMessages((prevItems) => [...prevItems, newMessage]);
+      if (currentSessionId === session?.session_id) {
+        // Enhanced duplicate detection
+        const contentKey = `${newMessage.student_sent ? 'student' : 'ai'}-${newMessage.message_content.trim()}`;
+        
+        // Check if this message already exists in the messages array to prevent duplication
+        const messageExists = messages.some(msg => 
+          msg.message_id === newMessage.message_id || 
+          `${msg.student_sent ? 'student' : 'ai'}-${msg.message_content.trim()}` === contentKey
+        );
+        
+        if (!messageExists) {
+          // Only add the message if it doesn't already exist
+          setMessages((prevItems) => {
+            // Double-check for duplicates again to be extra safe
+            const isDuplicate = prevItems.some(msg => 
+              msg.message_id === newMessage.message_id || 
+              `${msg.student_sent ? 'student' : 'ai'}-${msg.message_content.trim()}` === contentKey
+            );
+            
+            if (isDuplicate) {
+              console.log('Prevented duplicate message from being added');
+              return prevItems;
+            } else {
+              console.log('Adding new message to chat');
+              return [...prevItems, newMessage];
+            }
+          });
+        } else {
+          console.log('Message already exists in chat, not adding duplicate');
+        }
       }
       setNewMessage(null);
     }
-  }, [session, newMessage, currentSessionId]);
+  }, [session, newMessage, currentSessionId, messages]);
 
   useEffect(() => {
     const fetchPatient = async () => {
@@ -409,6 +443,45 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+  // Function to fetch empathy summary
+  const fetchEmpathySummary = async () => {
+    if (!session || !patient) return;
+    
+    setIsEmpathyLoading(true);
+    try {
+      const authSession = await fetchAuthSession();
+      const { email } = await fetchUserAttributes();
+      const token = authSession.tokens.idToken;
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}student/empathy_summary?session_id=${encodeURIComponent(
+          session.session_id
+        )}&email=${encodeURIComponent(email)}&simulation_group_id=${encodeURIComponent(
+          group.simulation_group_id
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setEmpathySummary(data);
+        setIsEmpathyCoachOpen(true);
+      } else {
+        console.error("Failed to fetch empathy summary:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching empathy summary:", error);
+    } finally {
+      setIsEmpathyLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (patient) {
       fetchFiles();
@@ -417,6 +490,19 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   async function retrieveKnowledgeBase(message, sessionId) {
     try {
+      // Create a normalized version of the message for comparison
+      const normalizedMessage = message.trim();
+      
+      // First check if this message already exists to avoid creating duplicates
+      const messageExists = messages.some(msg => 
+        !msg.student_sent && msg.message_content.trim() === normalizedMessage
+      );
+      
+      if (messageExists) {
+        console.log("Message already exists in chat, skipping API call");
+        return;
+      }
+      
       const authSession = await fetchAuthSession();
       const { email } = await fetchUserAttributes();
       const token = authSession.tokens.idToken;
@@ -445,12 +531,27 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         if (response.ok) {
           const data = await response.json();
-          setNewMessage(data[0]);
+          
+          // Create a content key for the new message
+          const contentKey = `ai-${data[0].message_content.trim()}`;
+          
+          // Double-check if this message already exists in the messages array
+          const messageExists = messages.some(msg => 
+            msg.message_id === data[0].message_id || 
+            (!msg.student_sent && msg.message_content.trim() === data[0].message_content.trim())
+          );
+          
+          if (!messageExists) {
+            console.log("Adding new AI message to chat");
+            setNewMessage(data[0]);
+          } else {
+            console.log("Duplicate AI message detected, not adding to chat");
+          }
         } else {
-          console.error("Failed to retreive message:", response.statusText);
+          console.error("Failed to retrieve message:", response.statusText);
         }
       } catch (error) {
-        console.error("Error retreiving message:", error);
+        console.error("Error retrieving message:", error);
       }
     } catch (error) {
       console.error("Error retrieving message from knowledge base:", error);
@@ -890,9 +991,35 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       );
       if (response.ok) {
         const data = await response.json();
-        setMessages(data);
+        
+        // Enhanced duplicate detection and removal
+        const uniqueMessages = [];
+        const messageIds = new Set();
+        const messageContentMap = new Map(); // Track message content with sender type
+        
+        // First sort by time_sent to ensure we keep the earliest messages
+        const sortedData = [...data].sort((a, b) => {
+          return new Date(a.time_sent) - new Date(b.time_sent);
+        });
+        
+        sortedData.forEach(message => {
+          // Create a unique key combining content and sender type
+          const contentKey = `${message.student_sent ? 'student' : 'ai'}-${message.message_content.trim()}`;
+          
+          // Check for duplicates by ID or content
+          if (!messageIds.has(message.message_id) && !messageContentMap.has(contentKey)) {
+            messageIds.add(message.message_id);
+            messageContentMap.set(contentKey, true);
+            uniqueMessages.push(message);
+          } else {
+            console.log('Filtered out duplicate message:', message.message_content.substring(0, 30) + '...');
+          }
+        });
+        
+        console.log(`Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`);
+        setMessages(uniqueMessages);
       } else {
-        console.error("Failed to retreive session:", response.statusText);
+        console.error("Failed to retrieve session:", response.statusText);
         setMessages([]);
       }
     } catch (error) {
@@ -1011,25 +1138,46 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             ))}
         </div>
 
-        {/* Notes and Patient Info Buttons */}
-        <div className="mt-auto px-8 mb-8">
-          <button
-            onClick={() => setIsNotesOpen(true)}
-            className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300"
-          >
-            <div
-              className="flex items-center justify-center"
-              style={{
-                justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-              }}
+          {/* Notes, Empathy Coach, and Patient Info Buttons */}
+          <div className="mt-auto px-8 mb-8">
+            {/* Empathy Coach Button */}
+            <button
+              onClick={fetchEmpathySummary}
+              className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300 mb-4"
+              disabled={isEmpathyLoading}
             >
-              <DescriptionIcon
-                className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
-                style={{ color: "black" }}
-              />
-              {sidebarWidth > 160 && <span className="text-black">Notes</span>}
-            </div>
-          </button>
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
+                }}
+              >
+                <PsychologyIcon
+                  className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
+                  style={{ color: "black" }}
+                />
+                {sidebarWidth > 160 && <span className="text-black">Empathy Coach</span>}
+              </div>
+            </button>
+            
+            {/* Notes Button */}
+            <button
+              onClick={() => setIsNotesOpen(true)}
+              className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300"
+            >
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
+                }}
+              >
+                <DescriptionIcon
+                  className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
+                  style={{ color: "black" }}
+                />
+                {sidebarWidth > 160 && <span className="text-black">Notes</span>}
+              </div>
+            </button>
 
           <button
             onClick={() => setIsPatientInfoOpen(true)}
@@ -1161,18 +1309,17 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                   hasAiMessageAfter(
                     messages,
                     getMostRecentStudentMessageIndex()
-                  )
-                }
-              />
-            ) : (
-              <AIMessage
-                key={message.message_id}
-                message={message.message_content}
-                profilePicture={profilePicture} // Pass profile picture URL to AIMessage
-                name={patient?.patient_name} // Pass patient's name to display as fallback
-              />
-            )
-          )}
+                  )}
+                />
+              ) : (
+                <AIMessage
+                  key={uniqueKey}
+                  message={message.message_content}
+                  profilePicture={profilePicture} // Pass profile picture URL to AIMessage
+                  name={patient?.patient_name}      // Pass patient's name to display as fallback
+                />
+              );
+            })}
 
           {/* TypingIndicator: Pass patient's name */}
           {isAItyping && (
@@ -1202,12 +1349,37 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         isLoading={isInfoLoading}
       />
 
-      <FilesPopout
-        open={isAnswerKeyOpen}
-        onClose={() => setIsAnswerKeyOpen(false)}
-        files={answerKeyFiles}
-        isLoading={isAnswerLoading}
-      />
+        <FilesPopout
+          open={isAnswerKeyOpen}
+          onClose={() => setIsAnswerKeyOpen(false)}
+          files={answerKeyFiles}
+          isLoading={isAnswerLoading}
+        />
+        
+        {/* Empathy Coach Dialog */}
+        <Dialog 
+          open={isEmpathyCoachOpen} 
+          onClose={() => setIsEmpathyCoachOpen(false)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            Empathy Coach Summary
+            {patient && ` - ${patient.patient_name}`}
+          </DialogTitle>
+          <DialogContent>
+            {isEmpathyLoading ? (
+              <Typography>Loading empathy summary...</Typography>
+            ) : (
+              <EmpathyCoachSummary empathyData={empathySummary} />
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setIsEmpathyCoachOpen(false)} color="primary">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
 
       {/* Confirmation Dialog for Reveal */}
       <Dialog open={isConfirmOpen} onClose={handleCloseConfirm}>
