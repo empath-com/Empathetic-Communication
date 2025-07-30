@@ -1,0 +1,11 @@
+python-socketio[asyncio_client]
+websockets
+
+boto3>=1.34.0
+botocore>=1.34.0
+
+smithy-aws-core==0.0.3
+aws_sdk_bedrock_runtime==0.0.2
+
+langchain-community>=0.0.18
+langchain-core>=0.0.18

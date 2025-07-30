@@ -73,8 +73,10 @@ export class DBFlowStack extends Stack {
             iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3FullAccess")
         );
 
-        // Create an initializer Lambda function for the RDS instance, invoked only during deployment
+        // Create an initializer Lambda function for the RDS instance, invoked on every deployment
         const initializerLambda = new triggers.TriggerFunction(this, `${id}-triggerLambda`, {
+            // Force a new deployment by adding a timestamp
+            description: `Database initializer and migration runner - ${new Date().toISOString()}`,
             functionName: `${id}-initializerFunction`,
             runtime: lambda.Runtime.PYTHON_3_9,
             handler: "initializer.handler",
@@ -86,7 +88,7 @@ export class DBFlowStack extends Stack {
                 DB_PROXY: db.secretPathTableCreator.secretName, // Proxy Secret
             },
             vpc: db.dbInstance.vpc,
-            code: lambda.Code.fromAsset("lambda/initializer"),
+            code: lambda.Code.fromAsset("lambda/db_setup"),
             layers: [psycopgLambdaLayer],
             role: lambdaRole,
         });

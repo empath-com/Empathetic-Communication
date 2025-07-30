@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Test</title>
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+</head>
+<body>
+  <h1>WebSocket Test</h1>
+  <div>
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn">Disconnect</button>
+  </div>
+  <div id="status">Not connected</div>
+  <div id="messages"></div>
+  
+  <script>
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const status = document.getElementById('status');
+    const messages = document.getElementById('messages');
+    
+    let socket;
+    
+    function addMessage(msg) {
+      const div = document.createElement('div');
+      div.textContent = msg;
+      messages.appendChild(div);
+    }
+    
+    connectBtn.addEventListener('click', () => {
+      // Get socket URL from query parameter or use default
+      const urlParams = new URLSearchParams(window.location.search);
+      const socketUrl = urlParams.get('url') || 'http://localhost:3000';
+      
+      status.textContent = `Connecting to ${socketUrl}...`;
+      
+      socket = io(socketUrl, {
+        transports: ['websocket'],
+        reconnection: true
+      });
+      
+      socket.on('connect', () => {
+        status.textContent = 'Connected!';
+        addMessage('Socket connected');
+        
+        // Start Nova Sonic
+        socket.emit('start-nova-sonic', { voice_id: 'lennart' });
+      });
+      
+      socket.on('disconnect', () => {
+        status.textContent = 'Disconnected';
+        addMessage('Socket disconnected');
+      });
+      
+      socket.on('error', (error) => {
+        status.textContent = 'Error: ' + error;
+        addMessage('Socket error: ' + error);
+      });
+      
+      socket.on('nova-started', (data) => {
+        addMessage('Nova started: ' + JSON.stringify(data));
+      });
+      
+      socket.on('text-message', (data) => {
+        addMessage('Text message: ' + JSON.stringify(data));
+      });
+      
+      socket.on('audio-chunk', (data) => {
+        addMessage('Audio chunk received: ' + (data.data ? data.data.length : 0) + ' bytes');
+      });
+    });
+    
+    disconnectBtn.addEventListener('click', () => {
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+    });
+  </script>
+</body>
+</html>
