@@ -323,7 +323,7 @@ function playBufferedAudio() {
     const cx = WIDTH / 2;
     const cy = HEIGHT / 2;
     const baseRadius = Math.min(cx, cy) * 0.6; // inner circle
-    const amplitude = Math.min(cx, cy) * 0.4; // how far waveform swings
+    const amplitude = Math.min(cx, cy) * 1.5; // how far waveform swings
     const smoothing = 0.1; // lower = smoother
     const smoothed = new Float32Array(bufferLength).fill(baseRadius);
 
@@ -334,10 +334,27 @@ function playBufferedAudio() {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
       ctx.beginPath();
 
-      for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i] / 255; // [0..1]
-        const targetR = baseRadius + (v - 0.5) * amplitude * 2; // map to radius
-        smoothed[i] += (targetR - smoothed[i]) * smoothing; // exponential smoothing
+      const step = 8; // Use every 4th point for chunkier blobs
+      const avgRange = 4; // Range for smoothing nearby samples
+      const amplitude = 140; // Bump size
+      const smoothing = 0.1; // Smoothness factor
+
+      const getAveragedValue = (i, range = avgRange) => {
+        let sum = 0;
+        let count = 0;
+        for (let j = i - range; j <= i + range; j++) {
+          if (j >= 0 && j < bufferLength) {
+            sum += dataArray[j];
+            count++;
+          }
+        }
+        return sum / count;
+      };
+
+      for (let i = 0; i < bufferLength; i += step) {
+        const v = getAveragedValue(i) / 255; // Normalize [0,1]
+        const targetR = baseRadius + (v - 0.5) * amplitude * 2; // Radius change
+        smoothed[i] += (targetR - smoothed[i]) * smoothing; // Smooth transition
 
         const angle = (i / bufferLength) * Math.PI * 2;
         const x = cx + smoothed[i] * Math.cos(angle);
@@ -348,10 +365,8 @@ function playBufferedAudio() {
       }
 
       ctx.closePath();
-      // fill first
       ctx.fillStyle = "rgba(0, 255, 180, 0.8)";
       ctx.fill();
-      // then stroke
       ctx.strokeStyle = "rgba(0, 255, 180, 0.8)";
       ctx.lineWidth = 2;
       ctx.stroke();
