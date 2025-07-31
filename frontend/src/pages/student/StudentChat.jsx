@@ -1100,7 +1100,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       {/* Loading screen - always rendered last and above everything */}
 
       <div
-        className="flex flex-col bg-[#99DFB2] h-full"
+        className="flex flex-col bg-[#99DFB2] h-full z-50"
         style={{ width: sidebarWidth }}
       >
         {/* Back Button and Patient Name */}
@@ -1286,7 +1286,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             Sign Out
           </button>
         </div>
-
         <div className="flex items-center justify-between border bg-[#f2f0f0] border-[#8C8C8C] py-2 mb-12 mx-20">
           {/* Mic Button (left side) */}
           <button
@@ -1316,12 +1315,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           >
             <MicIcon style={{ fontSize: 24 }} />
           </button>
-
           {/* Textarea */}
           <textarea
             ref={textareaRef}
-            className="flex-grow text-sm outline-none bg-[#f2f0f0] text-black resize-none max-h-32"
-            style={{ maxHeight: "8rem" }}
+            className="flex-grow text-lg outline-none bg-[#f2f0f0] text-black resize-none max-h-32 pt-4 leading-tight"
+            style={{ maxHeight: "8rem", lineHeight: "1.5rem" }}
             maxLength={2096}
           />
 
@@ -1337,8 +1335,23 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             }}
           />
         </div>
-
-        <div className="flex-grow overflow-y-auto p-4 h-full flex flex-col">
+        {/* Fixed Header */}
+        <div
+          className="bg-[#F8F9FD] fixed top-0 right-0 py-4 px-6 z-10"
+          style={{
+            width: `calc(100vw - ${sidebarWidth}px)`,
+            left: `${sidebarWidth}px`,
+          }}
+        >
+          <h1 className="text-2xl font-bold text-center text-[#212427]">
+            AI Patient
+          </h1>
+        </div>
+        {/* Move messages below the fixed header by adding a top margin equal to header height */}
+        <div
+          className="flex-grow overflow-y-auto p-4 h-full flex flex-col"
+          style={{ marginTop: "88px" }}
+        >
           {messages.map((message, index) =>
             message.student_sent ? (
               <StudentMessage
@@ -1362,12 +1375,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               />
             )
           )}
-
           {/* TypingIndicator inside the message area */}
           {isAItyping && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
-
           <div ref={messagesEndRef} />
         </div>
       </div>
