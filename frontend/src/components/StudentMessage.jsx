@@ -54,36 +54,46 @@ const StudentMessage = ({ message, isMostRecent, onDelete, hasAiMessageAfter }) 
 
   return (
     <div
-      className="ml-16 mb-6 mr-16"
+      className="flex justify-end mb-4"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="flex flex-row-reverse items-start">
-        <AccountBoxIcon fontSize="large" style={{ color: "#99DFB2" }} />
-        {/* Chat Bubble for Bot Message */}
-        <div
-          className="ml-4 mr-2 p-4 bg-gray-100 text-black rounded-xl shadow-md text-left"
-          style={{ maxWidth: "60vw", wordWrap: "break-word" }}
-        >
-          {processedMessage.split("```").map((part, index) => {
-            if (index % 2 === 1) {
-              const [language, ...codeLines] = part.split("\n");
-              const code = codeLines.join("\n");
-              return renderCodeBlock(code, language.trim());
-            }
-            return part;
-          })}
-        </div>
+      <div className="flex items-end space-x-2 max-w-[70%]">
         {/* Conditional render for delete icon */}
         {isHovered && isMostRecent && hasAiMessageAfter && (
           <button
             onClick={onDelete}
-            className="ml-2 p-2 hover:bg-gray-200 rounded-full bg-[#F8F9FD]"
+            className="mb-2 p-2 hover:bg-red-100 rounded-lg transition-colors duration-200"
             title="Delete this message and all that follow"
           >
-            <FaTrashAlt fontSize="small" style={{ color: "red", background: '#F8F9FD' }} />
+            <FaTrashAlt className="w-4 h-4 text-red-500" />
           </button>
         )}
+        
+        {/* Chat Bubble for Student Message */}
+        <div className="bg-emerald-500 text-white rounded-2xl rounded-br-lg px-4 py-3 shadow-sm">
+          <div className="text-sm font-medium leading-relaxed">
+            {processedMessage.split("```").map((part, index) => {
+              if (index % 2 === 1) {
+                const [language, ...codeLines] = part.split("\n");
+                const code = codeLines.join("\n");
+                return (
+                  <div key={index} className="my-2">
+                    {renderCodeBlock(code, language.trim())}
+                  </div>
+                );
+              }
+              return <span key={index}>{part}</span>;
+            })}
+          </div>
+        </div>
+        
+        {/* User Avatar */}
+        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 mb-2">
+          <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
       </div>
     </div>
   );

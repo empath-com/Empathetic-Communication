@@ -45,11 +45,13 @@ mirage.register();
 
 // TypingIndicator using l-mirage
 const TypingIndicator = ({ patientName }) => (
-  <div className="flex items-center mx-20 mb-4">
-    <l-mirage size="60" speed="2.5" color="black"></l-mirage>
-    <span className="ml-2 text-black font-roboto">
-      {patientName ? `${titleCase(patientName)} is typing...` : "Typing..."}
-    </span>
+  <div className="flex items-center justify-center py-4">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-4 flex items-center space-x-3">
+      <l-mirage size="24" speed="2.5" color="#10b981"></l-mirage>
+      <span className="text-gray-600 font-medium text-sm">
+        {patientName ? `${titleCase(patientName)} is typing...` : "Typing..."}
+      </span>
+    </div>
   </div>
 );
 
@@ -835,9 +837,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             Authorization: authToken,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            message_content: "introduce yourself briefly",
-          }),
         });
       })
       .then((textResponse) => {
@@ -1092,172 +1091,137 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   }
 
   return (
-    <div className="flex flex-row h-screen">
-      {/* Sidebar */}
-
-      {/* Voice overlay - no z-index unless needed */}
-
-      {/* Loading screen - always rendered last and above everything */}
-
+    <div className="flex h-screen bg-gray-50">
+      {/* Modern Sidebar */}
       <div
-        className="flex flex-col bg-[#99DFB2] h-full z-50"
-        style={{ width: sidebarWidth }}
+        className="flex flex-col bg-white border-r border-gray-200 shadow-sm"
+        style={{
+          width: sidebarWidth,
+          minWidth: sidebarWidth <= 160 ? "120px" : "280px",
+        }}
       >
-        {/* Back Button and Patient Name */}
-        <div
-          className="flex flex-row mt-3 mb-3 ml-4"
-          style={{
-            justifyContent: sidebarWidth <= 160 ? "" : "flex-start",
-          }}
-        >
-          <img
-            onClick={() => handleBack()}
-            className="w-8 h-8 cursor-pointer"
-            src="./ArrowCircleDownRounded.png"
-            alt="back"
-          />
-          {sidebarWidth > 160 && (
-            <div className="ml-3 pt-0.5 text-black font-roboto font-bold text-lg">
-              {titleCase(patient.patient_name)} {/* Patient Name */}
-              <span className="text-sm ml-1">
-                ({patient.patient_gender}, {patient.patient_age}){" "}
-                {/* Patient Gender and Age */}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* New Chat Button */}
-        <button
-          onClick={() => {
-            if (!creatingSession) {
-              setCreatingSession(true);
-              handleNewChat();
-            }
-          }}
-          className="border border-black ml-8 mr-8 mt-0 mb-0 bg-transparent pt-1.5 pb-1.5 hover:scale-105 transition-transform duration-300"
-        >
-          <div
-            className="flex items-center gap-2"
-            style={{
-              justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-            }}
-          >
-            <div className="text-md font-roboto text-[#212427]">+</div>
+        {/* Header Section */}
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleBack}
+              className="p-2 rounded-lg bg-[rgba(0,0,0,0)] hover:bg-gray-100 transition-colors duration-200 flex-shrink-0"
+            >
+              <svg
+                className="w-5 h-5 text-gray-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
             {sidebarWidth > 160 && (
-              <div className="text-md font-roboto font-bold text-[#212427]">
-                New Chat
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold text-gray-900 truncate">
+                  {titleCase(patient.patient_name)}
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {patient.patient_gender}, {patient.patient_age} years old
+                </p>
               </div>
             )}
           </div>
-        </button>
+        </div>
 
-        <div className="my-4">
-          <hr className="border-t border-black" />
+        {/* New Chat Button */}
+        <div className="p-4">
+          <button
+            onClick={() => {
+              if (!creatingSession) {
+                setCreatingSession(true);
+                handleNewChat();
+              }
+            }}
+            disabled={creatingSession}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg py-3 px-4 font-medium transition-colors duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            {sidebarWidth > 160 && <span>New Chat</span>}
+          </button>
         </div>
 
         {/* Session List */}
-        <div className="flex-grow overflow-y-auto mt-2 mb-6">
-          {sessions
-            .slice()
-            .reverse()
-            .map((iSession) => (
-              <Session
-                key={iSession.session_id}
-                text={sidebarWidth > 160 ? iSession.session_name : ""}
-                session={iSession}
-                setSession={setSession}
-                deleteSession={handleDeleteSession}
-                selectedSession={session}
-                setMessages={setMessages}
-                setSessions={setSessions}
-                sessions={sessions}
-              />
-            ))}
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <div className="space-y-2">
+            {sessions
+              .slice()
+              .reverse()
+              .map((iSession) => (
+                <Session
+                  key={iSession.session_id}
+                  text={sidebarWidth > 160 ? iSession.session_name : ""}
+                  session={iSession}
+                  setSession={setSession}
+                  deleteSession={handleDeleteSession}
+                  selectedSession={session}
+                  setMessages={setMessages}
+                  setSessions={setSessions}
+                  sessions={sessions}
+                />
+              ))}
+          </div>
         </div>
 
-        {/* Notes, Empathy Coach, and Patient Info Buttons */}
-        <div className="mt-auto px-8 mb-8">
+        {/* Action Buttons */}
+        <div className="p-4 border-t border-gray-100 space-y-3">
           {/* Empathy Coach Button */}
           <button
             onClick={fetchEmpathySummary}
-            className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300 mb-4"
             disabled={isEmpathyLoading}
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <div
-              className="flex items-center justify-center"
-              style={{
-                justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-              }}
-            >
-              <PsychologyIcon
-                className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
-                style={{ color: "black" }}
-              />
-              {sidebarWidth > 160 && (
-                <span className="text-black">Empathy Coach</span>
-              )}
-            </div>
+            <PsychologyIcon className="w-5 h-5" />
+            {sidebarWidth > 160 && <span>Empathy Coach</span>}
           </button>
 
           {/* Notes Button */}
           <button
             onClick={() => setIsNotesOpen(true)}
-            className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
           >
-            <div
-              className="flex items-center justify-center"
-              style={{
-                justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-              }}
-            >
-              <DescriptionIcon
-                className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
-                style={{ color: "black" }}
-              />
-              {sidebarWidth > 160 && <span className="text-black">Notes</span>}
-            </div>
+            <DescriptionIcon className="w-5 h-5" />
+            {sidebarWidth > 160 && <span>Notes</span>}
           </button>
 
+          {/* Patient Info Button */}
           <button
             onClick={() => setIsPatientInfoOpen(true)}
-            className="border border-black bg-transparent pt-2 pb-2 w-full mt-4 hover:scale-105 transition-transform duration-300"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
           >
-            <div
-              className="flex items-center justify-center"
-              style={{
-                justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-              }}
-            >
-              <InfoIcon
-                className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
-                style={{ color: "black" }}
-              />
-              {sidebarWidth > 160 && (
-                <span className="text-black">Patient Info</span>
-              )}
-            </div>
+            <InfoIcon className="w-5 h-5" />
+            {sidebarWidth > 160 && <span>Patient Info</span>}
           </button>
 
-          {/* Reveal LLM Patient Diagnosis Button */}
+          {/* Reveal Answer Button */}
           <button
             onClick={handleOpenConfirm}
-            className="border border-black bg-transparent pt-2 pb-2 w-full mt-4 hover:scale-105 transition-transform duration-300"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
           >
-            <div
-              className="flex items-center justify-center"
-              style={{
-                justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
-              }}
-            >
-              <KeyIcon
-                className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
-                style={{ color: "black" }}
-              />
-              {sidebarWidth > 160 && (
-                <span className="text-black">Reveal Answer</span>
-              )}
-            </div>
+            <KeyIcon className="w-5 h-5" />
+            {sidebarWidth > 160 && <span>Reveal Answer</span>}
           </button>
         </div>
       </div>
@@ -1265,28 +1229,49 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       {/* Sidebar Resize Handle */}
       <div
         onMouseDown={startResizing}
-        style={{
-          width: "5px",
-          cursor: "col-resize",
-          height: "100vh",
-          backgroundColor: "#F8F9FD",
-          position: "relative",
-        }}
+        className="w-1 bg-gray-200 hover:bg-emerald-300 cursor-col-resize transition-colors duration-200"
       />
 
-      {/* Chat Area */}
-      <div className="flex flex-col-reverse flex-grow bg-[#F8F9FD]">
-        {/* Sign-Out Button */}
-        <div className="absolute top-4 right-4">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col bg-white">
+        {/* Top Bar */}
+        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+              <svg
+                className="w-6 h-6 text-emerald-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+            </div>
+            <div style={{ textAlign: "left" }} className="flex flex-col">
+              <h1 className="text-xl font-semibold text-gray-900">
+                AI Patient
+              </h1>
+              <p className="text-sm text-gray-500">
+                Interactive medical simulation
+              </p>
+            </div>
+          </div>
+
           <button
-            type="button"
-            className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition duration-200"
             onClick={handleSignOut}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200"
           >
             Sign Out
           </button>
         </div>
-        <div className="flex items-center justify-between border bg-[#f2f0f0] border-[#8C8C8C] py-2 mb-12 mx-20">
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Mic Button (left side) */}
           <button
             onClick={() => {
@@ -1352,6 +1337,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           className="flex-grow overflow-y-auto p-4 h-full flex flex-col"
           style={{ marginTop: "88px" }}
         >
+
           {messages.map((message, index) =>
             message.student_sent ? (
               <StudentMessage
@@ -1375,11 +1361,75 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               />
             )
           )}
-          {/* TypingIndicator inside the message area */}
+
+          {/* TypingIndicator */}
+
           {isAItyping && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
           <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t border-gray-200 p-6">
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl flex items-end space-x-3 p-4 focus-within:border-emerald-300 focus-within:bg-white transition-all duration-200">
+            {/* Voice Button */}
+            <button
+              onClick={() => {
+                if (isRecording) {
+                  stopSpokenLLM();
+                  setIsRecording(false);
+                  setShowVoiceOverlay(false);
+                  setLoading(false);
+                } else {
+                  setShowVoiceOverlay(true);
+                  fetchVoiceID().then((voice_id) => {
+                    console.log("Session ID:", currentSessionId);
+                    startSpokenLLM(voice_id, setLoading, currentSessionId);
+                  });
+                  setIsRecording(true);
+                  setLoading(true);
+                }
+              }}
+              className={`p-2 rounded-lg transition-colors duration-200 flex-shrink-0 ${
+                isRecording
+                  ? "bg-red-100 text-red-600 hover:bg-red-200"
+                  : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+              }`}
+            >
+              <MicIcon className="w-5 h-5" />
+            </button>
+
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              placeholder="Type your message..."
+              className="flex-1 bg-transparent text-gray-900 placeholder-gray-500 resize-none outline-none max-h-32 py-1"
+              style={{ maxHeight: "2.4rem" }}
+              maxLength={2096}
+            />
+
+            {/* Send Button */}
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || isAItyping || creatingSession}
+              className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors duration-200 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1407,96 +1457,188 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       />
 
       {/* Empathy Coach Dialog */}
-      {/* This dialog displays empathy evaluation summary and scores for student performance */}
-      {/* It shows metrics like perspective-taking, emotional resonance, and communication effectiveness */}
       <Dialog
         open={isEmpathyCoachOpen}
         onClose={() => setIsEmpathyCoachOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: "16px",
+            padding: "8px",
+          },
+        }}
       >
-        <DialogTitle>
+        <DialogTitle
+          sx={{
+            fontSize: "1.25rem",
+            fontWeight: 600,
+            color: "#111827",
+            borderBottom: "1px solid #f3f4f6",
+            pb: 2,
+          }}
+        >
           Empathy Coach Summary
           {patient && ` - ${patient.patient_name}`}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           {isEmpathyLoading ? (
-            <Typography>Loading empathy summary...</Typography>
+            <div className="flex items-center space-x-3 py-8">
+              <l-mirage size="32" speed="2.5" color="#10b981"></l-mirage>
+              <Typography className="text-gray-600">
+                Loading empathy summary...
+              </Typography>
+            </div>
           ) : (
             <EmpathyCoachSummary empathyData={empathySummary} />
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setIsEmpathyCoachOpen(false)} color="primary">
+        <DialogActions sx={{ p: 3, pt: 2 }}>
+          <Button
+            onClick={() => setIsEmpathyCoachOpen(false)}
+            sx={{
+              backgroundColor: "#f3f4f6",
+              color: "#374151",
+              "&:hover": {
+                backgroundColor: "#e5e7eb",
+              },
+              borderRadius: "8px",
+              textTransform: "none",
+              fontWeight: 500,
+            }}
+          >
             Close
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Confirmation Dialog for Reveal */}
-      <Dialog open={isConfirmOpen} onClose={handleCloseConfirm}>
-        <DialogTitle>Confirm Reveal</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+      <Dialog
+        open={isConfirmOpen}
+        onClose={handleCloseConfirm}
+        PaperProps={{
+          sx: {
+            borderRadius: "16px",
+            padding: "8px",
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            fontSize: "1.25rem",
+            fontWeight: 600,
+            color: "#111827",
+            borderBottom: "1px solid #f3f4f6",
+            pb: 2,
+          }}
+        >
+          Confirm Reveal
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: "#6b7280", lineHeight: 1.6 }}>
             Are you sure you want to reveal the Patient's Diagnosis? This action
             will show the entire answer.
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseConfirm} color="primary">
+        <DialogActions sx={{ p: 3, pt: 2, gap: 1 }}>
+          <Button
+            onClick={handleCloseConfirm}
+            sx={{
+              backgroundColor: "#f3f4f6",
+              color: "#374151",
+              "&:hover": {
+                backgroundColor: "#e5e7eb",
+              },
+              borderRadius: "8px",
+              textTransform: "none",
+              fontWeight: 500,
+            }}
+          >
             Cancel
           </Button>
-          <Button onClick={handleConfirmReveal} color="error">
+          <Button
+            onClick={handleConfirmReveal}
+            sx={{
+              backgroundColor: "#ef4444",
+              color: "white",
+              "&:hover": {
+                backgroundColor: "#dc2626",
+              },
+              borderRadius: "8px",
+              textTransform: "none",
+              fontWeight: 500,
+            }}
+          >
             Confirm
           </Button>
         </DialogActions>
       </Dialog>
-      {/* Loading screen - always rendered last and above everything */}
-      {/* 🔒 LOADING SCREEN (lower z-index) */}
+      {/* Loading screen - Modern design */}
       {loading && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-80 z-[2000] flex flex-col items-center justify-center"
-          style={{ pointerEvents: "auto" }}
-        >
-          <l-mirage size="60" speed="2.5" color="white" />
-          <p className="text-white mt-4 font-semibold text-lg">
-            Starting conversation...
-          </p>
+        <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm z-[2000] flex flex-col items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
+            <l-mirage size="48" speed="2.5" color="#10b981" />
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                Starting conversation...
+              </h3>
+              <p className="text-sm text-gray-500">Connecting to AI patient</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* 🛑 CLOSE BUTTON (highest z-index, AFTER loading JSX) */}
+      {/* Voice Overlay - Modern design */}
       {showVoiceOverlay && (
-        <button
-          onClick={() => {
-            stopSpokenLLM();
-            setIsRecording(false);
-            setShowVoiceOverlay(false);
-            setLoading(false);
-            setTimeout(() => getMessages(), 10);
-          }}
-          className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[3000] bg-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg hover:bg-gray-200 transition"
-        >
-          <CloseIcon style={{ fontSize: 28, color: "#333" }} />
-        </button>
-      )}
+        <>
+          <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
+            <div className="text-center">
+              <div className="w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <MicIcon className="w-16 h-16 text-emerald-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                Voice Mode Active
+              </h3>
+              <p className="text-gray-600 mb-8">
+                Speak naturally to interact with the AI patient
+              </p>
 
-      {showVoiceOverlay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(250,250,250,1)] backdrop-blur-md border border-white/20">
-          <canvas
-            id="audio-visualizer"
-            width={window.innerWidth}
-            height={window.innerHeight}
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              pointerEvents: "none",
-              zIndex: 1000,
-              opacity: 0.8,
+              {/* Animated voice waves */}
+              <div className="flex justify-center space-x-1 mb-8">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-emerald-500 rounded-full animate-pulse"
+                    style={{
+                      height: Math.random() * 30 + 20 + "px",
+                      animationDelay: i * 0.1 + "s",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <canvas
+              id="audio-visualizer"
+              width={window.innerWidth}
+              height={window.innerHeight}
+              className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
+            />
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={() => {
+              stopSpokenLLM();
+              setIsRecording(false);
+              setShowVoiceOverlay(false);
+              setLoading(false);
             }}
-          ></canvas>
-        </div>
+            className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[3000] bg-white hover:bg-gray-50 text-gray-700 rounded-full w-14 h-14 flex items-center justify-center shadow-lg border border-gray-200 transition-all duration-200"
+          >
+            <CloseIcon className="w-6 h-6" />
+          </button>
+        </>
       )}
     </div>
   );

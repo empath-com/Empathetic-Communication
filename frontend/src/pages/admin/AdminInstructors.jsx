@@ -185,58 +185,168 @@ export const AdminInstructors = () => {
   const handleCloseAdd = () => setOpenAddDialog(false);
 
   return (
-    <Box component="main" sx={{ flexGrow: 1, p: 2, marginTop: 0.5 }}>
+    <Box 
+      component="main" 
+      sx={{ 
+        flexGrow: 1, 
+        p: 3, 
+        marginTop: 0.5,
+        backgroundColor: "#f8fafc",
+        minHeight: "100vh",
+      }}
+    >
       <Toolbar />
       <Paper
         sx={{
           width: "100%",
           overflow: "hidden",
-          marginTop: 1,
-          borderRadius: 2,
-          p: 3,
+          marginTop: 2,
+          borderRadius: "16px",
+          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          p: 0,
           maxHeight: "85vh",
+          border: "1px solid #e5e7eb",
         }}
       >
         <Box
           sx={{
-            padding: 2,
+            padding: 4,
+            paddingBottom: 2,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            borderBottom: "1px solid #f3f4f6",
+            backgroundColor: "white",
           }}
         >
-          <Typography color="black" fontStyle="semibold" variant="h6">
+          <Typography 
+            sx={{
+              color: "#1f2937",
+              fontWeight: "700",
+              fontSize: "1.5rem",
+            }}
+          >
             Manage Instructors
           </Typography>
           <Button
             variant="contained"
-            color="primary"
             onClick={() => setOpenAddDialog(true)}
-            sx={{ fontSize: 14 }}
+            sx={{
+              borderRadius: "12px",
+              backgroundColor: "#10b981",
+              fontSize: "0.875rem",
+              fontWeight: "600",
+              textTransform: "none",
+              px: 3,
+              py: 1.5,
+              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+              transition: "all 0.2s ease-in-out",
+              "&:hover": {
+                backgroundColor: "#059669",
+                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                transform: "translateY(-1px)",
+              },
+              "&:active": {
+                transform: "translateY(0)",
+              },
+            }}
           >
             Add Instructor
           </Button>
         </Box>
-        <TableContainer sx={{ maxHeight: "70vh", overflowY: "auto" }}>
-          <TextField
-            label="Search by User"
-            variant="outlined"
-            value={searchQuery}
-            onChange={handleSearchChange}
-            sx={{ margin: 1, width: "90%" }}
-            InputProps={{ sx: { fontSize: 14 } }}
-            InputLabelProps={{ sx: { fontSize: 14 } }}
-          />
+        <TableContainer 
+          sx={{ 
+            maxHeight: "65vh", 
+            overflowY: "auto",
+            backgroundColor: "white",
+            "& .MuiTableCell-root": {
+              borderColor: "#f3f4f6",
+            },
+          }}
+        >
+          <Box sx={{ p: 3, paddingBottom: 2 }}>
+            <TextField
+              label="Search by User"
+              variant="outlined"
+              value={searchQuery}
+              onChange={handleSearchChange}
+              sx={{ 
+                width: "100%",
+                maxWidth: "400px",
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: "12px",
+                  backgroundColor: "#f9fafb",
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    backgroundColor: "#f3f4f6",
+                  },
+                  "&.Mui-focused": {
+                    backgroundColor: "white",
+                    boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                  },
+                  "& fieldset": {
+                    borderColor: "#e5e7eb",
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#10b981",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#10b981",
+                    borderWidth: "2px",
+                  },
+                },
+                "& .MuiInputLabel-root": {
+                  color: "#6b7280",
+                  fontSize: "0.875rem",
+                  "&.Mui-focused": {
+                    color: "#10b981",
+                  },
+                },
+                "& .MuiInputBase-input": {
+                  fontSize: "0.875rem",
+                },
+              }}
+            />
+          </Box>
           <Table aria-label="instructors table">
             {!loading ? (
               <>
                 <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ width: "30%", fontSize: 14 }}>
+                  <TableRow sx={{ backgroundColor: "#f9fafb" }}>
+                    <TableCell 
+                      sx={{ 
+                        width: "30%", 
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                        py: 2,
+                      }}
+                    >
                       First Name
                     </TableCell>
-                    <TableCell sx={{ fontSize: 14 }}>Last Name</TableCell>
-                    <TableCell sx={{ fontSize: 14 }}>Email</TableCell>
+                    <TableCell 
+                      sx={{ 
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                        py: 2,
+                      }}
+                    >
+                      Last Name
+                    </TableCell>
+                    <TableCell 
+                      sx={{ 
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                        py: 2,
+                      }}
+                    >
+                      Email
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>

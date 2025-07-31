@@ -86,38 +86,91 @@ function FilesPopout({ open, onClose, files, isLoading }) {
   const isImageFile = (fileType) => IMAGE_FILE_TYPES.includes(fileType);
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Patient Information Files</DialogTitle>
-      <DialogContent>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      fullWidth 
+      maxWidth="md"
+      PaperProps={{
+        sx: {
+          borderRadius: '16px',
+          padding: '8px'
+        }
+      }}
+    >
+      <DialogTitle sx={{ 
+        fontSize: '1.25rem', 
+        fontWeight: 600, 
+        color: '#111827',
+        borderBottom: '1px solid #f3f4f6',
+        pb: 2
+      }}>
+        Patient Information Files
+      </DialogTitle>
+      <DialogContent sx={{ pt: 3 }}>
         {isLoading ? (
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "200px" }}>
-            <l-hourglass size="40" bg-opacity="0.1" speed="1.75" color="black" />
+          <div className="flex justify-center items-center py-16">
+            <div className="flex flex-col items-center space-y-4">
+              <l-hourglass size="40" bg-opacity="0.1" speed="1.75" color="#10b981" />
+              <Typography className="text-gray-600">Loading files...</Typography>
+            </div>
           </div>
         ) : files.length === 0 ? (
-          <Typography>No patient information files available.</Typography>
+          <div className="flex justify-center items-center py-16">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <Typography className="text-gray-600">No patient information files available</Typography>
+            </div>
+          </div>
         ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell><strong>File Name</strong></TableCell>
-                  <TableCell><strong>Description</strong></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {files.map((file, index) => (
-                  <TableRow key={index} hover onClick={() => handleFileClick(file)} style={{ cursor: 'pointer' }}>
-                    <TableCell>{file.name}</TableCell>
-                    <TableCell>{file.metadata || "No description available"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <div className="space-y-2">
+            {files.map((file, index) => (
+              <div
+                key={index}
+                onClick={() => handleFileClick(file)}
+                className="p-4 border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 cursor-pointer transition-all duration-200 group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-gray-900 truncate group-hover:text-emerald-700">{file.name}</h4>
+                    <p className="text-sm text-gray-500 mt-1">{file.metadata || "No description available"}</p>
+                  </div>
+                  <div className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+      <DialogActions sx={{ p: 3, pt: 2 }}>
+        <Button 
+          onClick={onClose}
+          sx={{
+            backgroundColor: '#f3f4f6',
+            color: '#374151',
+            '&:hover': {
+              backgroundColor: '#e5e7eb'
+            },
+            borderRadius: '8px',
+            textTransform: 'none',
+            fontWeight: 500
+          }}
+        >
+          Close
+        </Button>
       </DialogActions>
 
       {selectedFile && (

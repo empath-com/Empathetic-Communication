@@ -54,10 +54,11 @@ const AdminSidebar = ({
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
             boxSizing: "border-box",
-            backgroundColor: "#99DFB2", // Apply the primary color
-            boxShadow: "none", // Remove shadow if causing darkening
-            transition: "width 0.2s ease", // Smooth transition for resizing
-            overflowX: "hidden", // Prevent horizontal scroll bar
+            backgroundColor: "white",
+            borderRight: "1px solid #e5e7eb",
+            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+            transition: "width 0.2s ease",
+            overflowX: "hidden",
           },
         }}
       >
@@ -84,6 +85,16 @@ const AdminSidebar = ({
                     display: "flex",
                     justifyContent: drawerWidth <= 160 ? "center" : "flex-start",
                     alignItems: "center",
+                    margin: "4px 8px",
+                    borderRadius: "12px",
+                    transition: "all 0.2s ease-in-out",
+                    "&:hover": {
+                      backgroundColor: "#f0fdf4",
+                      transform: "translateX(2px)",
+                    },
+                    "&:active": {
+                      backgroundColor: "#dcfce7",
+                    },
                   }}
                 >
                   <ListItemIcon
@@ -94,13 +105,25 @@ const AdminSidebar = ({
                       minWidth: 0,
                       marginRight: drawerWidth > 160 ? 2 : 0,
                       width: drawerWidth <= 160 ? "100%" : "auto",
+                      color: "#10b981",
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
-                  {drawerWidth > 160 && <ListItemText primary={item.text} />}
+                  {drawerWidth > 160 && (
+                    <ListItemText 
+                      primary={item.text} 
+                      sx={{
+                        "& .MuiListItemText-primary": {
+                          color: "#374151",
+                          fontWeight: "500",
+                          fontSize: "0.875rem",
+                        },
+                      }}
+                    />
+                  )}
                 </ListItem>
-                <Divider />
+                {index < 1 && <Divider sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }} />}
               </React.Fragment>
             ))}
           </List>
@@ -114,10 +137,18 @@ const AdminSidebar = ({
           width: "5px",
           cursor: "col-resize",
           height: "100vh",
-          backgroundColor: "transparent",
+          backgroundColor: "#10b981",
+          opacity: 0.3,
           position: "absolute",
           top: 0,
           left: drawerWidth,
+          transition: "opacity 0.2s ease-in-out",
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.opacity = 0.6;
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.opacity = 0.3;
         }}
       />
     </>

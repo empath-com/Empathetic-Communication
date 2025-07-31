@@ -146,81 +146,48 @@ function DraggableNotes({ onClose, sessionId }) {
     <div
       ref={noteRef}
       onMouseDown={handleMouseDown}
+      className="fixed bg-white border border-gray-200 rounded-2xl shadow-lg z-50"
       style={{
-        position: "absolute",
         top: `${position.y}px`,
         left: `${position.x}px`,
         width: `${dimensions.width}px`,
         height: `${dimensions.height}px`,
-        backgroundColor: "#fff",
-        border: "1px solid #ddd",
-        borderRadius: "10px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
         cursor: "grab",
-        zIndex: 1000,
       }}
     >
       {/* Header */}
-      <div
-        style={{
-          backgroundColor: "#989898",
-          padding: "8px 12px",
-          borderRadius: "10px 10px 0 0",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          color: "white",
-        }}
-      >
-        <span style={{ fontWeight: "bold" }}>Notes</span>
-        <HighlightOffIcon
+      <div className="bg-emerald-500 text-white px-4 py-3 rounded-t-2xl flex justify-between items-center">
+        <span className="font-semibold">Notes</span>
+        <button
           onClick={onClose}
-          style={{ cursor: "pointer", color: "white" }}
-        />
+          className="p-1 hover:bg-emerald-600 rounded-lg transition-colors duration-200"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       {/* Textarea */}
-      <div style={{ height: "calc(100% - 80px)", padding: "10px" }}>
+      <div className="p-4 h-full" style={{ height: "calc(100% - 120px)" }}>
         <textarea
-          style={{
-            width: "100%",
-            height: "100%",
-            padding: "10px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-            backgroundColor: "#f9f9f9",
-            color: "#333",
-            fontSize: "14px",
-            resize: "none",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "break-word",
-          }}
+          className="w-full h-full p-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           placeholder="Write your notes here..."
           value={noteContent}
           onChange={handleNoteChange}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              // Ensure pressing Enter creates a new line
-              e.stopPropagation(); // Stop event propagation if needed
+              e.stopPropagation();
             }
           }}
         />
       </div>
 
       {/* Save Button */}
-      <div style={{ padding: "5px 10px", textAlign: "right", marginTop: "5px", marginBottom: "10px" }}>
+      <div className="px-4 pb-4 text-right">
         <button
           onClick={handleSave}
-          style={{
-            backgroundColor: "#36bd78",
-            color: "white",
-            border: "none",
-            padding: "5px 10px",
-            fontSize: "12px",
-            borderRadius: "4px",
-            cursor: "pointer",
-            width: "80px",
-          }}
+          className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
         >
           Save
         </button>
@@ -229,17 +196,11 @@ function DraggableNotes({ onClose, sessionId }) {
       {/* Resizer Handle */}
       <div
         onMouseDown={handleResizeMouseDown}
+        className="absolute bottom-0 right-0 w-4 h-4 bg-gray-300 hover:bg-gray-400 cursor-nwse-resize rounded-bl-lg"
         style={{
-          width: "10px",
-          height: "10px",
-          backgroundColor: "#ccc",
-          position: "absolute",
-          right: "0",
-          bottom: "0",
-          cursor: "nwse-resize",
-          borderRadius: "0 0 10px 0",
+          borderRadius: "0 0 16px 0",
         }}
-      ></div>
+      />
 
       {/* Toast Container */}
       <ToastContainer

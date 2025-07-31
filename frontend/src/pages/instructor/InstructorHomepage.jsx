@@ -90,17 +90,24 @@ const GroupDetails = () => {
   };
 
   return (
-    <PageContainer>
-      <AppBar
-        position="fixed"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        elevation={1}
-      >
-        <InstructorHeader />
-      </AppBar>
-      <InstructorSidebar setSelectedComponent={setSelectedComponent} />
-      {renderComponent()}
-    </PageContainer>
+    <div style={{ backgroundColor: "#f8fafc", minHeight: "100vh" }}>
+      <PageContainer>
+        <AppBar
+          position="fixed"
+          sx={{ 
+            zIndex: (theme) => theme.zIndex.drawer + 1,
+            backgroundColor: "white",
+            color: "#1f2937",
+            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+          }}
+          elevation={0}
+        >
+          <InstructorHeader />
+        </AppBar>
+        <InstructorSidebar setSelectedComponent={setSelectedComponent} />
+        {renderComponent()}
+      </PageContainer>
+    </div>
   );
 };
 

@@ -119,42 +119,44 @@ const Session = ({
 
   return (
     <div
+      ref={sessionRef}
       onClick={handleSessionClick}
-      style={{
-        background: isSelected ? "#e1f0ec" : "#f2f9f7", // softer green tones
-        boxShadow: isSelected
-          ? "0px 4px 8px rgba(0, 0, 0, 0.1)"
-          : "0px 2px 4px rgba(0, 0, 0, 0.1)",
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-      }}
-      className={`cursor-pointer rounded-lg flex flex-row justify-between items-center my-2 mx-8 py-3 px-5 hover:transform hover:scale-105`}
+      className={`cursor-pointer rounded-lg flex items-center justify-between p-3 transition-all duration-200 group ${
+        isSelected
+          ? "bg-emerald-50 border-l-4 border-emerald-500 shadow-sm"
+          : "hover:bg-gray-50 border-l-4 border-transparent"
+      }`}
     >
       <div
         onDoubleClick={handleDoubleClick}
-        className="flex flex-row items-center justify-start gap-4"
+        className="flex items-center space-x-3 flex-1 min-w-0"
       >
-        <img src="/message.png" alt="message" className="w-4 h-4" />
+        <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
         {isEditing ? (
           <input
+            ref={inputRef}
             type="text"
             value={newSessionName}
             onChange={handleInputChange}
             onBlur={handleInputBlur}
             autoFocus
-            className="text-[#333333] font-light font-inter text-sm bg-transparent border-none outline-none"
+            className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-gray-900 min-w-0"
+            maxLength={20}
           />
         ) : (
-          <div className="text-[#333333] font-light font-inter text-sm">
-            {text}
+          <div className="text-sm font-medium text-gray-900 truncate">
+            {text || "New Chat"}
           </div>
         )}
       </div>
-      <div
+      <button
         onClick={handleDeleteClick}
-        className="cursor-pointer w-4 h-4 flex items-center justify-center ml-2"
+        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-100 transition-all duration-200 flex-shrink-0"
       >
-        <img src="/delete.png" alt="delete" className="w-4 h-4 opacity-70 hover:opacity-100" />
-      </div>
+        <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
     </div>
   );
 };

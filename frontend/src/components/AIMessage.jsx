@@ -72,30 +72,28 @@ const AIMessage = ({ message, profilePicture, name = "AI" }) => {
   }, [message]);
   
   return (
-    <div className="ml-16 mb-6 mr-16">
-      <div className="flex flex-row flex-start">
-        <Avatar
-          src={profilePicture || ""}
-          sx={{
-            width: 40,
-            height: 40,
-            backgroundColor: "#e0e0e0",
-            color: "#757575",
-            fontSize: "0.8rem",
-          }}
-        >
-          {!profilePicture && name.charAt(0).toUpperCase()} 
-        </Avatar>
-        <div
-          className="text-start ml-4 text-black"
-          style={{
-            maxWidth: "61vw",
-            width: "61vw",
-            wordWrap: "break-word",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          <MarkdownRender content={processedMessage} />
+    <div className="flex justify-start mb-4">
+      <div className="flex items-start space-x-3 max-w-[70%]">
+        {/* AI Avatar */}
+        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+          {profilePicture ? (
+            <img 
+              src={profilePicture} 
+              alt={name} 
+              className="w-8 h-8 rounded-full object-cover"
+            />
+          ) : (
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          )}
+        </div>
+        
+        {/* Chat Bubble for AI Message */}
+        <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-lg px-4 py-3 shadow-sm">
+          <div className="text-sm text-gray-900 leading-relaxed">
+            <MarkdownRender content={processedMessage} />
+          </div>
         </div>
       </div>
     </div>

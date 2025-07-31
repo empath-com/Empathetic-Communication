@@ -61,8 +61,9 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
             boxSizing: "border-box",
-            backgroundColor: "#99DFB2", 
-            boxShadow: "none",
+            backgroundColor: "white",
+            borderRight: "1px solid #e5e7eb",
+            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
             transition: "width 0.2s ease",
             overflowX: "hidden",
           },
@@ -90,6 +91,16 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
                     display: "flex",
                     justifyContent: drawerWidth <= 160 ? "center" : "flex-start",
                     alignItems: "center",
+                    margin: "4px 8px",
+                    borderRadius: "12px",
+                    transition: "all 0.2s ease-in-out",
+                    "&:hover": {
+                      backgroundColor: "#f0fdf4",
+                      transform: "translateX(2px)",
+                    },
+                    "&:active": {
+                      backgroundColor: "#dcfce7",
+                    },
                   }}
                 >
                   <ListItemIcon
@@ -100,13 +111,25 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
                       minWidth: 0,
                       marginRight: drawerWidth > 160 ? 2 : 0,
                       width: drawerWidth <= 160 ? "100%" : "auto",
+                      color: "#10b981",
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
-                  {drawerWidth > 160 && <ListItemText primary={item.text} />}
+                  {drawerWidth > 160 && (
+                    <ListItemText 
+                      primary={item.text} 
+                      sx={{
+                        "& .MuiListItemText-primary": {
+                          color: "#374151",
+                          fontWeight: "500",
+                          fontSize: "0.875rem",
+                        },
+                      }}
+                    />
+                  )}
                 </ListItem>
-                <Divider />
+                {index < 4 && <Divider sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }} />}
               </React.Fragment>
             ))}
           </List>

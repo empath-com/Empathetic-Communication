@@ -448,54 +448,87 @@ export const Login = () => {
   return (
     <ThemeProvider theme={theme}>
       <PageContainer>
-        <Grid container component="main" sx={{ height: "100vh" }}>
+        <Grid container component="main" sx={{ height: "100vh", bgcolor: "#f8fafc" }}>
           <CssBaseline />
           <Grid
             item
             xs={false}
             sm={3}
             md={5}
-            className="animatedGradient"
             sx={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: "20px",
+              padding: "40px",
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              position: "relative",
+              overflow: "hidden",
+              "&::before": {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "url('data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><defs><pattern id=\"grain\" width=\"100\" height=\"100\" patternUnits=\"userSpaceOnUse\"><circle cx=\"50\" cy=\"50\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/></pattern></defs><rect width=\"100\" height=\"100\" fill=\"url(%23grain)\"/></svg>') repeat",
+                pointerEvents: "none",
+              },
             }}
           >
 
 
-            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+            <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
               <img
                 src={heartbeatImage}
                 alt="Heartbeat"
                 className='heartbeat-image'
                 style={{
-                  maxWidth: '25%', // Ensure the image fits within the container
-                  display: 'block', // Make the image a block element
-                  height: 'auto', // Maintain aspect ratio
-                  margin: '0 auto', // Center the image horizontally
-                  animation: 'float 3s ease-in-out infinite', // Add the float animation
+                  maxWidth: '35%',
+                  display: 'block',
+                  height: 'auto',
+                  margin: '0 auto 20px',
+                  animation: 'float 3s ease-in-out infinite',
                 }}
               />
               <Typography
-                variant="h4"
+                variant="h3"
                 sx={{
-                  color: 'black',
-                  fontWeight: 'bold',
-                  fontSize: 'clamp(1rem, 2.5vw, 2.5rem)', // More aggressive scaling: shrinks to 1rem on small screens
-                  lineHeight: '1.2', // Slightly tighter line spacing for smaller windows
-                  marginTop: '10px',
+                  color: 'white',
+                  fontWeight: '700',
+                  fontSize: 'clamp(1.75rem, 3.5vw, 3rem)',
+                  lineHeight: '1.1',
+                  marginBottom: '12px',
                   textAlign: 'center',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.1)',
                 }}
               >
                 Welcome to
-                <br />
+              </Typography>
+              <Typography
+                variant="h4"
+                sx={{
+                  color: 'rgba(255,255,255,0.95)',
+                  fontWeight: '600',
+                  fontSize: 'clamp(1.25rem, 2.5vw, 2rem)',
+                  lineHeight: '1.2',
+                  marginBottom: '8px',
+                  textAlign: 'center',
+                }}
+              >
                 Virtual Care Interactions
-                <br />
+              </Typography>
+              <Typography
+                variant="h5"
+                sx={{
+                  color: 'rgba(255,255,255,0.9)',
+                  fontWeight: '500',
+                  fontSize: 'clamp(1rem, 2vw, 1.5rem)',
+                  lineHeight: '1.3',
+                  textAlign: 'center',
+                }}
+              >
                 Powered by AI
               </Typography>
-
             </div>
 
 
@@ -512,13 +545,14 @@ export const Login = () => {
                 xs={12}
                 sm={9}
                 md={7}
-                component={Paper}
-                square
                 sx={{
                   display: "flex",
                   justifyContent: "center",
                   alignItems: "center",
                   height: "100%",
+                  bgcolor: "white",
+                  borderRadius: { sm: "20px 0 0 20px" },
+                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
                 }}
               >
                 <Box
@@ -528,16 +562,27 @@ export const Login = () => {
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
+                    width: "100%",
+                    maxWidth: "400px",
                   }}
                 >
-                  <Typography component="h1" variant="h5">
+                  <Typography 
+                    component="h1" 
+                    variant="h4"
+                    sx={{
+                      color: "#1f2937",
+                      fontWeight: "700",
+                      marginBottom: "32px",
+                      fontSize: "1.875rem",
+                    }}
+                  >
                     Sign in
                   </Typography>
                   <Box
                     component="form"
                     noValidate
                     onSubmit={handleSignIn}
-                    sx={{ mt: 1 }}
+                    sx={{ mt: 1, width: "100%" }}
                   >
                     <TextField
                       margin="normal"
@@ -551,6 +596,37 @@ export const Login = () => {
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       inputProps={{ maxLength: 40 }}
+                      sx={{
+                        mb: 2,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: "12px",
+                          backgroundColor: "#f9fafb",
+                          transition: "all 0.2s ease-in-out",
+                          "&:hover": {
+                            backgroundColor: "#f3f4f6",
+                          },
+                          "&.Mui-focused": {
+                            backgroundColor: "white",
+                            boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                          },
+                          "& fieldset": {
+                            borderColor: "#e5e7eb",
+                          },
+                          "&:hover fieldset": {
+                            borderColor: "#10b981",
+                          },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#10b981",
+                            borderWidth: "2px",
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          color: "#6b7280",
+                          "&.Mui-focused": {
+                            color: "#10b981",
+                          },
+                        },
+                      }}
                     />
                     <TextField
                       margin="normal"
@@ -564,33 +640,102 @@ export const Login = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       inputProps={{ maxLength: 50 }}
+                      sx={{
+                        mb: 3,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: "12px",
+                          backgroundColor: "#f9fafb",
+                          transition: "all 0.2s ease-in-out",
+                          "&:hover": {
+                            backgroundColor: "#f3f4f6",
+                          },
+                          "&.Mui-focused": {
+                            backgroundColor: "white",
+                            boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                          },
+                          "& fieldset": {
+                            borderColor: "#e5e7eb",
+                          },
+                          "&:hover fieldset": {
+                            borderColor: "#10b981",
+                          },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#10b981",
+                            borderWidth: "2px",
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          color: "#6b7280",
+                          "&.Mui-focused": {
+                            color: "#10b981",
+                          },
+                        },
+                      }}
                     />
                     <Button
                       type="submit"
                       fullWidth
                       variant="contained"
-                      color="primary"
-                      sx={{ mt: 3, mb: 2 }}
+                      sx={{ 
+                        mt: 2, 
+                        mb: 3,
+                        py: 1.5,
+                        borderRadius: "12px",
+                        backgroundColor: "#10b981",
+                        fontSize: "1rem",
+                        fontWeight: "600",
+                        textTransform: "none",
+                        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                        transition: "all 0.2s ease-in-out",
+                        "&:hover": {
+                          backgroundColor: "#059669",
+                          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                          transform: "translateY(-1px)",
+                        },
+                        "&:active": {
+                          transform: "translateY(0)",
+                        },
+                      }}
                     >
                       Sign In
                     </Button>
-                    <Grid container>
+                    <Grid container spacing={2}>
                       <Grid item xs={6}>
                         <Link
                           href="#"
                           variant="body2"
                           onClick={() => setForgotPassword(true)}
+                          sx={{
+                            color: "#10b981",
+                            textDecoration: "none",
+                            fontWeight: "500",
+                            transition: "color 0.2s ease-in-out",
+                            "&:hover": {
+                              color: "#059669",
+                              textDecoration: "underline",
+                            },
+                          }}
                         >
                           Forgot password?
                         </Link>
                       </Grid>
-                      <Grid item xs={6}>
+                      <Grid item xs={6} sx={{ textAlign: "right" }}>
                         <Link
                           href="#"
                           variant="body2"
                           onClick={() => setNewSignUp(true)}
+                          sx={{
+                            color: "#10b981",
+                            textDecoration: "none",
+                            fontWeight: "500",
+                            transition: "color 0.2s ease-in-out",
+                            "&:hover": {
+                              color: "#059669",
+                              textDecoration: "underline",
+                            },
+                          }}
                         >
-                          {"Create your account"}
+                          Create your account
                         </Link>
                       </Grid>
                     </Grid>
@@ -604,13 +749,14 @@ export const Login = () => {
               xs={12}
               sm={9}
               md={7}
-              component={Paper}
-              square
               sx={{
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
                 height: "100%",
+                bgcolor: "white",
+                borderRadius: { sm: "20px 0 0 20px" },
+                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
               }}
             >
               <Box
@@ -620,13 +766,24 @@ export const Login = () => {
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
+                  width: "100%",
+                  maxWidth: "500px",
                 }}
               >
-                <Typography component="h1" variant="h5" paddingBottom={3}>
+                <Typography 
+                  component="h1" 
+                  variant="h4" 
+                  sx={{
+                    color: "#1f2937",
+                    fontWeight: "700",
+                    marginBottom: "32px",
+                    fontSize: "1.875rem",
+                  }}
+                >
                   Create your account
                 </Typography>
                 <Box sx={{ mt: 1, width: "100%" }}>
-                  <Grid container spacing={2}>
+                  <Grid container spacing={3}>
                     <Grid item xs={12} sm={6}>
                       <TextField
                         autoComplete="given-name"
@@ -639,6 +796,36 @@ export const Login = () => {
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
                         inputProps={{ maxLength: 30 }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#f9fafb",
+                            transition: "all 0.2s ease-in-out",
+                            "&:hover": {
+                              backgroundColor: "#f3f4f6",
+                            },
+                            "&.Mui-focused": {
+                              backgroundColor: "white",
+                              boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                            },
+                            "& fieldset": {
+                              borderColor: "#e5e7eb",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#10b981",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#10b981",
+                              borderWidth: "2px",
+                            },
+                          },
+                          "& .MuiInputLabel-root": {
+                            color: "#6b7280",
+                            "&.Mui-focused": {
+                              color: "#10b981",
+                            },
+                          },
+                        }}
                       />
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -652,6 +839,36 @@ export const Login = () => {
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
                         inputProps={{ maxLength: 30 }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#f9fafb",
+                            transition: "all 0.2s ease-in-out",
+                            "&:hover": {
+                              backgroundColor: "#f3f4f6",
+                            },
+                            "&.Mui-focused": {
+                              backgroundColor: "white",
+                              boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                            },
+                            "& fieldset": {
+                              borderColor: "#e5e7eb",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#10b981",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#10b981",
+                              borderWidth: "2px",
+                            },
+                          },
+                          "& .MuiInputLabel-root": {
+                            color: "#6b7280",
+                            "&.Mui-focused": {
+                              color: "#10b981",
+                            },
+                          },
+                        }}
                       />
                     </Grid>
                     <Grid item xs={12}>
@@ -665,6 +882,36 @@ export const Login = () => {
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         inputProps={{ maxLength: 40 }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#f9fafb",
+                            transition: "all 0.2s ease-in-out",
+                            "&:hover": {
+                              backgroundColor: "#f3f4f6",
+                            },
+                            "&.Mui-focused": {
+                              backgroundColor: "white",
+                              boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                            },
+                            "& fieldset": {
+                              borderColor: "#e5e7eb",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#10b981",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#10b981",
+                              borderWidth: "2px",
+                            },
+                          },
+                          "& .MuiInputLabel-root": {
+                            color: "#6b7280",
+                            "&.Mui-focused": {
+                              color: "#10b981",
+                            },
+                          },
+                        }}
                       />
                     </Grid>
                     <Grid item xs={12}>
@@ -679,6 +926,36 @@ export const Login = () => {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         inputProps={{ maxLength: 50 }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#f9fafb",
+                            transition: "all 0.2s ease-in-out",
+                            "&:hover": {
+                              backgroundColor: "#f3f4f6",
+                            },
+                            "&.Mui-focused": {
+                              backgroundColor: "white",
+                              boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                            },
+                            "& fieldset": {
+                              borderColor: "#e5e7eb",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#10b981",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#10b981",
+                              borderWidth: "2px",
+                            },
+                          },
+                          "& .MuiInputLabel-root": {
+                            color: "#6b7280",
+                            "&.Mui-focused": {
+                              color: "#10b981",
+                            },
+                          },
+                        }}
                       />
                     </Grid>
                     <Grid item xs={12}>
@@ -693,15 +970,53 @@ export const Login = () => {
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         inputProps={{ maxLength: 50 }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#f9fafb",
+                            transition: "all 0.2s ease-in-out",
+                            "&:hover": {
+                              backgroundColor: "#f3f4f6",
+                            },
+                            "&.Mui-focused": {
+                              backgroundColor: "white",
+                              boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                            },
+                            "& fieldset": {
+                              borderColor: "#e5e7eb",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#10b981",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#10b981",
+                              borderWidth: "2px",
+                            },
+                          },
+                          "& .MuiInputLabel-root": {
+                            color: "#6b7280",
+                            "&.Mui-focused": {
+                              color: "#10b981",
+                            },
+                          },
+                        }}
                       />
                     </Grid>
                   </Grid>
                   <Typography
                     variant="body2"
-                    color="textSecondary"
-                    align="center"
-                    paddingBottom={2}
-                    marginTop={2}
+                    sx={{
+                      color: "#6b7280",
+                      textAlign: "center",
+                      marginTop: "24px",
+                      marginBottom: "16px",
+                      padding: "16px",
+                      backgroundColor: "#f9fafb",
+                      borderRadius: "12px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: "0.875rem",
+                      lineHeight: "1.5",
+                    }}
                   >
                     Providing personal information is optional and entirely at your
                     discretion. You can use this app without sharing any personal
@@ -710,20 +1025,48 @@ export const Login = () => {
                   <Button
                     fullWidth
                     variant="contained"
-                    color="primary"
                     onClick={handleSignUp}
-                    sx={{ mt: 3, mb: 2 }}
+                    sx={{ 
+                      mt: 2, 
+                      mb: 3,
+                      py: 1.5,
+                      borderRadius: "12px",
+                      backgroundColor: "#10b981",
+                      fontSize: "1rem",
+                      fontWeight: "600",
+                      textTransform: "none",
+                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                      transition: "all 0.2s ease-in-out",
+                      "&:hover": {
+                        backgroundColor: "#059669",
+                        boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                        transform: "translateY(-1px)",
+                      },
+                      "&:active": {
+                        transform: "translateY(0)",
+                      },
+                    }}
                   >
                     Sign Up
                   </Button>
-                  <Grid container>
-                    <Grid item xs>
+                  <Grid container justifyContent="center">
+                    <Grid item>
                       <Link
                         href="#"
                         variant="body2"
                         onClick={() => setNewSignUp(false)}
+                        sx={{
+                          color: "#10b981",
+                          textDecoration: "none",
+                          fontWeight: "500",
+                          transition: "color 0.2s ease-in-out",
+                          "&:hover": {
+                            color: "#059669",
+                            textDecoration: "underline",
+                          },
+                        }}
                       >
-                        Already have an account? {"Sign in"}
+                        Already have an account? Sign in
                       </Link>
                     </Grid>
                   </Grid>
