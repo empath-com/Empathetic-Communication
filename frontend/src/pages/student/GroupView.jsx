@@ -143,7 +143,9 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
         const token = session.tokens.idToken;
 
         const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}student/get_completion_status?simulation_group_id=${encodeURIComponent(
+          `${
+            import.meta.env.VITE_API_ENDPOINT
+          }student/get_completion_status?simulation_group_id=${encodeURIComponent(
             group.simulation_group_id
           )}&student_email=${encodeURIComponent(email)}`,
           {
@@ -163,7 +165,10 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
           }, {});
           setCompletionStatuses(completionMap);
         } else {
-          console.error("Failed to fetch completion statuses:", response.statusText);
+          console.error(
+            "Failed to fetch completion statuses:",
+            response.statusText
+          );
         }
       } catch (error) {
         console.error("Error fetching completion statuses:", error);
@@ -176,7 +181,9 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
         const token = session.tokens.idToken;
 
         const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}student/get_profile_pictures?simulation_group_id=${encodeURIComponent(
+          `${
+            import.meta.env.VITE_API_ENDPOINT
+          }student/get_profile_pictures?simulation_group_id=${encodeURIComponent(
             group.simulation_group_id
           )}`,
           {
@@ -185,7 +192,9 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
               Authorization: token,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ patient_ids: patients.map((p) => p.patient_id) }),
+            body: JSON.stringify({
+              patient_ids: patients.map((p) => p.patient_id),
+            }),
           }
         );
 
@@ -193,7 +202,10 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
           const profilePics = await response.json();
           setProfilePictures(profilePics);
         } else {
-          console.error("Failed to fetch profile pictures:", response.statusText);
+          console.error(
+            "Failed to fetch profile pictures:",
+            response.statusText
+          );
         }
       } catch (error) {
         console.error("Error fetching profile pictures:", error);
@@ -235,10 +247,20 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
         <div className="flex items-center space-x-4">
           <button
             onClick={() => handleBack()}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+            className="p-2 rounded-lg bg-[rgba(0,0,0,0)] hover:bg-gray-100 transition-colors duration-200"
           >
-            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg
+              className="w-6 h-6 text-gray-600"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Patients</h1>
@@ -256,13 +278,26 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
           {data.length === 0 ? (
             <div className="text-center py-16">
               <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                <svg
+                  className="w-12 h-12 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No patients available</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                No patients available
+              </h3>
               <p className="text-gray-500 max-w-md mx-auto">
-                There are currently no patients assigned to this simulation group.
+                There are currently no patients assigned to this simulation
+                group.
               </p>
             </div>
           ) : (
@@ -271,89 +306,91 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
                 component={Paper}
                 sx={{
                   borderRadius: "16px",
-                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                  boxShadow:
+                    "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
                   border: "1px solid #e5e7eb",
                   overflow: "hidden",
                 }}
               >
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: "#f9fafb" }}>
-                    <TableCell 
-                      sx={{ 
-                        fontSize: "0.875rem",
-                        fontWeight: "600",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        py: 3,
-                      }}
-                    >
-                      Patient
-                    </TableCell>
-                    <TableCell 
-                      sx={{ 
-                        fontSize: "0.875rem",
-                        fontWeight: "600",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        py: 3,
-                      }}
-                    >
-                      LLM Evaluation
-                    </TableCell>
-                    <TableCell 
-                      sx={{ 
-                        fontSize: "0.875rem",
-                        fontWeight: "600",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        py: 3,
-                      }}
-                    >
-                      Instructor Evaluation
-                    </TableCell>
-                    <TableCell 
-                      sx={{ 
-                        fontSize: "0.875rem",
-                        fontWeight: "600",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        py: 3,
-                      }}
-                    >
-                      Review
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data.map((entry, index) => (
-                    <TableRow key={entry.patient_id + index}>
-                            <TableCell sx={{ fontSize: "1rem" }}>
-                            <div className="flex flex-row gap-3 items-center">
-                              {/* Display Avatar with profile picture or initial */}
-                              <Avatar
-                                src={profilePictures[entry.patient_id] || ""}
-                                alt={`${titleCase(entry.patient_name)} profile`}
-                                sx={{
-                                  width: 40,
-                                  height: 40,
-                                  backgroundColor: "#e0e0e0",
-                                  color: "#757575",
-                                  fontSize: "0.8rem",
-                                }}
-                              >
-                                {!profilePictures[entry.patient_id] && titleCase(entry.patient_name).charAt(0)}
-                              </Avatar>
-                              <div className="flex flex-row items-center gap-1">
-                                <span className="text-base">
-                                  {titleCase(entry.patient_name)}
-                                </span>
-                              </div>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: "#f9fafb" }}>
+                      <TableCell
+                        sx={{
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#374151",
+                          borderBottom: "2px solid #e5e7eb",
+                          py: 3,
+                        }}
+                      >
+                        Patient
+                      </TableCell>
+                      <TableCell
+                        sx={{
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#374151",
+                          borderBottom: "2px solid #e5e7eb",
+                          py: 3,
+                        }}
+                      >
+                        LLM Evaluation
+                      </TableCell>
+                      <TableCell
+                        sx={{
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#374151",
+                          borderBottom: "2px solid #e5e7eb",
+                          py: 3,
+                        }}
+                      >
+                        Instructor Evaluation
+                      </TableCell>
+                      <TableCell
+                        sx={{
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#374151",
+                          borderBottom: "2px solid #e5e7eb",
+                          py: 3,
+                        }}
+                      >
+                        Review
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.map((entry, index) => (
+                      <TableRow key={entry.patient_id + index}>
+                        <TableCell sx={{ fontSize: "1rem" }}>
+                          <div className="flex flex-row gap-3 items-center">
+                            {/* Display Avatar with profile picture or initial */}
+                            <Avatar
+                              src={profilePictures[entry.patient_id] || ""}
+                              alt={`${titleCase(entry.patient_name)} profile`}
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                backgroundColor: "#e0e0e0",
+                                color: "#757575",
+                                fontSize: "0.8rem",
+                              }}
+                            >
+                              {!profilePictures[entry.patient_id] &&
+                                titleCase(entry.patient_name).charAt(0)}
+                            </Avatar>
+                            <div className="flex flex-row items-center gap-1">
+                              <span className="text-base">
+                                {titleCase(entry.patient_name)}
+                              </span>
                             </div>
-                          </TableCell>
-                      <TableCell sx={{ fontSize: "1rem" }}>
-                        {entry.llm_completion ? (
-                          entry.patient_score === 100 ? (
+                          </div>
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "1rem" }}>
+                          {entry.llm_completion ? (
+                            entry.patient_score === 100 ? (
                               <span
                                 className="bg-[#2E7D32] text-white text-light rounded px-2 py-2"
                                 style={{ display: "inline-block" }}
@@ -370,43 +407,43 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
                             >
                               LLM is not checking
                             </span>
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: "1rem" }}>
-                        {completionStatuses[entry.patient_name] ? (
-                          <span
-                            className="bg-[#2E7D32] text-white text-light rounded px-2 py-2"
-                            style={{ display: "inline-block" }}
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "1rem" }}>
+                          {completionStatuses[entry.patient_name] ? (
+                            <span
+                              className="bg-[#2E7D32] text-white text-light rounded px-2 py-2"
+                              style={{ display: "inline-block" }}
+                            >
+                              Complete
+                            </span>
+                          ) : (
+                            "Incomplete"
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: "1rem" }}>
+                          <Button
+                            variant="contained"
+                            onClick={() => enterPatient(entry)}
+                            sx={{
+                              textTransform: "none",
+                              fontSize: "0.875rem",
+                              backgroundColor: "#10b981",
+                              borderRadius: "8px",
+                              fontWeight: "600",
+                              "&:hover": {
+                                backgroundColor: "#059669",
+                              },
+                            }}
                           >
-                            Complete
-                          </span>
-                        ) : (
-                          "Incomplete"
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: "1rem" }}>
-                        <Button
-                          variant="contained"
-                          onClick={() => enterPatient(entry)}
-                          sx={{ 
-                            textTransform: "none", 
-                            fontSize: "0.875rem",
-                            backgroundColor: "#10b981",
-                            borderRadius: "8px",
-                            fontWeight: "600",
-                            "&:hover": {
-                              backgroundColor: "#059669",
-                            },
-                          }}
-                        >
-                          Review
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                            Review
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </div>
           )}
         </div>
