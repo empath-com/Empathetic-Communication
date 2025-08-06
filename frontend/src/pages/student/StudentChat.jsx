@@ -493,21 +493,25 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     let fullResponse = "";
 
     try {
-      const { generateClient } = await import('aws-amplify/api');
-      const { fetchAuthSession } = await import('aws-amplify/auth');
-      
+      const { generateClient } = await import("aws-amplify/api");
+      const { fetchAuthSession } = await import("aws-amplify/auth");
+
       // Get auth session for AppSync
       const authSession = await fetchAuthSession();
       const client = generateClient({
-        authMode: 'userPool',
-        authToken: authSession.tokens?.idToken?.toString()
+        authMode: "userPool",
+        authToken: authSession.tokens?.idToken?.toString(),
       });
 
-      console.log('🔗 Subscribing to AppSync with session ID:', session.session_id);
-      
+      console.log(
+        "🔗 Subscribing to AppSync with session ID:",
+        session.session_id
+      );
+
       // Subscribe to text stream
-      const subscription = client.graphql({
-        query: `
+      const subscription = client
+        .graphql({
+          query: `
           subscription OnTextStream($sessionId: String!) {
             onTextStream(sessionId: $sessionId) {
               sessionId
@@ -515,38 +519,39 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             }
           }
         `,
-        variables: { sessionId: session.session_id }
-      }).subscribe({
-        next: ({ data }) => {
-          console.log('📡 AppSync data received:', data);
-          const streamData = JSON.parse(data.onTextStream.data);
-          console.log('📦 Parsed stream data:', streamData);
-          
-          if (streamData.type === 'empathy') {
-            console.log('🧠 Empathy feedback:', streamData.content);
-          } else if (streamData.type === 'chunk') {
-            console.log('📝 AppSync chunk:', streamData.content);
-            fullResponse += streamData.content;
-            setStreamingMessage((prev) => prev + streamData.content);
-          } else if (streamData.type === 'end') {
-            console.log('✅ AppSync stream complete');
+          variables: { sessionId: session.session_id },
+        })
+        .subscribe({
+          next: ({ data }) => {
+            console.log("📡 AppSync data received:", data);
+            const streamData = JSON.parse(data.onTextStream.data);
+            console.log("📦 Parsed stream data:", streamData);
+
+            if (streamData.type === "empathy") {
+              console.log("🧠 Empathy feedback:", streamData.content);
+            } else if (streamData.type === "chunk") {
+              console.log("📝 AppSync chunk:", streamData.content);
+              fullResponse += streamData.content;
+              setStreamingMessage((prev) => prev + streamData.content);
+            } else if (streamData.type === "end") {
+              console.log("✅ AppSync stream complete");
+              setIsStreaming(false);
+              setStreamingMessage("");
+              retrieveKnowledgeBase(fullResponse, session.session_id);
+              subscription.unsubscribe();
+            } else if (streamData.type === "error") {
+              console.error("❌ AppSync error:", streamData.content);
+              setIsStreaming(false);
+              setStreamingMessage("");
+              subscription.unsubscribe();
+            }
+          },
+          error: (error) => {
+            console.error("❌ AppSync subscription error:", error);
             setIsStreaming(false);
             setStreamingMessage("");
-            retrieveKnowledgeBase(fullResponse, session.session_id);
-            subscription.unsubscribe();
-          } else if (streamData.type === 'error') {
-            console.error('❌ AppSync error:', streamData.content);
-            setIsStreaming(false);
-            setStreamingMessage("");
-            subscription.unsubscribe();
-          }
-        },
-        error: (error) => {
-          console.error('❌ AppSync subscription error:', error);
-          setIsStreaming(false);
-          setStreamingMessage("");
-        }
-      });
+          },
+        });
 
       // Call text generation endpoint
       const response = await fetch(url, {
@@ -565,7 +570,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('❌ AppSync streaming error:', error);
+      console.error("❌ AppSync streaming error:", error);
       setIsStreaming(false);
       setStreamingMessage("");
       throw error;
@@ -1276,7 +1281,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           <button
             onClick={fetchEmpathySummary}
             disabled={isEmpathyLoading}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PsychologyIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Empathy Coach</span>}
@@ -1285,7 +1290,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Notes Button */}
           <button
             onClick={() => setIsNotesOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <DescriptionIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Notes</span>}
@@ -1294,7 +1299,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Patient Info Button */}
           <button
             onClick={() => setIsPatientInfoOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <InfoIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Patient Info</span>}
@@ -1303,7 +1308,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Reveal Answer Button */}
           <button
             onClick={handleOpenConfirm}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <KeyIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Reveal Answer</span>}

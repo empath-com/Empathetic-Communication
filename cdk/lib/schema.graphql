@@ -4,7 +4,7 @@ type TextStreamData {
 }
 
 type Mutation {
-  publishTextStream(sessionId: String!, data: AWSJSON!): TextStreamData
+  publishTextStream(sessionId: String!, data: AWSJSON!): TextStreamData @aws_iam
 }
 
 type Subscription {
