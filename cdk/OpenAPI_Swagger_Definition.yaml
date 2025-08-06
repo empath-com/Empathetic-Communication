@@ -110,6 +110,14 @@ paths:
           description: Name of the session passed from the front-end after it has been created by the LLM
           schema:
             type: string
+        - in: query
+          name: stream
+          required: false
+          description: Enable streaming response
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
       requestBody:
         required: false
         content:
@@ -137,6 +145,10 @@ paths:
                   llm_verdict:
                     type: string
                     description: Judgement of the LLM whether the student has diagnosed the patient correctly
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent events stream for real-time response
         "400":
           description: Bad Request
         "401":

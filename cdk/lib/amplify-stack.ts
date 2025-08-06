@@ -10,6 +10,7 @@ import { Construct } from "constructs";
 import * as yaml from "yaml";
 import { ApiGatewayStack } from "./api-gateway-stack";
 import { EcsSocketStack } from "./ecs-socket-stack";
+import { AppSyncStack } from "./appsync-stack";
 
 export class AmplifyStack extends cdk.Stack {
   constructor(
@@ -17,6 +18,7 @@ export class AmplifyStack extends cdk.Stack {
     id: string,
     apiStack: ApiGatewayStack,
     ecsSocketStack: EcsSocketStack,
+    appSyncStack: AppSyncStack,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -73,6 +75,7 @@ export class AmplifyStack extends cdk.Stack {
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
         VITE_SOCKET_URL: ecsSocketStack.socketUrl,
+        VITE_APPSYNC_GRAPHQL_URL: appSyncStack.api.graphqlUrl,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),
     });

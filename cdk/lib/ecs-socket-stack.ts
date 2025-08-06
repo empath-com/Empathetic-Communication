@@ -94,7 +94,10 @@ export class EcsSocketStack extends Stack {
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ["secretsmanager:GetSecretValue"],
-        resources: [db.secretPathUser.secretArn],
+        resources: [
+          db.secretPathUser.secretArn,
+          apiGatewayStack.secret.secretArn
+        ],
       })
     );
 
@@ -117,6 +120,7 @@ export class EcsSocketStack extends Stack {
       environment: {
         NODE_ENV: "production",
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+        SM_COGNITO_CREDENTIALS: apiGatewayStack.secret.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         AWS_REGION: this.region,
         COGNITO_USER_POOL_ID: apiGatewayStack.getUserPoolId(),

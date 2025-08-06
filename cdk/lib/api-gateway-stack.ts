@@ -46,6 +46,7 @@ export class ApiGatewayStack extends cdk.Stack {
   public addLayer = (name: string, layer: LayerVersion) =>
     (this.layerList[name] = layer);
   public getLayers = () => this.layerList;
+  
   constructor(
     scope: Construct,
     id: string,
@@ -500,6 +501,17 @@ export class ApiGatewayStack extends cdk.Stack {
       })
     );
 
+    // Grant access to RDS proxy
+    lambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:*/applicationUsername`,
+        ],
+      })
+    );
+
     // Inline policy to allow AdminAddUserToGroup action
     const adminAddUserToGroupPolicyLambda = new iam.Policy(
       this,
@@ -739,6 +751,17 @@ export class ApiGatewayStack extends cdk.Stack {
       })
     );
 
+    // Grant access to RDS proxy
+    coglambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:*/applicationUsername`,
+        ],
+      })
+    );
+
     const AutoSignupLambda = new lambda.Function(
       this,
       `${id}-addStudentOnSignUp`,
@@ -947,6 +970,8 @@ export class ApiGatewayStack extends cdk.Stack {
       }
     );
 
+
+
     /**
      *
      * Create Lambda with container image for text generation workflow in RAG pipeline
@@ -968,6 +993,7 @@ export class ApiGatewayStack extends cdk.Stack {
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
+          APPSYNC_URL_PARAM: `/EC-Api/VCI/AppSyncUrl`,
         },
       }
     );
@@ -989,6 +1015,7 @@ export class ApiGatewayStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: [
         "bedrock:InvokeModel", 
+        "bedrock:InvokeModelWithResponseStream",  // Required for streaming
         "bedrock:InvokeEndpoint",
         "bedrock:ApplyGuardrail"  // Required for guardrails
       ],
@@ -1046,6 +1073,20 @@ export class ApiGatewayStack extends cdk.Stack {
           bedrockLLMParameter.parameterArn,
           embeddingModelParameter.parameterArn,
           tableNameParameter.parameterArn,
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/EC-Api/VCI/AppSyncUrl`,
+        ],
+      })
+    );
+
+    // Grant access to AppSync for streaming
+    textGenLambdaDockerFunc.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "appsync:GraphQL"
+        ],
+        resources: [
+          `arn:aws:appsync:${this.region}:${this.account}:apis/*`
         ],
       })
     );
@@ -1739,5 +1780,18 @@ export class ApiGatewayStack extends cdk.Stack {
         webAclArn: waf.attrArn,
       }
     );
+  }
+
+  public grantAppSyncAccess(appSyncApi: any) {
+    const textGenLambda = this.node.findChild('EC-Api-TextGenLambdaDockerFunction') as lambda.DockerImageFunction;
+    if (textGenLambda) {
+      textGenLambda.addToRolePolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["appsync:GraphQL"],
+          resources: [appSyncApi.arn + "/*"],
+        })
+      );
+    }
   }
 }

@@ -18,6 +18,8 @@ import {
 } from "../../utils/voiceStream";
 
 import { signOut } from "aws-amplify/auth";
+import { streamBedrockResponse } from "../../utils/bedrockStreaming";
+import { buildConversationContext } from "../../utils/conversationBuilder";
 
 import {
   Dialog,
@@ -101,6 +103,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [profilePicture, setProfilePicture] = useState({});
+  const [patientContext, setPatientContext] = useState(null);
 
   const navigate = useNavigate();
 
@@ -385,6 +388,41 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   }
 
+  // Fetch patient context for Bedrock streaming
+  const fetchPatientContext = async () => {
+    try {
+      const session = await fetchAuthSession();
+      const { email } = await fetchUserAttributes();
+      const token = session.tokens.idToken;
+
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_ENDPOINT
+        }student/patient_context?email=${encodeURIComponent(
+          email
+        )}&simulation_group_id=${encodeURIComponent(
+          group.simulation_group_id
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setPatientContext(data);
+      } else {
+        console.error("Failed to fetch patient context:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching patient context:", error);
+    }
+  };
+
   const fetchFiles = async () => {
     setIsInfoLoading(true);
     setIsAnswerLoading(true);
@@ -446,75 +484,88 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+  // Handle AppSync streaming response function above
   // Function to fetch empathy summary
-  // Handle streaming response from text generation
-  const handleStreamingResponse = async (url, authToken, message, sessionId) => {
+  // Handle AppSync streaming response
+  const handleStreamingResponse = async (url, authToken, message) => {
+    setIsStreaming(true);
+    setStreamingMessage("");
+    let fullResponse = "";
+
     try {
+      const { generateClient } = await import('aws-amplify/api');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      
+      // Get auth session for AppSync
+      const authSession = await fetchAuthSession();
+      const client = generateClient({
+        authMode: 'userPool',
+        authToken: authSession.tokens?.idToken?.toString()
+      });
+
+      console.log('🔗 Subscribing to AppSync with session ID:', session.session_id);
+      
+      // Subscribe to text stream
+      const subscription = client.graphql({
+        query: `
+          subscription OnTextStream($sessionId: String!) {
+            onTextStream(sessionId: $sessionId) {
+              sessionId
+              data
+            }
+          }
+        `,
+        variables: { sessionId: session.session_id }
+      }).subscribe({
+        next: ({ data }) => {
+          console.log('📡 AppSync data received:', data);
+          const streamData = JSON.parse(data.onTextStream.data);
+          console.log('📦 Parsed stream data:', streamData);
+          
+          if (streamData.type === 'empathy') {
+            console.log('🧠 Empathy feedback:', streamData.content);
+          } else if (streamData.type === 'chunk') {
+            console.log('📝 AppSync chunk:', streamData.content);
+            fullResponse += streamData.content;
+            setStreamingMessage((prev) => prev + streamData.content);
+          } else if (streamData.type === 'end') {
+            console.log('✅ AppSync stream complete');
+            setIsStreaming(false);
+            setStreamingMessage("");
+            retrieveKnowledgeBase(fullResponse, session.session_id);
+            subscription.unsubscribe();
+          } else if (streamData.type === 'error') {
+            console.error('❌ AppSync error:', streamData.content);
+            setIsStreaming(false);
+            setStreamingMessage("");
+            subscription.unsubscribe();
+          }
+        },
+        error: (error) => {
+          console.error('❌ AppSync subscription error:', error);
+          setIsStreaming(false);
+          setStreamingMessage("");
+        }
+      });
+
+      // Call text generation endpoint
       const response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: authToken,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message_content: message,
-        }),
+        body: JSON.stringify({ message_content: message }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to generate text: ${response.statusText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let fullResponse = "";
-      let empathyFeedback = "";
-      let sessionName = "New Chat";
-      
-      setIsStreaming(true);
-      setStreamingMessage("");
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              setIsStreaming(false);
-              // Create the final AI message
-              if (fullResponse) {
-                await retrieveKnowledgeBase(fullResponse, sessionId);
-              }
-              return { llm_output: fullResponse || "No response received", session_name: sessionName, llm_verdict: false };
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              
-              if (parsed.type === 'empathy' && parsed.content) {
-                empathyFeedback = parsed.content;
-              } else if (parsed.type === 'chunk' && parsed.content) {
-                setStreamingMessage(parsed.content);
-              } else if (parsed.type === 'end' && parsed.content) {
-                fullResponse = parsed.content;
-                setStreamingMessage(""); // Clear streaming message when done
-              }
-            } catch (e) {
-              console.warn('Failed to parse streaming data:', data);
-            }
-          }
-        }
-      }
-
-      return { llm_output: fullResponse, session_name: sessionName, llm_verdict: false };
+      const result = await response.json();
+      return result;
     } catch (error) {
+      console.error('❌ AppSync streaming error:', error);
       setIsStreaming(false);
       setStreamingMessage("");
       throw error;
@@ -564,10 +615,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
 
   useEffect(() => {
-    if (patient) {
+    if (patient && group) {
       fetchFiles();
+      fetchPatientContext();
     }
-  }, [patient]);
+  }, [patient, group]);
 
   async function retrieveKnowledgeBase(message, sessionId) {
     try {
@@ -721,10 +773,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent(newSession.session_name)}&stream=true`;
+        )}&session_name=${encodeURIComponent(
+          newSession.session_name
+        )}&stream=true`;
 
-        // Handle streaming response
-        return handleStreamingResponse(textGenUrl, authToken, message, newSession.session_id);
+        console.log("🚀 Using AppSync streaming");
+        // Handle AppSync streaming
+        return handleStreamingResponse(textGenUrl, authToken, message);
       })
       .then((textGenData) => {
         setSession((prevSession) => ({
@@ -873,10 +928,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           patient.patient_id
         )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
 
+        console.log("🚀 Using AppSync streaming for initial message");
         console.log("Session data for text generation:", sessionData);
 
-        // Handle streaming for initial message
-        return handleStreamingResponse(textGenUrl, authToken, "", sessionData.session_id);
+        // Handle AppSync streaming for initial message
+        return handleStreamingResponse(textGenUrl, authToken, "");
       })
       .then((textResponseData) => {
         console.log("sessionData:", sessionData);
@@ -1326,9 +1382,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           )}
 
           {/* Streaming Message Display */}
-          {isStreaming && streamingMessage && (
+          {isStreaming && (
             <AIMessage
-              message={streamingMessage}
+              message={streamingMessage || "..."}
               profilePicture={profilePicture}
               name={patient?.patient_name}
               isStreaming={true}
@@ -1336,7 +1392,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           )}
 
           {/* TypingIndicator */}
-          {(isAItyping && !isStreaming) && (
+          {isAItyping && !isStreaming && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
           <div ref={messagesEndRef} />
@@ -1384,7 +1440,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             {/* Send Button */}
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting || isAItyping || creatingSession || isStreaming}
+              disabled={
+                isSubmitting || isAItyping || creatingSession || isStreaming
+              }
               className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors duration-200 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg
@@ -1566,7 +1624,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
             <div className="text-center">
               <div className="w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <MicIcon className="w-16 h-16 text-emerald-600" />
+                <img
+                  src={profilePicture}
+                  className="w-16 h-16 text-emerald-600"
+                />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
                 Voice Mode Active

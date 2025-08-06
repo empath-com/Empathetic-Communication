@@ -10,6 +10,10 @@
     "socket.io": "^4.7.2",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.0.1",
-    "aws-sdk": "^2.1691.0"
+    "aws-sdk": "^2.1691.0",
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0",
+    "@aws-sdk/client-cognito-identity": "^3.0.0",
+    "aws-jwt-verify": "^4.0.0"
   }
 }

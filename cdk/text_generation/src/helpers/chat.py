@@ -66,14 +66,16 @@ def create_dynamodb_history_table(table_name: str) -> bool:
 
 def get_bedrock_llm(
     bedrock_llm_id: str,
-    temperature: float = 0
+    temperature: float = 0,
+    streaming: bool = False
 ) -> ChatBedrock:
     """
-    Retrieve a Bedrock LLM instance with optional guardrail support.
+    Retrieve a Bedrock LLM instance with optional guardrail support and streaming.
 
     Args:
     bedrock_llm_id (str): The unique identifier for the Bedrock LLM model.
     temperature (float, optional): The temperature parameter for the LLM. Defaults to 0.
+    streaming (bool, optional): Whether to enable streaming. Defaults to False.
 
     Returns:
     ChatBedrock: An instance of the Bedrock LLM.
@@ -87,22 +89,22 @@ def get_bedrock_llm(
     # Check for optional guardrail configuration
     guardrail_id = os.environ.get('BEDROCK_GUARDRAIL_ID')
     
+    base_kwargs = {
+        "model_id": bedrock_llm_id,
+        "model_kwargs": dict(temperature=temperature),
+        "streaming": streaming
+    }
+    
     if guardrail_id and guardrail_id.strip():
         logger.info(f"Using Bedrock guardrail: {guardrail_id}")
-        return ChatBedrock(
-            model_id=bedrock_llm_id,
-            model_kwargs=dict(temperature=temperature),
-            guardrails={
-                "guardrailIdentifier": guardrail_id,
-                "guardrailVersion": "DRAFT"  # Change to your version: "1", "2", or "DRAFT"
-            }
-        )
+        base_kwargs["guardrails"] = {
+            "guardrailIdentifier": guardrail_id,
+            "guardrailVersion": "DRAFT"  # Change to your version: "1", "2", or "DRAFT"
+        }
     else:
         logger.info("Using system prompt protection (no guardrail configured)")
-        return ChatBedrock(
-            model_id=bedrock_llm_id,
-            model_kwargs=dict(temperature=temperature),
-        )
+    
+    return ChatBedrock(**base_kwargs)
 
 def get_student_query(raw_query: str) -> str:
     """
@@ -407,25 +409,10 @@ def get_response(
         if query.strip() and "Greet me" not in query and query.strip() != 'introduce yourself briefly' and query.strip() != 'say "hi"':
             save_message_to_db(session_id, True, query, empathy_evaluation)
         
-        # For streaming, we need to extract the actual response to save
-        # Parse the stream data to get the final response
-        lines = response.split('\n')
-        final_response = ""
-        for line in lines:
-            if line.startswith('data: '):
-                try:
-                    data = json.loads(line[6:])
-                    if data.get('type') == 'end':
-                        final_response = data.get('content', '')
-                        break
-                except:
-                    continue
-        
         # Save AI response to PostgreSQL
-        if final_response:
-            save_message_to_db(session_id, False, final_response, None)
+        save_message_to_db(session_id, False, response, None)
         
-        return {"stream_data": response}
+        return {"llm_output": response, "session_name": "Chat", "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion, empathy_feedback)
     if empathy_evaluation:
@@ -468,62 +455,143 @@ def generate_response(conversational_rag_chain: object, query: str, session_id: 
 
 def generate_streaming_response(conversational_rag_chain: object, query: str, session_id: str, empathy_feedback: str = "") -> str:
     """
-    Generates a streaming response using Server-Sent Events format.
-    
-    Args:
-    conversational_rag_chain: The Conversational RAG chain object that processes the query.
-    query (str): The input query for which the response is being generated.
-    session_id (str): The unique identifier for the current conversation session.
-    empathy_feedback (str): Empathy feedback to include in the stream.
-    
-    Returns:
-    str: Server-Sent Events formatted stream data.
+    Generates a streaming response using AppSync for real-time delivery.
     """
     import json
+    import time
     
     try:
-        # Start the stream with empathy feedback if available
-        stream_data = ""
+        logger.info(f"🚀 Starting streaming response for session: {session_id}")
         
+        # Send empathy feedback if available
         if empathy_feedback:
-            stream_data += f"data: {json.dumps({'type': 'empathy', 'content': empathy_feedback})}\n\n"
+            logger.info(f"📤 Publishing empathy feedback for session: {session_id}")
+            publish_to_appsync(session_id, {'type': 'empathy', 'content': empathy_feedback})
         
-        # Stream the AI response
-        stream_data += f"data: {json.dumps({'type': 'start', 'content': ''})}\n\n"
+        # Send start signal
+        logger.info(f"📤 Publishing start signal for session: {session_id}")
+        publish_to_appsync(session_id, {'type': 'start', 'content': ''})
         
-        # Get the full response (in a real streaming implementation, this would be chunked)
-        full_response = conversational_rag_chain.invoke(
-            {
-                "input": query
-            },
-            config={
-                "configurable": {"session_id": session_id}
-            },
-        )["answer"]
+        full_response = ""
         
-        # Simulate streaming by breaking response into chunks
-        words = full_response.split()
-        accumulated_text = ""
-        
-        for i, word in enumerate(words):
-            accumulated_text += word + " "
+        try:
+            # Stream the response using the chain's streaming capability
+            for chunk in conversational_rag_chain.stream(
+                {
+                    "input": query
+                },
+                config={
+                    "configurable": {"session_id": session_id}
+                },
+            ):
+                content = ""
+                if isinstance(chunk, dict):
+                    if "answer" in chunk:
+                        content = chunk["answer"]
+                    elif "content" in chunk:
+                        content = chunk["content"]
+                    elif "text" in chunk:
+                        content = chunk["text"]
+                elif isinstance(chunk, str):
+                    content = chunk
+                
+                if content:
+                    full_response += content
+                    # Publish chunk to AppSync subscription
+                    publish_to_appsync(session_id, {'type': 'chunk', 'content': content})
+                    time.sleep(0.05)  # Small delay for better streaming effect
             
-            # Send chunk every 3-5 words to simulate typing
-            if (i + 1) % 4 == 0 or i == len(words) - 1:
-                stream_data += f"data: {json.dumps({'type': 'chunk', 'content': accumulated_text.strip()})}\n\n"
+            if not full_response:
+                raise Exception("No content received from streaming")
+                
+        except Exception as stream_error:
+            logger.warning(f"Streaming failed, falling back to invoke: {stream_error}")
+            result = conversational_rag_chain.invoke(
+                {
+                    "input": query
+                },
+                config={
+                    "configurable": {"session_id": session_id}
+                },
+            )
+            full_response = result.get("answer", str(result))
+            # Split response into chunks for streaming effect
+            words = full_response.split(' ')
+            for i in range(0, len(words), 3):
+                chunk = ' '.join(words[i:i+3])
+                publish_to_appsync(session_id, {'type': 'chunk', 'content': chunk + ' '})
+                time.sleep(0.1)
         
-        # End the stream
-        stream_data += f"data: {json.dumps({'type': 'end', 'content': full_response})}\n\n"
-        stream_data += "data: [DONE]\n\n"
+        # Send end signal
+        publish_to_appsync(session_id, {'type': 'end', 'content': full_response})
         
-        return stream_data
+        return full_response
         
     except Exception as e:
         logger.error(f"Error generating streaming response in session {session_id}: {e}")
         error_msg = "I am sorry, I cannot provide a response to that query."
-        error_stream = f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
-        error_stream += "data: [DONE]\n\n"
-        return error_stream
+        publish_to_appsync(session_id, {'type': 'error', 'content': error_msg})
+        return error_msg
+
+def publish_to_appsync(session_id: str, data: dict):
+    """
+    Publish streaming data to AppSync subscription.
+    """
+    import requests
+    import json
+    import os
+    import boto3
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+    
+    # Import the global variable from main module
+    from main import APPSYNC_GRAPHQL_URL
+    
+    try:
+        logger.info(f"📡 Publishing to AppSync for session: {session_id}, data type: {data.get('type')}")
+        
+        if not APPSYNC_GRAPHQL_URL:
+            logger.error("AppSync GraphQL URL not available")
+            return
+            
+        appsync_url = APPSYNC_GRAPHQL_URL
+        logger.info(f"🔗 Using AppSync URL: {appsync_url}")
+            
+        mutation = """
+        mutation PublishTextStream($sessionId: String!, $data: AWSJSON!) {
+            publishTextStream(sessionId: $sessionId, data: $data) {
+                sessionId
+                data
+            }
+        }
+        """
+        
+        payload = {
+            'query': mutation,
+            'variables': {
+                'sessionId': session_id,
+                'data': json.dumps(data)
+            }
+        }
+        
+        # Create signed request for AppSync using IAM
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        region = os.environ.get('REGION', 'us-east-1')
+        
+        request = AWSRequest(method='POST', url=appsync_url, data=json.dumps(payload), headers={'Content-Type': 'application/json'})
+        SigV4Auth(credentials, 'appsync', region).add_auth(request)
+        
+        response = requests.post(appsync_url, data=request.body, headers=dict(request.headers))
+        
+        if response.status_code != 200:
+            logger.error(f"AppSync publish failed: {response.status_code} {response.text}")
+        else:
+            logger.info(f"✅ AppSync publish successful for session: {session_id}")
+            logger.info(f"📝 Response: {response.text[:200]}...")
+        
+    except Exception as e:
+        logger.error(f"Failed to publish to AppSync: {e}")
 
 def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
     """

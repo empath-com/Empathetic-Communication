@@ -20,6 +20,7 @@ RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
 BEDROCK_LLM_PARAM = os.environ["BEDROCK_LLM_PARAM"]
 EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 TABLE_NAME_PARAM = os.environ["TABLE_NAME_PARAM"]
+APPSYNC_URL_PARAM = os.environ.get("APPSYNC_URL_PARAM", "")
 
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
@@ -64,11 +65,16 @@ def get_parameter(param_name, cached_var):
             raise
     return cached_var
 
+# Cached AppSync URL
+APPSYNC_GRAPHQL_URL = None
+
 def initialize_constants():
-    global BEDROCK_LLM_ID, EMBEDDING_MODEL_ID, TABLE_NAME, embeddings
+    global BEDROCK_LLM_ID, EMBEDDING_MODEL_ID, TABLE_NAME, APPSYNC_GRAPHQL_URL, embeddings
     BEDROCK_LLM_ID = get_parameter(BEDROCK_LLM_PARAM, BEDROCK_LLM_ID)
     EMBEDDING_MODEL_ID = get_parameter(EMBEDDING_MODEL_PARAM, EMBEDDING_MODEL_ID)
     TABLE_NAME = get_parameter(TABLE_NAME_PARAM, TABLE_NAME)
+    if APPSYNC_URL_PARAM:
+        APPSYNC_GRAPHQL_URL = get_parameter(APPSYNC_URL_PARAM, APPSYNC_GRAPHQL_URL)
 
     if embeddings is None:
         embeddings = BedrockEmbeddings(
@@ -242,9 +248,13 @@ def handler(event, context):
         logger.info(f"Processing student question: {question}")
         student_query = get_student_query(question)
 
+    # Check if streaming is requested
+    query_params = event.get("queryStringParameters", {})
+    stream = query_params.get("stream", "false").lower() == "true"
+    
     try:
         logger.info("Creating Bedrock LLM instance.")
-        llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID)
+        llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=stream)
     except Exception as e:
         logger.error(f"Error getting LLM from Bedrock: {e}")
         return {
@@ -305,9 +315,6 @@ def handler(event, context):
 
     try:
         logger.info("Generating response from the LLM.")
-        # Check if streaming is requested
-        query_params = event.get("queryStringParameters", {})
-        stream = query_params.get("stream", "false").lower() == "true"
         
         response = get_response(
             query=student_query,
@@ -348,10 +355,6 @@ def handler(event, context):
         logger.error(f"Error updating session name: {e}")
         session_name = "New Chat"
 
-    # Check if streaming is requested
-    query_params = event.get("queryStringParameters", {})
-    stream = query_params.get("stream", "false").lower() == "true"
-    
     if stream:
         logger.info("Returning streaming response.")
         return {
@@ -364,7 +367,7 @@ def handler(event, context):
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "*",
             },
-            "body": response.get("stream_data", ""),
+            "body": json.dumps(response),
             "isBase64Encoded": False
         }
     else:
