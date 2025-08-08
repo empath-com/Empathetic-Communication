@@ -29,8 +29,9 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as appsync from "aws-cdk-lib/aws-appsync";
 
-export class ApiGatewayStack extends cdk.Stack {
+export class ApiServiceStack extends cdk.Stack {
   private readonly api: apigateway.SpecRestApi;
   public readonly appClient: cognito.UserPoolClient;
   public readonly userPool: cognito.UserPool;
@@ -39,6 +40,7 @@ export class ApiGatewayStack extends cdk.Stack {
   public readonly stageARN_APIGW: string;
   public readonly apiGW_basedURL: string;
   public readonly secret: secretsmanager.ISecret;
+  public readonly appSyncApi: appsync.GraphqlApi;
   public getEndpointUrl = () => this.api.url;
   public getUserPoolId = () => this.userPool.userPoolId;
   public getUserPoolClientId = () => this.appClient.userPoolClientId;
@@ -46,6 +48,7 @@ export class ApiGatewayStack extends cdk.Stack {
   public addLayer = (name: string, layer: LayerVersion) =>
     (this.layerList[name] = layer);
   public getLayers = () => this.layerList;
+
   constructor(
     scope: Construct,
     id: string,
@@ -500,6 +503,17 @@ export class ApiGatewayStack extends cdk.Stack {
       })
     );
 
+    // Grant access to RDS proxy
+    lambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:*/applicationUsername`,
+        ],
+      })
+    );
+
     // Inline policy to allow AdminAddUserToGroup action
     const adminAddUserToGroupPolicyLambda = new iam.Policy(
       this,
@@ -739,6 +753,17 @@ export class ApiGatewayStack extends cdk.Stack {
       })
     );
 
+    // Grant access to RDS proxy
+    coglambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:*/applicationUsername`,
+        ],
+      })
+    );
+
     const AutoSignupLambda = new lambda.Function(
       this,
       `${id}-addStudentOnSignUp`,
@@ -947,6 +972,53 @@ export class ApiGatewayStack extends cdk.Stack {
       }
     );
 
+    // Create AppSync API for text streaming
+    this.appSyncApi = new appsync.GraphqlApi(this, "TextStreamingApi", {
+      name: "text-streaming-api",
+      schema: appsync.SchemaFile.fromAsset("lib/schema.graphql"),
+      authorizationConfig: {
+        defaultAuthorization: {
+          authorizationType: appsync.AuthorizationType.USER_POOL,
+          userPoolConfig: {
+            userPool: this.userPool,
+          },
+        },
+        additionalAuthorizationModes: [
+          {
+            authorizationType: appsync.AuthorizationType.IAM,
+          },
+        ],
+      },
+    });
+
+    // Create None data source for local resolvers
+    const noneDataSource = this.appSyncApi.addNoneDataSource("NoneDataSource");
+
+    // Mutation resolver for publishing text streams
+    noneDataSource.createResolver("PublishTextStreamResolver", {
+      typeName: "Mutation",
+      fieldName: "publishTextStream",
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`
+  {
+    "version": "2018-05-29",
+    "payload": {}
+  }`),
+      responseMappingTemplate: appsync.MappingTemplate.fromString(`
+  $util.toJson({
+    "sessionId": $ctx.args.sessionId,
+    "data": $ctx.args.data
+  })`),
+    });
+
+    // Output the API URL and ID
+    new cdk.CfnOutput(this, "AppSyncApiUrl", {
+      value: this.appSyncApi.graphqlUrl,
+    });
+
+    new cdk.CfnOutput(this, "AppSyncApiId", {
+      value: this.appSyncApi.apiId,
+    });
+
     /**
      *
      * Create Lambda with container image for text generation workflow in RAG pipeline
@@ -968,6 +1040,8 @@ export class ApiGatewayStack extends cdk.Stack {
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
+          APPSYNC_GRAPHQL_URL: this.appSyncApi.graphqlUrl,
+          APPSYNC_API_ID: this.appSyncApi.apiId,
         },
       }
     );
@@ -988,9 +1062,10 @@ export class ApiGatewayStack extends cdk.Stack {
     const bedrockPolicyStatement = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
-        "bedrock:InvokeModel", 
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream", // Required for streaming
         "bedrock:InvokeEndpoint",
-        "bedrock:ApplyGuardrail"  // Required for guardrails
+        "bedrock:ApplyGuardrail", // Required for guardrails
       ],
       resources: [
         "arn:aws:bedrock:" +
@@ -1000,7 +1075,7 @@ export class ApiGatewayStack extends cdk.Stack {
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-        `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`  // Guardrail access
+        `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });
 
@@ -1046,6 +1121,23 @@ export class ApiGatewayStack extends cdk.Stack {
           bedrockLLMParameter.parameterArn,
           embeddingModelParameter.parameterArn,
           tableNameParameter.parameterArn,
+        ],
+      })
+    );
+
+    // Grant access to AppSync for streaming with comprehensive permissions
+    textGenLambdaDockerFunc.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "appsync:GraphQL",
+          "appsync:GetGraphqlApi",
+          "appsync:ListGraphqlApis",
+        ],
+        resources: [
+          this.appSyncApi.arn,
+          this.appSyncApi.arn + "/*",
+          this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream",
         ],
       })
     );
@@ -1681,8 +1773,6 @@ export class ApiGatewayStack extends cdk.Stack {
         resources: [tableNameParameter.parameterArn],
       })
     );
-
-
 
     // Waf Firewall
     const waf = new wafv2.CfnWebACL(this, `${id}-waf`, {

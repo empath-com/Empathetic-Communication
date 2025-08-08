@@ -30,6 +30,11 @@ Amplify.configure({
         endpoint: import.meta.env.VITE_API_ENDPOINT,
       },
     },
+    GraphQL: {
+      endpoint: import.meta.env.VITE_APPSYNC_GRAPHQL_URL,
+      region: import.meta.env.VITE_AWS_REGION,
+      defaultAuthMode: 'userPool'
+    },
   },
   Auth: {
     Cognito: {

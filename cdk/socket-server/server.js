@@ -198,6 +198,51 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ─── Text generation streaming ─────────────────────────────────────────────
+  socket.on("text-generation", async (data) => {
+    console.log("🚀 Text generation request:", data);
+    
+    try {
+      const response = await fetch(`${process.env.TEXT_GENERATION_ENDPOINT}/student/text_generation?simulation_group_id=${data.simulation_group_id}&session_id=${data.session_id}&patient_id=${data.patient_id}&session_name=${data.session_name}&stream=true`, {
+        method: "POST",
+        headers: {
+          "Authorization": data.token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message_content: data.message })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const eventData = JSON.parse(line.slice(6));
+              socket.emit('text-stream', eventData);
+            } catch (e) {
+              console.warn('Failed to parse SSE:', line);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Text generation error:', error);
+      socket.emit('text-stream', { type: 'error', content: 'Failed to generate response' });
+    }
+  });
+
   // ─── End‑audio event ─────────────────────────────────────────────────────
   socket.on("end-audio", () => {
     if (novaProcess && novaProcess.stdin.writable && novaReady) {

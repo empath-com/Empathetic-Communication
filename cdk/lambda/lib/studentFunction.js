@@ -1226,6 +1226,55 @@ exports.handler = async (event) => {
         response.statusCode = empathySummaryResponse.statusCode;
         response.body = empathySummaryResponse.body;
         break;
+      case "GET /student/patient_context":
+        if (
+          event.queryStringParameters &&
+          event.queryStringParameters.simulation_group_id &&
+          event.queryStringParameters.patient_id
+        ) {
+          const { simulation_group_id, patient_id } = event.queryStringParameters;
+          
+          try {
+            // Get system prompt
+            const systemPromptResult = await sqlConnection`
+              SELECT system_prompt 
+              FROM "simulation_groups" 
+              WHERE simulation_group_id = ${simulation_group_id}
+            `;
+            
+            // Get patient details
+            const patientResult = await sqlConnection`
+              SELECT patient_name, patient_age, patient_prompt, llm_completion
+              FROM "patients" 
+              WHERE patient_id = ${patient_id}
+            `;
+            
+            if (systemPromptResult.length === 0 || patientResult.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Patient or simulation group not found" });
+              break;
+            }
+            
+            const context = {
+              system_prompt: systemPromptResult[0].system_prompt,
+              patient_name: patientResult[0].patient_name,
+              patient_age: patientResult[0].patient_age,
+              patient_prompt: patientResult[0].patient_prompt,
+              llm_completion: patientResult[0].llm_completion
+            };
+            
+            response.statusCode = 200;
+            response.body = JSON.stringify(context);
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id and patient_id are required" });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }
