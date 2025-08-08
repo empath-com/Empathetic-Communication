@@ -18,6 +18,8 @@ import {
 } from "../../utils/voiceStream";
 
 import { signOut } from "aws-amplify/auth";
+import { streamBedrockResponse } from "../../utils/bedrockStreaming";
+import { buildConversationContext } from "../../utils/conversationBuilder";
 
 import {
   Dialog,
@@ -49,7 +51,9 @@ const TypingIndicator = ({ patientName }) => (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-4 flex items-center space-x-3">
       <l-mirage size="24" speed="2.5" color="#10b981"></l-mirage>
       <span className="text-gray-600 font-medium text-sm">
-        {patientName ? `${titleCase(patientName)} is typing...` : "Typing..."}
+        {patientName
+          ? `${titleCase(patientName)} is thinking...`
+          : "Thinking..."}
       </span>
     </div>
   </div>
@@ -92,6 +96,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
   const [empathySummary, setEmpathySummary] = useState(null);
+  const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
@@ -99,6 +104,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [profilePicture, setProfilePicture] = useState({});
+  const [patientContext, setPatientContext] = useState(null);
+  const STREAMING_TEMP_ID = "__streaming__";
 
   const navigate = useNavigate();
 
@@ -159,6 +166,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (newMessage !== null) {
       if (currentSessionId === session?.session_id) {
+        // Skip adding AI messages during streaming - backend handles message saving
+        if (!newMessage.student_sent && messages.some(m => m.message_id === STREAMING_TEMP_ID)) {
+          console.log("Skipping AI message - streaming in progress");
+          setNewMessage(null);
+          return;
+        }
+
         // Enhanced duplicate detection
         const contentKey = `${
           newMessage.student_sent ? "student" : "ai"
@@ -383,6 +397,41 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   }
 
+  // Fetch patient context for Bedrock streaming
+  const fetchPatientContext = async () => {
+    try {
+      const session = await fetchAuthSession();
+      const { email } = await fetchUserAttributes();
+      const token = session.tokens.idToken;
+
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_ENDPOINT
+        }student/patient_context?email=${encodeURIComponent(
+          email
+        )}&simulation_group_id=${encodeURIComponent(
+          group.simulation_group_id
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setPatientContext(data);
+      } else {
+        console.error("Failed to fetch patient context:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching patient context:", error);
+    }
+  };
+
   const fetchFiles = async () => {
     setIsInfoLoading(true);
     setIsAnswerLoading(true);
@@ -444,9 +493,151 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+  const startStreamingBubble = () => {
+    // Add a placeholder AI message that we'll update in-place
+    setMessages((prev) => [
+      ...prev,
+      {
+        message_id: STREAMING_TEMP_ID,
+        student_sent: false,
+        message_content: " ", // space to ensure the bubble renders
+      },
+    ]);
+    setIsAItyping(false); // stop the typing indicator once streaming begins
+  };
+
+  const appendStreamingChunk = (text) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.message_id === STREAMING_TEMP_ID
+          ? {
+              ...m,
+              message_content:
+                (m.message_content === " " ? "" : m.message_content) + text,
+            }
+          : m
+      )
+    );
+  };
+
+  const finalizeStreamingBubble = async (finalText, sessionId) => {
+    // Backend already saves the message, just update the temp bubble with final content
+    setMessages((prev) =>
+      prev.map((m) => 
+        m.message_id === STREAMING_TEMP_ID 
+          ? { ...m, message_id: `ai_${Date.now()}`, message_content: finalText }
+          : m
+      )
+    );
+  };
+
+  // Handle AppSync streaming response function above
   // Function to fetch empathy summary
+  // Handle AppSync streaming response
+  const handleStreamingResponse = async (url, authToken, message, sessionId = null) => {
+    let fullResponse = "";
+
+    try {
+      const { generateClient } = await import("aws-amplify/api");
+      const { fetchAuthSession } = await import("aws-amplify/auth");
+
+      const authSession = await fetchAuthSession();
+      const client = generateClient({
+        authMode: "userPool",
+        authToken: authSession.tokens?.idToken?.toString(),
+      });
+
+      // Use provided sessionId or fall back to session.session_id
+      const currentSessionId = sessionId || session?.session_id;
+      if (!currentSessionId) {
+        throw new Error("No session ID available for streaming");
+      }
+
+      const subscription = client
+        .graphql({
+          query: `
+          subscription OnTextStream($sessionId: String!) {
+            onTextStream(sessionId: $sessionId) {
+              sessionId
+              data
+            }
+          }
+        `,
+          variables: { sessionId: currentSessionId },
+        })
+        .subscribe({
+          next: async ({ data }) => {
+            const streamData = JSON.parse(data.onTextStream.data);
+
+            try {
+              if (streamData.type === "empathy") {
+                console.log("🧠 Empathy feedback received:", streamData.content);
+                setRealtimeEmpathy(prev => [...prev, { content: streamData.content, timestamp: Date.now() }]);
+              } else if (streamData.type === "start") {
+                startStreamingBubble();
+              } else if (streamData.type === "chunk") {
+                fullResponse += streamData.content;
+                appendStreamingChunk(streamData.content);
+              } else if (streamData.type === "end") {
+                // Persist and replace the temp bubble in-place
+                await finalizeStreamingBubble(fullResponse, currentSessionId);
+                subscription.unsubscribe();
+              } else if (streamData.type === "error") {
+                console.error("❌ AppSync error:", streamData.content);
+                // Remove temp bubble on error (optional)
+                setMessages((prev) =>
+                  prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+                );
+                subscription.unsubscribe();
+              }
+            } catch (err) {
+              console.error("Error processing stream data:", err);
+            }
+          },
+          error: (error) => {
+            console.error("❌ AppSync subscription error:", error);
+            // Remove temp bubble on error (optional)
+            setMessages((prev) =>
+              prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+            );
+          },
+        });
+
+      // Kick off text generation
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: authToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message_content: message }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error("❌ AppSync streaming error:", error);
+      // Remove temp bubble on error (optional)
+      setMessages((prev) =>
+        prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+      );
+      throw error;
+    }
+  };
+
   const fetchEmpathySummary = async () => {
     if (!session || !patient) return;
+
+    // Use real-time empathy data if available, otherwise fetch from API
+    if (realtimeEmpathy.length > 0) {
+      setEmpathySummary({ realtime_feedback: realtimeEmpathy });
+      setIsEmpathyCoachOpen(true);
+      return;
+    }
 
     setIsEmpathyLoading(true);
     try {
@@ -488,10 +679,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
 
   useEffect(() => {
-    if (patient) {
+    if (patient && group) {
       fetchFiles();
+      fetchPatientContext();
     }
-  }, [patient]);
+  }, [patient, group]);
 
   async function retrieveKnowledgeBase(message, sessionId) {
     try {
@@ -645,26 +837,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent(newSession.session_name)}`;
+        )}&session_name=${encodeURIComponent(
+          newSession.session_name
+        )}&stream=true`;
 
-        return fetch(textGenUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message_content: message,
-          }),
-        });
-      })
-      .then((textGenResponse) => {
-        if (!textGenResponse.ok) {
-          throw new Error(
-            `Failed to generate text: ${textGenResponse.statusText}`
-          );
-        }
-        return textGenResponse.json();
+        console.log("🚀 Using AppSync streaming");
+        // Handle AppSync streaming (don't add student message to newMessage since it's already added)
+        return handleStreamingResponse(textGenUrl, authToken, message, newSession.session_id);
       })
       .then((textGenData) => {
         setSession((prevSession) => ({
@@ -720,11 +899,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         if (!response1.ok || !response2.ok) {
           throw new Error("Failed to fetch endpoints");
         }
-
-        return retrieveKnowledgeBase(
-          textGenData.llm_output,
-          newSession.session_id
-        );
+        // Note: retrieveKnowledgeBase is now called within handleStreamingResponse
+        return textGenData;
       })
       .catch((error) => {
         setIsSubmitting(false);
@@ -814,31 +990,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           sessionData.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent("New chat")}`;
+        )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
 
+        console.log("🚀 Using AppSync streaming for initial message");
         console.log("Session data for text generation:", sessionData);
 
-        return fetch(textGenUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-        });
-      })
-      .then((textResponse) => {
-        if (!textResponse.ok) {
-          throw new Error(
-            `Failed to create initial message: ${textResponse.statusText}`
-          );
-        }
-        return textResponse.json();
+        // Handle AppSync streaming for initial message
+        return handleStreamingResponse(textGenUrl, authToken, "", sessionData.session_id);
       })
       .then((textResponseData) => {
-        retrieveKnowledgeBase(
-          textResponseData.llm_output,
-          sessionData.session_id
-        );
         console.log("sessionData:", sessionData);
         return sessionData;
       })
@@ -1178,7 +1338,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           <button
             onClick={fetchEmpathySummary}
             disabled={isEmpathyLoading}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PsychologyIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Empathy Coach</span>}
@@ -1187,7 +1347,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Notes Button */}
           <button
             onClick={() => setIsNotesOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <DescriptionIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Notes</span>}
@@ -1196,7 +1356,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Patient Info Button */}
           <button
             onClick={() => setIsPatientInfoOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <InfoIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Patient Info</span>}
@@ -1205,7 +1365,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Reveal Answer Button */}
           <button
             onClick={handleOpenConfirm}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-center space-x-2"
+            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
           >
             <KeyIcon className="w-5 h-5" />
             {sidebarWidth > 160 && <span>Reveal Answer</span>}
@@ -1284,7 +1444,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           )}
 
           {/* TypingIndicator */}
-
           {isAItyping && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
@@ -1515,7 +1674,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
             <div className="text-center">
               <div className="w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <MicIcon className="w-16 h-16 text-emerald-600" />
+                <img
+                  src={profilePicture}
+                  className="w-16 h-16 text-emerald-600"
+                />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
                 Voice Mode Active

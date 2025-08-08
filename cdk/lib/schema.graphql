@@ -1,0 +1,17 @@
+type TextStreamData {
+  sessionId: String!
+  data: AWSJSON!
+}
+
+type Mutation {
+  publishTextStream(sessionId: String!, data: AWSJSON!): TextStreamData @aws_iam @aws_cognito_user_pools
+}
+
+type Subscription {
+  onTextStream(sessionId: String!): TextStreamData
+    @aws_subscribe(mutations: ["publishTextStream"]) @aws_iam @aws_cognito_user_pools
+}
+
+type Query {
+  getTextStream: String
+}

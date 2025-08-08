@@ -8,15 +8,17 @@ import * as cdk from "aws-cdk-lib";
 import { BuildSpec } from "aws-cdk-lib/aws-codebuild";
 import { Construct } from "constructs";
 import * as yaml from "yaml";
-import { ApiGatewayStack } from "./api-gateway-stack";
+import { ApiServiceStack } from "./api-service-stack";
 import { EcsSocketStack } from "./ecs-socket-stack";
+
 
 export class AmplifyStack extends cdk.Stack {
   constructor(
     scope: Construct,
     id: string,
-    apiStack: ApiGatewayStack,
+    apiStack: ApiServiceStack,
     ecsSocketStack: EcsSocketStack,
+    apiStackForAppSync: ApiServiceStack, // This is the same as apiStack now
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -73,6 +75,7 @@ export class AmplifyStack extends cdk.Stack {
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
         VITE_SOCKET_URL: ecsSocketStack.socketUrl,
+        VITE_APPSYNC_GRAPHQL_URL: apiStack.appSyncApi.graphqlUrl,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),
     });
