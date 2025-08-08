@@ -51,7 +51,9 @@ const TypingIndicator = ({ patientName }) => (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-4 flex items-center space-x-3">
       <l-mirage size="24" speed="2.5" color="#10b981"></l-mirage>
       <span className="text-gray-600 font-medium text-sm">
-        {patientName ? `${titleCase(patientName)} is typing...` : "Typing..."}
+        {patientName
+          ? `${titleCase(patientName)} is thinking...`
+          : "Thinking..."}
       </span>
     </div>
   </div>
@@ -585,7 +587,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
             try {
               if (streamData.type === "empathy") {
-                // optional: do nothing here
+                console.log("🧠 Empathy feedback received:", streamData.content);
+                // You can display this immediately or store it for later use
               } else if (streamData.type === "start") {
                 startStreamingBubble();
               } else if (streamData.type === "chunk") {

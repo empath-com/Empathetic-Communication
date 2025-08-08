@@ -12,6 +12,7 @@ from langchain.chains import create_retrieval_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
 from langchain_core.pydantic_v1 import BaseModel, Field
+from threading import Thread
 
 class LLM_evaluation(BaseModel):
     response: str = Field(description="Assessment of the student's answer with a follow-up question.")
@@ -389,7 +390,9 @@ def get_response(
                 conversational_rag_chain,
                 query,
                 session_id,
-                empathy_feedback
+                patient_name,
+                patient_age,
+                patient_prompt
             )
         else:
             response = generate_response(
@@ -453,36 +456,63 @@ def generate_response(conversational_rag_chain: object, query: str, session_id: 
         logger.error(f"Error generating response in session {session_id}: {e}")
         raise e
 
-def generate_streaming_response(conversational_rag_chain: object, query: str, session_id: str, empathy_feedback: str = "") -> str:
+def generate_streaming_response(
+    conversational_rag_chain: object,
+    query: str,
+    session_id: str,
+    patient_name: str,
+    patient_age: str,
+    patient_prompt: str
+) -> str:
     """
-    Generates a streaming response using AppSync for real-time delivery.
+    Streams an answer via AppSync as fast as possible.
+
+    - Publishes 'start' immediately
+    - Streams chunks without artificial sleeps
+    - Falls back to invoke() if streaming fails (tiny sleep for UX)
+    - Saves final AI message to DB
+    - Runs empathy evaluation in a background thread so it doesn't block the stream
     """
-    import json
     import time
-    
-    try:
-        logger.info(f"🚀 Starting streaming response for session: {session_id}")
-        
-        # Send empathy feedback if available
-        if empathy_feedback:
-            logger.info(f"📤 Publishing empathy feedback for session: {session_id}")
-            publish_to_appsync(session_id, {'type': 'empathy', 'content': empathy_feedback})
-        
-        # Send start signal
-        logger.info(f"📤 Publishing start signal for session: {session_id}")
-        publish_to_appsync(session_id, {'type': 'start', 'content': ''})
-        
-        full_response = ""
-        
+    from threading import Thread
+
+    def empathy_async():
         try:
-            # Stream the response using the chain's streaming capability
+            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            nova_client = {
+                "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+                "model_id": "amazon.nova-pro-v1:0"
+            }
+            evaluation = evaluate_empathy(query, patient_context, nova_client)
+            feedback = build_empathy_feedback(evaluation)  # <- use your existing markdown builder
+            if feedback:
+                publish_to_appsync(session_id, {"type": "empathy", "content": feedback})
+        except Exception as e:
+            logger.exception("Async empathy publish failed")
+
+    try:
+        # kick empathy off in the background for real student message
+
+        if query.strip() and "Greet me" not in query and query.strip().lower() not in ('introduce yourself briefly', 'say "hi"'):
+            Thread(
+                target=publish_empathy_async,
+                args=(session_id, query, patient_name, patient_age, patient_prompt),
+                daemon=True,
+            ).start()
+
+        publish_to_appsync(session_id, {"type": "start", "content": ""})
+
+
+        # tell frontend to show the bubble immediately
+
+
+        full_response = ""
+
+        try:
+            # primary: true streaming
             for chunk in conversational_rag_chain.stream(
-                {
-                    "input": query
-                },
-                config={
-                    "configurable": {"session_id": session_id}
-                },
+                {"input": query},
+                config={"configurable": {"session_id": session_id}},
             ):
                 content = ""
                 if isinstance(chunk, dict):
@@ -494,44 +524,41 @@ def generate_streaming_response(conversational_rag_chain: object, query: str, se
                         content = chunk["text"]
                 elif isinstance(chunk, str):
                     content = chunk
-                
+
                 if content:
                     full_response += content
-                    # Publish chunk to AppSync subscription
-                    publish_to_appsync(session_id, {'type': 'chunk', 'content': content})
-                    time.sleep(0.05)  # Small delay for better streaming effect
-            
+                    publish_to_appsync(session_id, {"type": "chunk", "content": content})
+                    # no artificial sleep — fastest possible
+
             if not full_response:
                 raise Exception("No content received from streaming")
-                
+
         except Exception as stream_error:
             logger.warning(f"Streaming failed, falling back to invoke: {stream_error}")
             result = conversational_rag_chain.invoke(
-                {
-                    "input": query
-                },
-                config={
-                    "configurable": {"session_id": session_id}
-                },
+                {"input": query},
+                config={"configurable": {"session_id": session_id}},
             )
             full_response = result.get("answer", str(result))
-            # Split response into chunks for streaming effect
-            words = full_response.split(' ')
+            # fake small chunks for UX
+            words = full_response.split(" ")
             for i in range(0, len(words), 3):
-                chunk = ' '.join(words[i:i+3])
-                publish_to_appsync(session_id, {'type': 'chunk', 'content': chunk + ' '})
-                time.sleep(0.1)
-        
-        # Send end signal
-        publish_to_appsync(session_id, {'type': 'end', 'content': full_response})
-        
+                chunk = " ".join(words[i : i + 3]) + " "
+                publish_to_appsync(session_id, {"type": "chunk", "content": chunk})
+                time.sleep(0.005)
+
+        # end + persist
+        publish_to_appsync(session_id, {"type": "end", "content": full_response})
+        save_message_to_db(session_id, False, full_response, None)
+
         return full_response
-        
+
     except Exception as e:
         logger.error(f"Error generating streaming response in session {session_id}: {e}")
         error_msg = "I am sorry, I cannot provide a response to that query."
-        publish_to_appsync(session_id, {'type': 'error', 'content': error_msg})
+        publish_to_appsync(session_id, {"type": "error", "content": error_msg})
         return error_msg
+
 
 def get_cognito_token():
     """
@@ -739,6 +766,120 @@ def get_empathy_level_name(score: int) -> str:
         5: "Extending"
     }
     return level_names.get(score, "Competent")
+
+
+def build_empathy_feedback(e):
+    """Turn evaluate_empathy() dict into the same markdown you had before."""
+    if not e:
+        return ""
+
+    # Pull scores with sane defaults
+    pt = int(e.get('perspective_taking', 3))
+    er = int(e.get('emotional_resonance', 3))
+    ack = int(e.get('acknowledgment', 3))
+    lang = int(e.get('language_communication', 3))
+    cog = int(e.get('cognitive_empathy', 3))
+    aff = int(e.get('affective_empathy', 3))
+    realism_flag = e.get('realism_flag', 'unknown')
+    feedback = e.get('feedback', {})
+    judge = e.get('judge_reasoning', {})
+
+    # Overall score = avg of six dims, rounded
+    overall = max(1, min(5, round((pt + er + ack + lang + cog + aff) / 6)))
+
+    def stars(n): return "⭐" * max(1, min(5, int(n))) + f" ({n}/5)"
+    def lvl(n):   return get_empathy_level_name(int(n))
+
+    # Overall stars text
+    overall_stars = ["⭐ (1/5)", "⭐⭐ (2/5)", "⭐⭐⭐ (3/5)", "⭐⭐⭐⭐ (4/5)", "⭐⭐⭐⭐⭐ (5/5)"][overall-1]
+    realism_icon = "✅" if realism_flag != "unrealistic" else ""
+
+    lines = []
+    lines.append("**Empathy Coach:**\n")
+    lines.append(f"**Overall Empathy Score:** {lvl(overall)} {overall_stars}\n")
+    lines.append("**Category Breakdown:**")
+    lines.append(f"• Perspective-Taking: {lvl(pt)} {stars(pt)}")
+    lines.append(f"• Emotional Resonance/Compassionate Care: {lvl(er)} {stars(er)}")
+    lines.append(f"• Acknowledgment of Patient's Experience: {lvl(ack)} {stars(ack)}")
+    lines.append(f"• Language & Communication: {lvl(lang)} {stars(lang)}\n")
+    lines.append("**Empathy Type Analysis:**")
+    lines.append(f"• Cognitive Empathy (Understanding): {lvl(cog)} {stars(cog)}")
+    lines.append(f"• Affective Empathy (Feeling): {lvl(aff)} {stars(aff)}\n")
+    lines.append(f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\n")
+
+    # Judge assessment rewrite (light soften)
+    overall_assessment = judge.get('overall_assessment', '')
+    if overall_assessment:
+        assessment = (overall_assessment
+                      .replace("The student's response", "Your response")
+                      .replace("The student", "You")
+                      .replace("demonstrates", "show")
+                      .replace("fails to", "could better")
+                      .replace("lacks", "would benefit from more"))
+        lines.append("**Coach Assessment:**")
+        lines.append(assessment + "\n")
+
+    # Structured feedback bullets (if dict)
+    if isinstance(feedback, dict):
+        strengths = feedback.get('strengths') or []
+        if strengths:
+            lines.append("**Strengths:**")
+            for s in strengths:
+                lines.append(f"• {s}")
+            lines.append("")  # spacer
+
+        areas = feedback.get('areas_for_improvement') or []
+        if areas:
+            lines.append("**Areas for improvement:**")
+            for a in areas:
+                lines.append(f"• {a}")
+            lines.append("")
+
+        why_real = feedback.get('why_realistic')
+        why_unreal = feedback.get('why_unrealistic')
+        if why_real:
+            lines.append(f"**Your response is {realism_flag} because:** {why_real}\n")
+        elif why_unreal:
+            lines.append(f"**Your response is {realism_flag} because:** {why_unreal}\n")
+
+        sugg = feedback.get('improvement_suggestions') or []
+        if sugg:
+            lines.append("**Coach Recommendations:**")
+            for s in sugg:
+                lines.append(f"• {s}")
+            lines.append("")
+
+        alt = feedback.get('alternative_phrasing')
+        if alt:
+            lines.append(f"**Coach-Recommended Approach:** *{alt}*\n")
+    elif isinstance(feedback, str) and len(feedback) > 10:
+        lines.append(f"**Feedback:** {feedback}\n")
+    else:
+        lines.append("**Feedback:** System temporarily unavailable.\n")
+
+    lines.append("---\n")
+    return "\n".join(lines)
+
+
+
+def publish_empathy_async(session_id: str, query: str, patient_name: str, patient_age: str, patient_prompt: str):
+    """Runs evaluate_empathy and publishes markdown to AppSync when ready."""
+    try:
+        patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+        nova_client = {
+            "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+            "model_id": "amazon.nova-pro-v1:0"
+        }
+        evaluation = evaluate_empathy(query, patient_context, nova_client)
+        feedback_md = build_empathy_feedback(evaluation)
+        if feedback_md:
+            publish_to_appsync(session_id, {"type": "empathy", "content": feedback_md})
+
+        # (Optional) If you want to store the evaluation JSON with the student's message:
+        # save_message_to_db(session_id, True, query, evaluation)
+
+    except Exception as e:
+        logger.exception("Async empathy publish failed")
 
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
