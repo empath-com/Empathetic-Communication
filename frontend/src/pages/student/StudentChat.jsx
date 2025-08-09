@@ -822,7 +822,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent(newSession.session_name)}`;
+        )}&session_name=${encodeURIComponent(newSession.session_name)}&stream=true`;
 
         console.log("🚀 Using AppSync streaming");
         return handleStreamingResponse(
@@ -978,7 +978,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           sessionData.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent("New chat")}`;
+        )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
 
         console.log("Session data for text generation:", sessionData);
 
