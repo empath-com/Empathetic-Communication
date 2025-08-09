@@ -16,11 +16,13 @@ let novaStartListenerAttached = false;
 let lastAudio = null;
 let lastAudioCtx = null;
 
+
 export async function startSpokenLLM(
   voice_id = "matthew",
   setLoading,
   session_id
 ) {
+
   if (novaStarted) {
     console.warn("🔁 Nova Sonic is already started.");
     return;

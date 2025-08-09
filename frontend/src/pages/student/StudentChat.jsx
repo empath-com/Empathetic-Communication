@@ -117,11 +117,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [profilePicture, setProfilePicture] = useState(null);
+
   // Real-time empathy chunks from AppSync stream
   const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
 
   // Remove global AppSync subscription approach; we'll subscribe per request
   // const streamSubRef = useRef(null);
+
 
   const navigate = useNavigate();
 
@@ -486,6 +488,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       return;
     }
 
+
     setIsEmpathyLoading(true);
     try {
       const authSession = await fetchAuthSession();
@@ -819,9 +822,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent(
-          newSession.session_name
-        )}&stream=true`;
+        )}&session_name=${encodeURIComponent(newSession.session_name)}`;
 
         console.log("🚀 Using AppSync streaming");
         return handleStreamingResponse(
@@ -885,7 +886,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         if (!response1.ok || !response2.ok) {
           throw new Error("Failed to fetch endpoints");
         }
+
         return textGenData;
+
       })
       .catch((error) => {
         setIsSubmitting(false);
@@ -975,7 +978,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           sessionData.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
+        )}&session_name=${encodeURIComponent("New chat")}`;
 
         console.log("Session data for text generation:", sessionData);
 
@@ -989,6 +992,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       })
       .then((textResponseData) => {
         // Do not call retrieveKnowledgeBase here; stream already persisted the AI message.
+
         console.log("sessionData:", sessionData);
         return sessionData;
       })
@@ -1726,6 +1730,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
             />
 
+
             {/* Bottom control island with Close (red) and Notes (white) */}
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3003] bg-white/90 backdrop-blur-md border border-gray-200 shadow-lg rounded-full px-3 py-2 flex items-center space-x-3">
               <button
@@ -1751,6 +1756,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               </button>
             </div>
           </div>
+
         </>
       )}
     </div>
