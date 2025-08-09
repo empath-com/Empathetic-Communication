@@ -1753,6 +1753,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 onClick={() => {
                   // Disable any further playback and stop immediately
                   allowAudioRef.current = false;
+                  getMessages();
                   stopAudioPlayback();
                   stopSpokenLLM();
                   setIsRecording(false);
