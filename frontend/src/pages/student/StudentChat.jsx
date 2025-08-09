@@ -39,6 +39,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 
 import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
+import EditNoteIcon from "@mui/icons-material/EditNote";
 
 // Add Amplify GraphQL client for AppSync streaming
 import { generateClient } from "aws-amplify/api";
@@ -123,7 +124,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   // Remove global AppSync subscription approach; we'll subscribe per request
   // const streamSubRef = useRef(null);
-
 
   const navigate = useNavigate();
 
@@ -488,7 +488,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       return;
     }
 
-
     setIsEmpathyLoading(true);
     try {
       const authSession = await fetchAuthSession();
@@ -617,6 +616,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         message_id: STREAMING_TEMP_ID,
         student_sent: false,
         message_content: " ", // space ensures bubble renders
+        _streaming: true, // enable typing cursor
       },
     ]);
     setIsAItyping(false);
@@ -640,7 +640,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     setMessages((prev) =>
       prev.map((m) =>
         m.message_id === STREAMING_TEMP_ID
-          ? { ...m, message_id: `ai_${Date.now()}`, message_content: finalText }
+          ? {
+              ...m,
+              message_id: `ai_${Date.now()}`,
+              message_content: finalText,
+              _streaming: false, // stop typing cursor
+            }
           : m
       )
     );
@@ -822,7 +827,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
-        )}&session_name=${encodeURIComponent(newSession.session_name)}&stream=true`;
+        )}&session_name=${encodeURIComponent(
+          newSession.session_name
+        )}&stream=true`;
 
         console.log("🚀 Using AppSync streaming");
         return handleStreamingResponse(
@@ -888,7 +895,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         }
 
         return textGenData;
-
       })
       .catch((error) => {
         setIsSubmitting(false);
@@ -1730,7 +1736,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
             />
 
-
             {/* Bottom control island with Close (red) and Notes (white) */}
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3003] bg-white/90 backdrop-blur-md border border-gray-200 shadow-lg rounded-full px-3 py-2 flex items-center space-x-3">
               <button
@@ -1748,15 +1753,22 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               </button>
 
               <button
-                onClick={() => setIsNotesOpen(true)}
-                aria-label="Open notes"
-                className="w-12 h-12 rounded-full bg-white hover:bg-gray-50 border border-gray-200 flex items-center justify-center shadow-md"
+                onClick={() => setIsNotesOpen((prev) => !prev)}
+                aria-label={isNotesOpen ? "Close notes" : "Open notes"}
+                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${
+                  isNotesOpen
+                    ? "bg-emerald-100 border-emerald-400"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
               >
-                <DescriptionIcon className="w-6 h-6 text-gray-700" />
+                <EditNoteIcon
+                  className={`w-6 h-6 ${
+                    isNotesOpen ? "text-emerald-600" : "text-gray-700"
+                  }`}
+                />
               </button>
             </div>
           </div>
-
         </>
       )}
     </div>

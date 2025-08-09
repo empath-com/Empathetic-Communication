@@ -120,7 +120,10 @@ const AIMessage = ({
           <div className="text-sm text-gray-900 leading-relaxed">
             <MarkdownRender content={processedMessage} />
             {isStreaming && (
-              <span className="inline-block w-2 h-5 bg-emerald-500 ml-1 animate-pulse" />
+              <span
+                aria-hidden
+                className="inline-block align-bottom ml-1 w-[2px] h-[1em] bg-emerald-500 animate-pulse"
+              />
             )}
           </div>
         </div>
