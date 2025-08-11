@@ -2,8 +2,9 @@
  * Handler for fetching empathy summary for a student
  */
 const studentEmpathySummary = async (event, sqlConnection) => {
-  const { session_id, email, simulation_group_id, patient_id } = event.queryStringParameters || {};
-  
+  const { session_id, email, simulation_group_id, patient_id } =
+    event.queryStringParameters || {};
+
   if (!session_id || !email || !simulation_group_id || !patient_id) {
     return {
       statusCode: 400,
@@ -17,7 +18,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       SELECT column_name FROM information_schema.columns 
       WHERE table_name = 'messages' AND column_name = 'empathy_evaluation';
     `;
-    
+
     if (columnCheck.length === 0) {
       return {
         statusCode: 200,
@@ -32,16 +33,16 @@ const studentEmpathySummary = async (event, sqlConnection) => {
           avg_language_communication: 0,
           avg_cognitive_empathy: 0,
           avg_affective_empathy: 0,
-          summary: "Empathy evaluation feature not yet available."
+          summary: "Empathy evaluation feature not yet available.",
         }),
       };
     }
-    
+
     // Get user_id from email
     const userResult = await sqlConnection`
       SELECT user_id FROM "users" WHERE user_email = ${email} LIMIT 1;
     `;
-    
+
     const userId = userResult[0]?.user_id;
     if (!userId) {
       return {
@@ -49,7 +50,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         body: JSON.stringify({ error: "User not found" }),
       };
     }
-    
+
     // Get all empathy evaluations for this session
     const empathyData = await sqlConnection`
       SELECT m.empathy_evaluation
@@ -58,12 +59,14 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
       JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
       WHERE e.user_id = ${userId}
-      AND e.simulation_group_id = ${simulation_group_id}
-      AND si.patient_id = ${patient_id}
-      AND m.student_sent = true
-      AND m.empathy_evaluation IS NOT NULL;
+        AND e.simulation_group_id = ${simulation_group_id}
+        AND si.patient_id = ${patient_id}
+        AND m.student_sent = true
+        AND m.empathy_evaluation IS NOT NULL
+      ORDER BY m.time_sent DESC
+      LIMIT 3;
     `;
-    
+
     if (!empathyData || empathyData.length === 0) {
       return {
         statusCode: 200,
@@ -78,13 +81,19 @@ const studentEmpathySummary = async (event, sqlConnection) => {
           avg_language_communication: 0,
           avg_cognitive_empathy: 0,
           avg_affective_empathy: 0,
-          summary: "No empathy evaluation data available yet."
+          summary: "No empathy evaluation data available yet.",
         }),
       };
     }
-    
+
     // Calculate averages
-    let totalScore = 0, totalPT = 0, totalER = 0, totalAck = 0, totalLang = 0, totalCog = 0, totalAff = 0;
+    let totalScore = 0,
+      totalPT = 0,
+      totalER = 0,
+      totalAck = 0,
+      totalLang = 0,
+      totalCog = 0,
+      totalAff = 0;
     let validCount = 0;
     let strengths = [];
     let areasForImprovement = [];
@@ -94,11 +103,24 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     let unrealisticCount = 0;
     let whyRealistic = [];
     let whyUnrealistic = [];
-    
+
+    console.log(`Found ${empathyData.length} empathy evaluations`);
+
     // Process all evaluations
-    empathyData.forEach(row => {
+    empathyData.forEach((row, index) => {
       const evaluation = row.empathy_evaluation;
-      if (evaluation && typeof evaluation === 'object') {
+      console.log(`Evaluation ${index}:`, JSON.stringify(evaluation, null, 2));
+      console.log(
+        `Feedback object:`,
+        JSON.stringify(evaluation?.feedback, null, 2)
+      );
+      console.log(`Strengths:`, evaluation?.feedback?.strengths);
+      console.log(`Areas:`, evaluation?.feedback?.areas_for_improvement);
+      console.log(
+        `Suggestions:`,
+        evaluation?.feedback?.improvement_suggestions
+      );
+      if (evaluation && typeof evaluation === "object") {
         totalScore += evaluation.empathy_score || 0;
         totalPT += evaluation.perspective_taking || 0;
         totalER += evaluation.emotional_resonance || 0;
@@ -107,43 +129,58 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         totalCog += evaluation.cognitive_empathy || 0;
         totalAff += evaluation.affective_empathy || 0;
         validCount++;
-        
+
         // Collect feedback data from the most recent evaluations (up to 3)
         if (validCount <= 3 && evaluation.feedback) {
-          if (typeof evaluation.feedback === 'object') {
+          if (typeof evaluation.feedback === "object") {
             // Add strengths
-            if (evaluation.feedback.strengths && Array.isArray(evaluation.feedback.strengths)) {
+            if (
+              evaluation.feedback.strengths &&
+              Array.isArray(evaluation.feedback.strengths)
+            ) {
               strengths = [...strengths, ...evaluation.feedback.strengths];
             }
-            
+
             // Add areas for improvement
-            if (evaluation.feedback.areas_for_improvement && Array.isArray(evaluation.feedback.areas_for_improvement)) {
-              areasForImprovement = [...areasForImprovement, ...evaluation.feedback.areas_for_improvement];
+            if (
+              evaluation.feedback.areas_for_improvement &&
+              Array.isArray(evaluation.feedback.areas_for_improvement)
+            ) {
+              areasForImprovement = [
+                ...areasForImprovement,
+                ...evaluation.feedback.areas_for_improvement,
+              ];
             }
-            
+
             // Add improvement suggestions
-            if (evaluation.feedback.improvement_suggestions && Array.isArray(evaluation.feedback.improvement_suggestions)) {
-              recommendations = [...recommendations, ...evaluation.feedback.improvement_suggestions];
+            if (
+              evaluation.feedback.improvement_suggestions &&
+              Array.isArray(evaluation.feedback.improvement_suggestions)
+            ) {
+              recommendations = [
+                ...recommendations,
+                ...evaluation.feedback.improvement_suggestions,
+              ];
             }
-            
+
             // Get the most recent recommended approach
             if (evaluation.feedback.alternative_phrasing) {
               recommendedApproach = evaluation.feedback.alternative_phrasing;
             }
-            
+
             // Count realism flags and collect reasoning
-            if (evaluation.realism_flag === 'unrealistic') {
+            if (evaluation.realism_flag === "unrealistic") {
               unrealisticCount++;
-              
+
               // Collect why_unrealistic feedback
-              if (evaluation.feedback && evaluation.feedback.why_unrealistic) {
+              if (evaluation.feedback.why_unrealistic) {
                 whyUnrealistic.push(evaluation.feedback.why_unrealistic);
               }
             } else {
               realisticCount++;
-              
+
               // Collect why_realistic feedback
-              if (evaluation.feedback && evaluation.feedback.why_realistic) {
+              if (evaluation.feedback.why_realistic) {
                 whyRealistic.push(evaluation.feedback.why_realistic);
               }
             }
@@ -151,7 +188,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         }
       }
     });
-    
+
     // Calculate averages
     const avgScore = validCount > 0 ? (totalScore / validCount).toFixed(1) : 0;
     const avgPT = validCount > 0 ? (totalPT / validCount).toFixed(1) : 0;
@@ -160,7 +197,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     const avgLang = validCount > 0 ? (totalLang / validCount).toFixed(1) : 0;
     const avgCog = validCount > 0 ? (totalCog / validCount).toFixed(1) : 0;
     const avgAff = validCount > 0 ? (totalAff / validCount).toFixed(1) : 0;
-    
+
     // Determine overall level
     const getLevel = (score) => {
       if (score >= 4.5) return "Extending";
@@ -169,44 +206,51 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       if (score >= 1.5) return "Advanced Beginner";
       return "Novice";
     };
-    
+
     // Generate summary
     const overallLevel = getLevel(parseFloat(avgScore));
-    
+
     // Determine strongest areas
     const strengthAreas = [
-      avgPT >= 3.5 ? 'perspective-taking' : '',
-      avgER >= 3.5 ? 'emotional resonance' : '',
-      avgAck >= 3.5 ? 'patient acknowledgment' : '',
-      avgLang >= 3.5 ? 'communication language' : ''
-    ].filter(Boolean).join(', ');
-    
+      avgPT >= 3.5 ? "perspective-taking" : "",
+      avgER >= 3.5 ? "emotional resonance" : "",
+      avgAck >= 3.5 ? "patient acknowledgment" : "",
+      avgLang >= 3.5 ? "communication language" : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     // Determine areas for development
     const weaknessAreas = [
-      avgPT < 3.5 ? 'perspective-taking' : '',
-      avgER < 3.5 ? 'emotional resonance' : '',
-      avgAck < 3.5 ? 'patient acknowledgment' : '',
-      avgLang < 3.5 ? 'communication clarity' : ''
-    ].filter(Boolean).join(', ');
-    
+      avgPT < 3.5 ? "perspective-taking" : "",
+      avgER < 3.5 ? "emotional resonance" : "",
+      avgAck < 3.5 ? "patient acknowledgment" : "",
+      avgLang < 3.5 ? "communication clarity" : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     // Determine empathy profile
-    let empathySummary = '';
+    let empathySummary = "";
     if (avgCog === avgAff) {
-      empathySummary = avgCog >= 3.5
-        ? 'a balanced and strong mix of cognitive (understanding) and affective (emotional connection) empathy'
-        : 'a balanced but limited expression of both cognitive and affective empathy';
+      empathySummary =
+        avgCog >= 3.5
+          ? "a balanced and strong mix of cognitive (understanding) and affective (emotional connection) empathy"
+          : "a balanced but limited expression of both cognitive and affective empathy";
     } else {
-      empathySummary = avgCog > avgAff
-        ? 'stronger cognitive empathy (understanding)'
-        : 'stronger affective empathy (emotional connection)';
+      empathySummary =
+        avgCog > avgAff
+          ? "stronger cognitive empathy (understanding)"
+          : "stronger affective empathy (emotional connection)";
     }
-    
+
     // Final summary string
-    const summary = `You demonstrate ${overallLevel.toLowerCase()} empathetic communication skills. ` +
-      (strengthAreas ? `Your strongest areas include ${strengthAreas}. ` : '') +
-      (weaknessAreas ? `Areas for development: ${weaknessAreas}. ` : '') +
+    const summary =
+      `You demonstrate ${overallLevel.toLowerCase()} empathetic communication skills. ` +
+      (strengthAreas ? `Your strongest areas include ${strengthAreas}. ` : "") +
+      (weaknessAreas ? `Areas for development: ${weaknessAreas}. ` : "") +
       `You show ${empathySummary} in your interactions.`;
-    
+
     // Get total interactions count
     const totalInteractions = await sqlConnection`
       SELECT COUNT(*) as count
@@ -219,24 +263,26 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       AND si.patient_id = ${patient_id}
       AND m.student_sent = true;
     `;
-    
+
     // Remove duplicates from arrays
     const uniqueStrengths = [...new Set(strengths)];
     const uniqueAreasForImprovement = [...new Set(areasForImprovement)];
     const uniqueRecommendations = [...new Set(recommendations)];
     const uniqueWhyRealistic = [...new Set(whyRealistic)];
     const uniqueWhyUnrealistic = [...new Set(whyUnrealistic)];
-    
+
     // Generate realism explanation based on the most common assessment
     const isRealistic = realisticCount >= unrealisticCount;
-    let realismExplanation = '';
-    
+    let realismExplanation = "";
+
     // If we have both realistic and unrealistic responses, provide a balanced explanation
     if (realisticCount > 0 && unrealisticCount > 0) {
       // Get the most recent or most representative explanations
-      const realisticReason = uniqueWhyRealistic.length > 0 ? uniqueWhyRealistic[0] : '';
-      const unrealisticReason = uniqueWhyUnrealistic.length > 0 ? uniqueWhyUnrealistic[0] : '';
-      
+      const realisticReason =
+        uniqueWhyRealistic.length > 0 ? uniqueWhyRealistic[0] : "";
+      const unrealisticReason =
+        uniqueWhyUnrealistic.length > 0 ? uniqueWhyUnrealistic[0] : "";
+
       if (isRealistic) {
         realismExplanation = `While most of your responses are realistic, some contained unrealistic elements. ${realisticReason} However, be mindful that ${unrealisticReason.toLowerCase()}`;
       } else {
@@ -244,16 +290,18 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       }
     } else if (isRealistic) {
       // All or mostly realistic responses
-      realismExplanation = uniqueWhyRealistic.length > 0 
-        ? uniqueWhyRealistic[0] 
-        : 'Your responses use appropriate clinical language and approaches consistent with healthcare practice.';
+      realismExplanation =
+        uniqueWhyRealistic.length > 0
+          ? uniqueWhyRealistic[0]
+          : "Your responses use appropriate clinical language and approaches consistent with healthcare practice.";
     } else {
       // All or mostly unrealistic responses
-      realismExplanation = uniqueWhyUnrealistic.length > 0 
-        ? uniqueWhyUnrealistic[0] 
-        : 'Your responses contain elements that may not align with typical clinical practice.';
+      realismExplanation =
+        uniqueWhyUnrealistic.length > 0
+          ? uniqueWhyUnrealistic[0]
+          : "Your responses contain elements that may not align with typical clinical practice.";
     }
-    
+
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -269,15 +317,22 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         avg_affective_empathy: avgAff,
         summary: summary,
         strengths: uniqueStrengths.length > 0 ? uniqueStrengths : null,
-        areas_for_improvement: uniqueAreasForImprovement.length > 0 ? uniqueAreasForImprovement : null,
-        recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
+        areas_for_improvement:
+          uniqueAreasForImprovement.length > 0
+            ? uniqueAreasForImprovement
+            : null,
+        recommendations:
+          uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
         recommended_approach: recommendedApproach || null,
-        realism_assessment: `Your responses are generally ${realisticCount >= unrealisticCount ? 'realistic' : 'unrealistic'}`,
-        realism_explanation: realismExplanation
+        realism_assessment: `Your responses are generally ${
+          realisticCount >= unrealisticCount ? "realistic" : "unrealistic"
+        }`,
+        realism_explanation: realismExplanation,
       }),
     };
   } catch (error) {
     console.error("Error fetching empathy summary:", error);
+    console.error("Stack trace:", error.stack);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: "Failed to fetch empathy summary" }),

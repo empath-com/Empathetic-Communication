@@ -360,17 +360,37 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         }
       };
 
+      const handleEmpathyFeedback = (data) => {
+        console.log("🧠 Received empathy feedback");
+        if (data.content) {
+          setRealtimeEmpathy((prev) => [
+            ...prev,
+            { content: data.content, timestamp: Date.now() },
+          ]);
+        }
+      };
+
+      const handleDiagnosisComplete = (data) => {
+        console.log("🎯 Diagnosis completed:", data.message);
+        // Show completion notification or handle UI update
+        alert("Congratulations! You have achieved the proper diagnosis.");
+      };
+
       socket.off("connect");
       socket.off("disconnect");
       socket.off("connect_error");
       socket.off("text-message");
       socket.off("audio-chunk");
+      socket.off("empathy-feedback");
+      socket.off("diagnosis-complete");
 
       socket.on("connect", handleConnect);
       socket.on("disconnect", handleDisconnect);
       socket.on("connect_error", handleError);
       socket.on("text-message", handleText);
       socket.on("audio-chunk", handleAudio);
+      socket.on("empathy-feedback", handleEmpathyFeedback);
+      socket.on("diagnosis-complete", handleDiagnosisComplete);
     };
     setupSocketListeners();
   }, []);
@@ -489,13 +509,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const fetchEmpathySummary = async () => {
     if (!session || !patient) return;
 
-    // Prefer real-time empathy if available
-    if (realtimeEmpathy.length > 0) {
-      setEmpathySummary({ realtime_feedback: realtimeEmpathy });
-      setIsEmpathyCoachOpen(true);
-      return;
-    }
-
     setIsEmpathyLoading(true);
     try {
       const authSession = await fetchAuthSession();
@@ -523,6 +536,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("📊 Empathy API response:", data);
+        console.log("📊 Strengths from API:", data.strengths);
+        console.log("📊 Areas from API:", data.areas_for_improvement);
+        console.log("📊 Recommendations from API:", data.recommendations);
         setEmpathySummary(data);
         setIsEmpathyCoachOpen(true);
       } else {
@@ -699,18 +716,48 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               const streamData = JSON.parse(data.onTextStream.data);
               const t = streamData?.type;
               const content = streamData?.content || "";
+              
+              console.log("📶 AppSync stream received:", { type: t, contentLength: content.length });
 
               if (t === "empathy") {
-                setRealtimeEmpathy((prev) => [
-                  ...prev,
-                  { content, timestamp: Date.now() },
-                ]);
+                console.log("🧠 Empathy feedback received:", content);
+                try {
+                  const empathyData = JSON.parse(content);
+                  console.log("🧠 Parsed empathy data:", empathyData);
+                  
+                  // Transform data to match EmpathyCoachSummary component expectations
+                  const transformedData = {
+                    overall_score: empathyData.empathy_score || 3,
+                    avg_perspective_taking: empathyData.perspective_taking || 3,
+                    avg_emotional_resonance: empathyData.emotional_resonance || 3,
+                    avg_acknowledgment: empathyData.acknowledgment || 3,
+                    avg_language_communication: empathyData.language_communication || 3,
+                    avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
+                    avg_affective_empathy: empathyData.affective_empathy || 3,
+                    realism_assessment: empathyData.realism_flag === 'realistic' ? 'Your responses are generally realistic' : 'Your response is unrealistic',
+                    realism_explanation: empathyData.judge_reasoning?.realism_justification || '',
+                    coach_assessment: empathyData.judge_reasoning?.overall_assessment || '',
+                    strengths: empathyData.feedback?.strengths || [],
+                    areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+                    recommendations: empathyData.feedback?.improvement_suggestions || [],
+                    recommended_approach: empathyData.feedback?.alternative_phrasing || '',
+                    timestamp: Date.now()
+                  };
+                  
+                  console.log("🧠 Transformed empathy data:", transformedData);
+                  setRealtimeEmpathy(prev => [...prev, transformedData]);
+                } catch (e) {
+                  console.error("Failed to parse empathy JSON:", e);
+                  console.error("Raw content:", content);
+                }
               } else if (t === "start") {
+                console.log("🚀 Stream started");
                 startStreamingBubble();
               } else if (t === "chunk") {
                 fullResponse += content;
                 appendStreamingChunk(content);
               } else if (t === "end") {
+                console.log("✅ Stream ended");
                 await finalizeStreamingBubble(fullResponse, currentSessionId);
                 subscription.unsubscribe();
               } else if (t === "error") {
@@ -763,6 +810,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     let authToken;
     let userEmail;
     let messageContent = textareaRef.current.value.trim();
+    
+    console.log("📝 Submitting message:", messageContent);
     let getSession;
 
     if (!messageContent) {
@@ -839,7 +888,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           newSession.session_name
         )}&stream=true`;
 
-        console.log("🚀 Using AppSync streaming");
+        console.log("🚀 Using AppSync streaming for session:", newSession.session_id);
         return handleStreamingResponse(
           textGenUrl,
           authToken,
@@ -1592,7 +1641,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               </Typography>
             </div>
           ) : (
-            <EmpathyCoachSummary empathyData={empathySummary} />
+            <>
+              {console.log("🎯 Rendering EmpathyCoachSummary with data:", empathySummary)}
+              <EmpathyCoachSummary empathyData={empathySummary} />
+            </>
           )}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 2 }}>

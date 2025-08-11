@@ -96,9 +96,13 @@ io.on("connection", (socket) => {
         // ─ Patient simulation context for Nova Sonic ─
         PATIENT_NAME: config.patient_name || "",
         PATIENT_PROMPT: config.patient_prompt || "",
+        PATIENT_ID: config.patient_id || "",
         LLM_COMPLETION: config.llm_completion ? "true" : "false",
         // Optional extra instructions to mirror chat.py system_prompt if needed
         EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
+        // AppSync configuration for empathy feedback
+        APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
+        COGNITO_TOKEN: socket.handshake.auth.token || "",
       },
     });
     console.log("📡 Nova process spawned with PID:", novaProcess.pid);
@@ -148,6 +152,22 @@ io.on("connection", (socket) => {
                 });
               }
             }
+            // ─ Empathy feedback ──────────────────────────────────────────
+            else if (parsed.type === "empathy") {
+              console.log("🧠 EMPATHY FEEDBACK:", parsed.content?.substring(0, 100));
+              socket.emit("empathy-feedback", { content: parsed.content });
+            }
+            // ─ Diagnosis completion ──────────────────────────────────────
+            else if (parsed.type === "diagnosis_complete") {
+              console.log("🎯 DIAGNOSIS COMPLETE:", parsed.text);
+              socket.emit("diagnosis-complete", { message: parsed.text });
+            }
+            else if (parsed.type === "diagnosis_verdict") {
+              console.log("🩺 DIAGNOSIS VERDICT:", parsed.verdict);
+              if (parsed.verdict) {
+                socket.emit("diagnosis-complete", { message: "Proper diagnosis achieved" });
+              }
+            }
           } catch {
             // Plain‑text fallback
             console.log("[python]", line);
@@ -156,6 +176,14 @@ io.on("connection", (socket) => {
               socket.emit("nova-started", {
                 status: "Nova Sonic session started",
               });
+            }
+            // Handle empathy feedback in plain text fallback
+            if (line.includes("**Empathy Coach:**")) {
+              socket.emit("empathy-feedback", { content: line });
+            }
+            // Handle diagnosis completion in plain text fallback
+            if (line.includes("Proper diagnosis achieved")) {
+              socket.emit("diagnosis-complete", { message: "Proper diagnosis achieved" });
             }
           }
         });

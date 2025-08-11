@@ -177,7 +177,7 @@ def get_response(
             "model_id": "amazon.nova-pro-v1:0"
         }
         empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
-        
+        save_message_to_db(session_id, True, query, empathy_evaluation)
         if empathy_evaluation:
             # Calculate overall empathy score as average of all dimensions
             pt_score = empathy_evaluation.get('perspective_taking', 3)
@@ -408,12 +408,25 @@ def get_response(
         response = "I'm sorry, I cannot provide a response to that query."
     
     if stream:
-        # Save student message with empathy evaluation to PostgreSQL for streaming
-        if query.strip() and "Greet me" not in query and query.strip() != 'introduce yourself briefly' and query.strip() != 'say "hi"':
-            save_message_to_db(session_id, True, query, empathy_evaluation)
-        
         # Save AI response to PostgreSQL
         save_message_to_db(session_id, False, response, None)
+        
+        # Run empathy evaluation after streaming completes
+        if query.strip() and "Greet me" not in query:
+            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            nova_client = {
+                "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+                "model_id": "amazon.nova-pro-v1:0"
+            }
+            empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
+            # Save student message with empathy evaluation
+            save_message_to_db(session_id, True, query, empathy_evaluation)
+            # Send empathy data to frontend
+            if empathy_evaluation:
+                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(empathy_evaluation)})
+        else:
+            # Save student message without empathy evaluation
+            save_message_to_db(session_id, True, query, None)
         
         return {"llm_output": response, "session_name": "Chat", "llm_verdict": False}
     
@@ -421,12 +434,10 @@ def get_response(
     if empathy_evaluation:
         result["empathy_evaluation"] = empathy_evaluation
     
-    # Save student message with empathy evaluation to PostgreSQL
-    if query.strip() and "Greet me" not in query and query.strip() != 'introduce yourself briefly' and query.strip() != 'say "hi"':
-        save_message_to_db(session_id, True, query, empathy_evaluation)
-    
     # Save AI response to PostgreSQL
     save_message_to_db(session_id, False, result["llm_output"], None)
+    
+    # Student message will be saved by empathy async function with evaluation
     
     return result
 
@@ -492,13 +503,10 @@ def generate_streaming_response(
 
     try:
         # kick empathy off in the background for real student message
+        logger.info(f"🔍 Checking empathy conditions: query='{query}', stripped='{query.strip()}', Greet check={'Greet me' in query}")
 
-        if query.strip() and "Greet me" not in query and query.strip().lower() not in ('introduce yourself briefly', 'say "hi"'):
-            Thread(
-                target=publish_empathy_async,
-                args=(session_id, query, patient_name, patient_age, patient_prompt),
-                daemon=True,
-            ).start()
+        # Empathy evaluation will happen after streaming completes
+        logger.info(f"📝 Empathy evaluation will run after streaming completes")
 
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 
@@ -627,6 +635,7 @@ def publish_to_appsync(session_id: str, data: dict):
         
         logger.info(f"🔑 Using Cognito User Pool token for authentication")
         
+        logger.info(f"📶 Making AppSync request to: {appsync_url}")
         response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
         
         if response.status_code != 200:
@@ -638,6 +647,7 @@ def publish_to_appsync(session_id: str, data: dict):
         
     except Exception as e:
         logger.error(f"Failed to publish to AppSync: {e}")
+        logger.exception("Full AppSync error:")
 
 def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
     """
@@ -673,16 +683,23 @@ def save_message_to_db(session_id: str, student_sent: bool, message_content: str
         cursor = conn.cursor()
         
         # Insert message with empathy evaluation
+        empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
+        logger.info(f"💾 Saving to DB - Session: {session_id}, Student: {student_sent}, Empathy: {bool(empathy_evaluation)}")
+        if empathy_evaluation:
+            logger.info(f"💾 Empathy JSON being saved: {empathy_json[:500]}...")
+        
         cursor.execute(
             'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
-            (session_id, student_sent, message_content, json.dumps(empathy_evaluation) if empathy_evaluation else None)
+            (session_id, student_sent, message_content, empathy_json)
         )
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        logger.info(f"Message saved to database with empathy evaluation: {bool(empathy_evaluation)}")
+        logger.info(f"✅ Message saved to database with empathy evaluation: {bool(empathy_evaluation)}")
+        if empathy_evaluation:
+            logger.info(f"🧠 Empathy data saved: {json.dumps(empathy_evaluation)[:100]}...")
         
     except Exception as e:
         logger.error(f"Error saving message to database: {e}")
@@ -862,21 +879,32 @@ def build_empathy_feedback(e):
 
 
 
-def publish_empathy_async(session_id: str, query: str, patient_name: str, patient_age: str, patient_prompt: str):
+def publish_empathy_async(session_id: str, query: str, patient_name: str, patient_age: str, patient_prompt: str, token: str = None):
     """Runs evaluate_empathy and publishes markdown to AppSync when ready."""
     try:
+        logger.info(f"🧠 Starting empathy evaluation for session {session_id}")
+        
+        # Set the token for AppSync publishing
+        if token:
+            get_cognito_token.current_token = token
+            
         patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
         nova_client = {
             "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
             "model_id": "amazon.nova-pro-v1:0"
         }
         evaluation = evaluate_empathy(query, patient_context, nova_client)
-        feedback_md = build_empathy_feedback(evaluation)
-        if feedback_md:
-            publish_to_appsync(session_id, {"type": "empathy", "content": feedback_md})
-
-        # (Optional) If you want to store the evaluation JSON with the student's message:
-        # save_message_to_db(session_id, True, query, evaluation)
+        logger.info(f"🧠 Empathy evaluation result: {bool(evaluation)}")
+        if evaluation:
+            logger.info(f"🧠 Raw evaluation structure: {json.dumps(evaluation, indent=2)[:1000]}...")
+            logger.info(f"📶 Publishing empathy to AppSync: {json.dumps(evaluation)[:200]}...")
+            publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
+            logger.info(f"✅ AppSync publish completed")
+        
+        # Always save student message with empathy evaluation (or None)
+        logger.info(f"💾 Saving student message with empathy: {bool(evaluation)}")
+        save_message_to_db(session_id, True, query, evaluation)
+        logger.info(f"✅ Student message saved")
 
     except Exception as e:
         logger.exception("Async empathy publish failed")
@@ -997,16 +1025,19 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     }
     
     try:
+        logger.info(f"🚀 CALLING NOVA PRO with prompt length: {len(evaluation_prompt)}")
         response = bedrock_client["client"].invoke_model(
             modelId=bedrock_client["model_id"],
             contentType="application/json",
             accept="application/json",
             body=json.dumps(body)
         )
+        logger.info(f"✅ NOVA PRO RESPONSE RECEIVED")
         
         result = json.loads(response["body"].read())
         logger.info(f"LLM RESPONSE: {result}")
         response_text = result["output"]["message"]["content"][0]["text"]
+        logger.info(f"🔍 NOVA PRO RAW TEXT: {response_text}")
         
         # Extract and clean JSON from response
         try:
@@ -1016,7 +1047,9 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             
             if json_start != -1 and json_end > json_start:
                 json_text = response_text[json_start:json_end]
+                logger.info(f"🔍 EXTRACTED JSON: {json_text}")
                 evaluation = json.loads(json_text)
+                logger.info(f"🔍 PARSED EVALUATION: {json.dumps(evaluation, indent=2)}")
                 
                 # Add judge metadata
                 evaluation["evaluation_method"] = "LLM-as-a-Judge"
@@ -1025,9 +1058,10 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             else:
                 raise json.JSONDecodeError("No JSON found", response_text, 0)
                 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # Fallback if Nova Pro doesn't return valid JSON
-            logger.warning(f"Invalid JSON from Nova Pro: {response_text}")
+            logger.error(f"❌ JSON DECODE ERROR: {e}")
+            logger.error(f"❌ INVALID JSON FROM NOVA PRO: {response_text}")
             return {
                 "empathy_score": 3,
                 "perspective_taking": 3,
@@ -1048,20 +1082,10 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             }
         
     except Exception as e:
-        logger.error(f"Error evaluating empathy: {e}")
-        return {
-            "empathy_score": 3,
-            "perspective_taking": 3,
-            "emotional_resonance": 3,
-            "acknowledgment": 3,
-            "language_communication": 3,
-            "cognitive_empathy": 3,
-            "affective_empathy": 3,
-            "realism_flag": "realistic",
-            "evaluation_method": "LLM-as-a-Judge",
-            "judge_model": bedrock_client["model_id"],
-            "feedback": "System error - unable to evaluate. Please try again."
-        }
+        logger.error(f"❌ EMPATHY EVALUATION ERROR: {e}")
+        logger.exception("Full empathy evaluation error:")
+        # Return None to indicate failure
+        return None
 
 def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str) -> str:
     """
