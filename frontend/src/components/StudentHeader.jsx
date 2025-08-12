@@ -72,7 +72,7 @@ const StudentHeader = () => {
 
   return (
     <header
-      className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm"
+      className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between"
       style={{ paddingLeft: "15px", paddingRight: "40px" }}
     >
       <div className="flex items-center space-x-3">

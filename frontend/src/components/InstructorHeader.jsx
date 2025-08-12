@@ -24,7 +24,7 @@ const InstructorHeader = () => {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
+    <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
       <div className="flex items-center space-x-3">
         <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
           {/* Replaced previous academic cap icon with a teaching presentation icon */}
