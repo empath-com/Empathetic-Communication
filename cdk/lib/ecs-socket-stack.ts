@@ -126,6 +126,9 @@ export class EcsSocketStack extends Stack {
         COGNITO_USER_POOL_ID: apiServiceStack.getUserPoolId(),
         COGNITO_CLIENT_ID: apiServiceStack.getUserPoolClientId(),
         IDENTITY_POOL_ID: apiServiceStack.getIdentityPoolId(),
+        // Cross-region inference support
+        NOVA_REGION: "us-east-1", // Nova models are only available in us-east-1
+        DEPLOYMENT_REGION: this.region,
       },
     });
 

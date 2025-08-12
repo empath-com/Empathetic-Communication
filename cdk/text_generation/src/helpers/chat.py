@@ -173,7 +173,7 @@ def get_response(
     if query.strip() and "Greet me" not in query:
         patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
         nova_client = {
-            "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+            "client": boto3.client("bedrock-runtime", region_name=os.environ.get("NOVA_REGION", "us-east-1")),
             "model_id": "amazon.nova-pro-v1:0"
         }
         empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
@@ -491,7 +491,7 @@ def generate_streaming_response(
         try:
             patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
             nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+                "client": boto3.client("bedrock-runtime", region_name=os.environ.get("NOVA_REGION", "us-east-1")),
                 "model_id": "amazon.nova-pro-v1:0"
             }
             evaluation = evaluate_empathy(query, patient_context, nova_client)
@@ -890,7 +890,7 @@ def publish_empathy_async(session_id: str, query: str, patient_name: str, patien
             
         patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
         nova_client = {
-            "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+            "client": boto3.client("bedrock-runtime", region_name=os.environ.get("NOVA_REGION", "us-east-1")),
             "model_id": "amazon.nova-pro-v1:0"
         }
         evaluation = evaluate_empathy(query, patient_context, nova_client)

@@ -1042,6 +1042,9 @@ export class ApiServiceStack extends cdk.Stack {
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
           APPSYNC_GRAPHQL_URL: this.appSyncApi.graphqlUrl,
           APPSYNC_API_ID: this.appSyncApi.apiId,
+          // Cross-region inference support
+          NOVA_REGION: "us-east-1", // Nova models are only available in us-east-1
+          DEPLOYMENT_REGION: this.region,
         },
       }
     );
@@ -1058,7 +1061,7 @@ export class ApiServiceStack extends cdk.Stack {
       sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/*/student*`,
     });
 
-    // Custom policy statement for Bedrock access
+    // Custom policy statement for Bedrock access with cross-region inference support
     const bedrockPolicyStatement = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
@@ -1066,6 +1069,9 @@ export class ApiServiceStack extends cdk.Stack {
         "bedrock:InvokeModelWithResponseStream", // Required for streaming
         "bedrock:InvokeEndpoint",
         "bedrock:ApplyGuardrail", // Required for guardrails
+        "bedrock:InvokeModelWithBidirectionalStream", // Required for Nova Sonic
+        "bedrock:Converse",
+        "bedrock:ConverseStream",
       ],
       resources: [
         "arn:aws:bedrock:" +
@@ -1074,7 +1080,10 @@ export class ApiServiceStack extends cdk.Stack {
         "arn:aws:bedrock:" +
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
+        // Nova models with cross-region inference support
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
+        "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
+        "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-sonic-v1:0",
         `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });

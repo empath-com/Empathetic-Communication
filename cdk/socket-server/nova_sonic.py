@@ -55,7 +55,10 @@ class NovaSonic:
         # Credentials already set by server.js via STS
         pass
 
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_client=None, voice_id=None, session_id=None):
+    def __init__(self, model_id='amazon.nova-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
+        # Use Nova region from environment, fallback to us-east-1 for Nova models
+        if region is None:
+            region = os.getenv("NOVA_REGION", "us-east-1")
         self.user_id = os.getenv("USER_ID")  # Get authenticated user ID
         self.model_id = model_id
         self.region = region
@@ -409,7 +412,7 @@ class NovaSonic:
                     # Inline diagnosis evaluation
                     if self.llm_completion:
                         try:
-                            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                            bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("NOVA_REGION", "us-east-1"))
                             # Get answer key documents from vectorstore
                             try:
                                 # Get DB credentials from environment
@@ -490,7 +493,7 @@ class NovaSonic:
     async def _evaluate_empathy(self, student_response, patient_context):
         """LLM-as-a-Judge empathy evaluation using Nova Pro"""
         try:
-            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("NOVA_REGION", "us-east-1"))
             
             evaluation_prompt = f"""
 You are an LLM-as-a-Judge for healthcare empathy evaluation. Assess this pharmacy student's empathetic communication.
@@ -715,7 +718,7 @@ if __name__ == "__main__":
     async def _get_llm_verdict(self, student_response):
         """Use LLM to determine if student has proper diagnosis"""
         try:
-            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("NOVA_REGION", "us-east-1"))
             
             prompt = f"""
 You are evaluating whether a pharmacy student has properly diagnosed a patient.
