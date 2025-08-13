@@ -304,10 +304,10 @@ export const StudentHomepage = ({ setGroup }) => {
                 <div
                   key={index}
                   onClick={() => enterGroup(group)}
-                  className="group cursor-pointer bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-xl hover:border-emerald-300 transition-all duration-300 hover:-translate-y-2 overflow-hidden"
+                  className="group cursor-pointer bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-xl hover:border-emerald-300 transition-all duration-300 hover:-translate-y-2 overflow-hidden flex flex-col"
                 >
                   {/* Card Header */}
-                  <div className="p-6 pb-4">
+                  <div className="p-6 pb-4 flex-1">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <Typography
@@ -342,7 +342,7 @@ export const StudentHomepage = ({ setGroup }) => {
                   </div>
 
                   {/* Card Footer */}
-                  <div className="px-6 pb-6">
+                  <div className="px-6 pb-6 mt-auto">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
