@@ -16,6 +16,7 @@ import {
   ListItemSecondaryAction,
   IconButton,
   Alert,
+  Toolbar,
 } from "@mui/material";
 import {
   Save as SaveIcon,
@@ -219,23 +220,22 @@ const AISettings = () => {
 
   return (
     <Box
+      component="main"
       sx={{
-        p: 3,
-        mt: 8,
-        ml: 0,
-        width: "100%",
-        maxWidth: "100%",
-        boxSizing: "border-box",
         flexGrow: 1,
-        minWidth: 0,
-        height: "calc(100vh - 64px)",
+        p: 3,
+        marginTop: 0.5,
+        backgroundColor: "#f8fafc",
+        minHeight: "100vh",
+        width: "100%",
+        boxSizing: "border-box",
         overflowY: "auto",
-        pb: 6,
       }}
     >
+      <Toolbar />
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-        <SettingsIcon sx={{ mr: 2, color: "#10b981" }} />
-        <Typography variant="h4" sx={{ fontWeight: 600, color: "#1f2937" }}>
+        <SettingsIcon sx={{ mr: 2, color: "#10b981", fontSize: "2rem" }} />
+        <Typography variant="h4" sx={{ fontWeight: 700, color: "#1f2937" }}>
           AI Settings
         </Typography>
       </Box>
@@ -247,21 +247,56 @@ const AISettings = () => {
       )}
 
       {/* Message Limit Settings */}
-      <Card sx={{ mb: 3, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2, color: "#374151" }}>
+      <Card
+        sx={{
+          mb: 3,
+          borderRadius: "16px",
+          boxShadow:
+            "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          border: "1px solid #e5e7eb",
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            padding: 3,
+            paddingBottom: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid #f3f4f6",
+            backgroundColor: "white",
+          }}
+        >
+          <Typography
+            sx={{
+              color: "#1f2937",
+              fontWeight: "600",
+              fontSize: "1.25rem",
+            }}
+          >
             AI Message Limit
           </Typography>
+        </Box>
+        <CardContent sx={{ backgroundColor: "white", pt: 3 }}>
           <FormControlLabel
             control={
               <Switch
                 checked={noLimit}
                 onChange={(e) => setNoLimit(e.target.checked)}
                 color="primary"
+                sx={{
+                  "& .MuiSwitch-switchBase.Mui-checked": {
+                    color: "#10b981",
+                  },
+                  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
+                    backgroundColor: "#10b981",
+                  },
+                }}
               />
             }
             label="No message limit"
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, fontWeight: 500 }}
           />
           {!noLimit && (
             <Box sx={{ px: 2 }}>
@@ -296,13 +331,44 @@ const AISettings = () => {
       </Card>
 
       {/* System Prompt Editor */}
-      <Card sx={{ mb: 3, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-        <CardContent>
-          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#374151" }}>
-              System Prompt Editor
-            </Typography>
-          </Box>
+      <Card
+        sx={{
+          mb: 3,
+          borderRadius: "16px",
+          boxShadow:
+            "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          border: "1px solid #e5e7eb",
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            padding: 3,
+            paddingBottom: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid #f3f4f6",
+            backgroundColor: "white",
+          }}
+        >
+          <Typography
+            sx={{
+              color: "#1f2937",
+              fontWeight: "700",
+              fontSize: "1.25rem",
+            }}
+          >
+            System Prompt Editor
+          </Typography>
+          <Typography variant="body2" sx={{ color: "#6b7280" }}>
+            <i>
+              Changing the system prompt alters the AI's behavior and responses
+              for ALL users.
+            </i>
+          </Typography>
+        </Box>
+        <CardContent sx={{ backgroundColor: "white" }}>
           <TextField
             fullWidth
             multiline
@@ -316,6 +382,26 @@ const AISettings = () => {
             InputProps={{
               sx: {
                 overflow: "hidden", // Prevents scrollbars
+                borderRadius: "8px",
+                backgroundColor: "#f9fafb",
+                transition: "all 0.2s ease-in-out",
+                "&:hover": {
+                  backgroundColor: "#f3f4f6",
+                },
+                "&.Mui-focused": {
+                  backgroundColor: "white",
+                  boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                },
+                "& fieldset": {
+                  borderColor: "#e5e7eb",
+                },
+                "&:hover fieldset": {
+                  borderColor: "#10b981",
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: "#10b981",
+                  borderWidth: "2px",
+                },
               },
             }}
           />
@@ -328,10 +414,22 @@ const AISettings = () => {
               backgroundColor: "#10b981",
               "&:hover": {
                 backgroundColor: "#059669",
+                boxShadow:
+                  "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                transform: "translateY(-1px)",
+              },
+              "&:active": {
+                transform: "translateY(0)",
               },
               "&:disabled": {
                 backgroundColor: "#d1d5db",
               },
+              transition: "all 0.2s ease-in-out",
+              borderRadius: "8px",
+              fontWeight: 600,
+              textTransform: "none",
+              boxShadow:
+                "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
             }}
           >
             {loading ? "Saving..." : "Save System Prompt"}
@@ -340,46 +438,74 @@ const AISettings = () => {
       </Card>
 
       {/* Previous System Prompts with single-item pagination */}
-      <Card sx={{ mb: 3, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-        <CardContent>
-          <Box
+      <Card
+        sx={{
+          mb: 3,
+          borderRadius: "16px",
+          boxShadow:
+            "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          border: "1px solid #e5e7eb",
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            padding: 3,
+            paddingBottom: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid #f3f4f6",
+            backgroundColor: "white",
+          }}
+        >
+          <Typography
             sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              mb: 2,
+              color: "#1f2937",
+              fontWeight: "600",
+              fontSize: "1.25rem",
             }}
           >
-            <Typography variant="h6" sx={{ color: "#374151" }}>
-              Previous System Prompts
-            </Typography>
-            {hasHistory && (
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <IconButton
-                  aria-label="previous prompt"
-                  onClick={() => setHistoryIndex((p) => Math.max(0, p - 1))}
-                  disabled={historyIndex === 0}
-                >
-                  <ArrowBackIosNewIcon />
-                </IconButton>
-                <Typography variant="body2" sx={{ mx: 1 }}>
-                  {historyIndex + 1} / {promptHistory.length}
-                </Typography>
-                <IconButton
-                  aria-label="next prompt"
-                  onClick={() =>
-                    setHistoryIndex((p) =>
-                      Math.min(promptHistory.length - 1, p + 1)
-                    )
-                  }
-                  disabled={historyIndex >= promptHistory.length - 1}
-                >
-                  <ArrowForwardIosIcon />
-                </IconButton>
-              </Box>
-            )}
-          </Box>
-
+            Previous System Prompts
+          </Typography>
+          {hasHistory && (
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <IconButton
+                aria-label="previous prompt"
+                onClick={() => setHistoryIndex((p) => Math.max(0, p - 1))}
+                disabled={historyIndex === 0}
+                sx={{
+                  color: historyIndex === 0 ? "#d1d5db" : "#10b981",
+                  "&:hover": { backgroundColor: "#f3f4f6" },
+                }}
+              >
+                <ArrowBackIosNewIcon />
+              </IconButton>
+              <Typography variant="body2" sx={{ mx: 1, fontWeight: 600 }}>
+                {historyIndex + 1} / {promptHistory.length}
+              </Typography>
+              <IconButton
+                aria-label="next prompt"
+                onClick={() =>
+                  setHistoryIndex((p) =>
+                    Math.min(promptHistory.length - 1, p + 1)
+                  )
+                }
+                disabled={historyIndex >= promptHistory.length - 1}
+                sx={{
+                  color:
+                    historyIndex >= promptHistory.length - 1
+                      ? "#d1d5db"
+                      : "#10b981",
+                  "&:hover": { backgroundColor: "#f3f4f6" },
+                }}
+              >
+                <ArrowForwardIosIcon />
+              </IconButton>
+            </Box>
+          )}
+        </Box>
+        <CardContent sx={{ backgroundColor: "white" }}>
           {!hasHistory ? (
             <Typography color="textSecondary">No history available</Typography>
           ) : (
@@ -404,10 +530,18 @@ const AISettings = () => {
                     backgroundColor: "#10b981",
                     "&:hover": {
                       backgroundColor: "#059669",
+                      transform: "translateY(-1px)",
+                    },
+                    "&:active": {
+                      transform: "translateY(0)",
                     },
                     "&:disabled": {
                       backgroundColor: "#d1d5db",
                     },
+                    transition: "all 0.2s ease-in-out",
+                    borderRadius: "8px",
+                    fontWeight: 600,
+                    textTransform: "none",
                   }}
                 >
                   Restore
@@ -419,11 +553,16 @@ const AISettings = () => {
                 minRows={4}
                 maxRows={100}
                 value={currentPrompt.prompt_content}
-                InputProps={{ 
+                InputProps={{
                   readOnly: true,
                   sx: {
                     overflow: "hidden", // Prevents scrollbars
-                  }
+                    borderRadius: "8px",
+                    backgroundColor: "#f9fafb",
+                    "& fieldset": {
+                      borderColor: "#e5e7eb",
+                    },
+                  },
                 }}
                 variant="outlined"
               />
