@@ -34,8 +34,7 @@ const AISettings = () => {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptHistory, setPromptHistory] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [historyPage, setHistoryPage] = useState(0);
-  const PAGE_SIZE = 5;
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [alert, setAlert] = useState({
     show: false,
     message: "",
@@ -67,7 +66,7 @@ const AISettings = () => {
   }, [authToken]);
 
   useEffect(() => {
-    setHistoryPage(0);
+    setHistoryIndex(0);
   }, [promptHistory.length]);
 
   if (!user) {
@@ -76,8 +75,8 @@ const AISettings = () => {
         sx={{
           p: 3,
           mt: 8,
-          ml: { xs: 0, md: "224px" },
-          width: { xs: "100%", md: "calc(100% - 224px)" },
+          ml: 0,
+          width: "100%",
           maxWidth: "100%",
           boxSizing: "border-box",
           flexGrow: 1,
@@ -98,8 +97,8 @@ const AISettings = () => {
         sx={{
           p: 3,
           mt: 8,
-          ml: { xs: 0, md: "224px" },
-          width: { xs: "100%", md: "calc(100% - 224px)" },
+          ml: 0,
+          width: "100%",
           maxWidth: "100%",
           boxSizing: "border-box",
           flexGrow: 1,
@@ -215,17 +214,16 @@ const AISettings = () => {
     return new Date(dateString).toLocaleString();
   };
 
-  const totalPages = Math.ceil(promptHistory.length / PAGE_SIZE) || 0;
-  const start = historyPage * PAGE_SIZE;
-  const visibleHistory = promptHistory.slice(start, start + PAGE_SIZE);
+  const hasHistory = promptHistory.length > 0;
+  const currentPrompt = hasHistory ? promptHistory[historyIndex] : null;
 
   return (
     <Box
       sx={{
         p: 3,
         mt: 8,
-        ml: { xs: 0, md: "224px" },
-        width: { xs: "100%", md: "calc(100% - 224px)" },
+        ml: 0,
+        width: "100%",
         maxWidth: "100%",
         boxSizing: "border-box",
         flexGrow: 1,
@@ -335,7 +333,7 @@ const AISettings = () => {
         </CardContent>
       </Card>
 
-      {/* Inline History Section with pagination */}
+      {/* Previous System Prompts with single-item pagination */}
       <Card sx={{ mb: 3, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
         <CardContent>
           <Box
@@ -349,81 +347,66 @@ const AISettings = () => {
             <Typography variant="h6" sx={{ color: "#374151" }}>
               Previous System Prompts
             </Typography>
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <IconButton
-                aria-label="previous page"
-                onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                disabled={historyPage === 0}
-              >
-                <ArrowBackIosNewIcon />
-              </IconButton>
-              <Typography variant="body2" sx={{ mx: 1 }}>
-                {totalPages > 0
-                  ? `${historyPage + 1} / ${totalPages}`
-                  : "0 / 0"}
-              </Typography>
-              <IconButton
-                aria-label="next page"
-                onClick={() =>
-                  setHistoryPage((p) => Math.min(totalPages - 1, p + 1))
-                }
-                disabled={historyPage >= totalPages - 1 || totalPages === 0}
-              >
-                <ArrowForwardIosIcon />
-              </IconButton>
-            </Box>
+            {hasHistory && (
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <IconButton
+                  aria-label="previous prompt"
+                  onClick={() => setHistoryIndex((p) => Math.max(0, p - 1))}
+                  disabled={historyIndex === 0}
+                >
+                  <ArrowBackIosNewIcon />
+                </IconButton>
+                <Typography variant="body2" sx={{ mx: 1 }}>
+                  {historyIndex + 1} / {promptHistory.length}
+                </Typography>
+                <IconButton
+                  aria-label="next prompt"
+                  onClick={() =>
+                    setHistoryIndex((p) => Math.min(promptHistory.length - 1, p + 1))
+                  }
+                  disabled={historyIndex >= promptHistory.length - 1}
+                >
+                  <ArrowForwardIosIcon />
+                </IconButton>
+              </Box>
+            )}
           </Box>
 
-          {promptHistory.length === 0 ? (
+          {!hasHistory ? (
             <Typography color="textSecondary">No history available</Typography>
           ) : (
-            <List>
-              {visibleHistory.map((item, index) => (
-                <React.Fragment key={item.history_id}>
-                  <ListItem alignItems="flex-start">
-                    <ListItemText
-                      primary={
-                        <Box
-                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                        >
-                          <Typography variant="subtitle2">
-                            {formatDate(item.created_at)}
-                          </Typography>
-                        </Box>
-                      }
-                      secondary={
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            mt: 1,
-                            maxHeight: 100,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {item.prompt_content.substring(0, 200)}
-                          {item.prompt_content.length > 200 && "..."}
-                        </Typography>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <IconButton
-                        edge="end"
-                        onClick={() => restorePrompt(item.history_id)}
-                        disabled={loading}
-                        sx={{ color: "#10b981" }}
-                        aria-label={`Restore prompt from ${formatDate(
-                          item.created_at
-                        )}`}
-                      >
-                        <RestoreIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                  {index < visibleHistory.length - 1 && <Divider />}
-                </React.Fragment>
-              ))}
-            </List>
+            <Box sx={{ p: 2, border: "1px solid #e5e7eb", borderRadius: 1 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                <Typography variant="subtitle2">
+                  {formatDate(currentPrompt.created_at)}
+                </Typography>
+                <Button
+                  startIcon={<RestoreIcon />}
+                  onClick={() => restorePrompt(currentPrompt.history_id)}
+                  disabled={loading}
+                  variant="contained"
+                  sx={{
+                    backgroundColor: "#10b981",
+                    "&:hover": {
+                      backgroundColor: "#059669",
+                    },
+                    "&:disabled": {
+                      backgroundColor: "#d1d5db",
+                    },
+                  }}
+                >
+                  Restore
+                </Button>
+              </Box>
+              <TextField
+                fullWidth
+                multiline
+                rows={6}
+                value={currentPrompt.prompt_content}
+                InputProps={{ readOnly: true }}
+                variant="outlined"
+              />
+            </Box>
           )}
         </CardContent>
       </Card>
