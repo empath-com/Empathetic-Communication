@@ -40,7 +40,7 @@ export async function startSpokenLLM(
 
     // Set a small delay to ensure the start-audio is processed
     setTimeout(() => {
-      const bufferSize = 4096;
+      const bufferSize = 2048;  // Reduced buffer size for lower latency
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000,
       });
@@ -68,7 +68,7 @@ export async function startSpokenLLM(
           setLoading(false);
           console.error("🎤 Microphone access denied:", err);
         });
-    }, 500);
+    }, 200);  // Reduced startup delay
   });
 
   if (!socket.connected) {

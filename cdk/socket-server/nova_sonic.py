@@ -12,6 +12,7 @@ from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4
 from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
 import langchain_chat_history
 import psycopg2
+from psycopg2 import pool
 import uuid
 from datetime import datetime
 import logging
@@ -23,8 +24,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Define a global connection (or manage it however you do for RDS)
-pg_conn = None
+# Connection pool for better performance
+pg_conn_pool = None
+from threading import Lock
+pool_lock = Lock()
 
 # Audio config
 INPUT_SAMPLE_RATE = 16000
@@ -37,27 +40,31 @@ CHUNK_SIZE = 1024
 
 
 def get_pg_connection():
-    global pg_conn
-    secrets_client = boto3.client('secretsmanager')
-    db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
-    rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+    global pg_conn_pool
+    with pool_lock:
+        if pg_conn_pool is None:
+            secrets_client = boto3.client('secretsmanager')
+            db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+            rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
 
-    if not db_secret_name or not rds_endpoint:
-        logger.warning("Database credentials not available for system prompt retrieval")
-        raise Exception("Database credentials not configured")
+            if not db_secret_name or not rds_endpoint:
+                logger.warning("Database credentials not available")
+                raise Exception("Database credentials not configured")
 
-    secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
-    secret = json.loads(secret_response['SecretString'])
+            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+            secret = json.loads(secret_response['SecretString'])
 
-    # Connect to database
-    pg_conn = psycopg2.connect(
-        host=rds_endpoint,
-        port=secret['port'],
-        database=secret['dbname'],
-        user=secret['username'],
-        password=secret['password']
-    )
-    return pg_conn
+            # Create connection pool
+            pg_conn_pool = pool.SimpleConnectionPool(
+                1, 5,  # min/max connections
+                host=rds_endpoint,
+                port=secret['port'],
+                database=secret['dbname'],
+                user=secret['username'],
+                password=secret['password']
+            )
+        
+        return pg_conn_pool.getconn()
 
 
 class NovaSonic:
@@ -67,11 +74,10 @@ class NovaSonic:
         pass
 
     def __init__(self, model_id='amazon.nova-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
-        self.user_id = os.getenv("USER_ID")  # Get authenticated user ID
+        self.user_id = os.getenv("USER_ID")
         self.model_id = model_id
-        # Nova Sonic requires us-east-1, use cross-region inference
-        self.region = 'us-east-1'  # Nova Sonic only available in us-east-1
-        self.deployment_region = region or os.getenv('AWS_REGION', 'us-east-1')  # Actual deployment region
+        self.region = 'us-east-1'
+        self.deployment_region = region or os.getenv('AWS_REGION', 'us-east-1')
         self.client = None
         self.stream = None
         self.response = None
@@ -81,15 +87,18 @@ class NovaSonic:
         self.audio_content_name = str(uuid.uuid4())
         self.audio_queue = asyncio.Queue()
         self.role = None
-        self.display_assistant_text = False  # maybe change later?
-        self.voice_id = voice_id  # Store the voice ID passed from frontend
-        self.session_id = session_id or os.getenv("SESSION_ID", "default")  # load from env as fallback
-        # ─ Patient simulation context passed from server.js ─
+        self.display_assistant_text = False
+        self.voice_id = voice_id
+        self.session_id = session_id or os.getenv("SESSION_ID", "default")
         self.patient_name = os.getenv("PATIENT_NAME", "")
         self.patient_prompt = os.getenv("PATIENT_PROMPT", "")
         self.llm_completion = os.getenv("LLM_COMPLETION", "false").lower() == "true"
         self.extra_system_prompt = os.getenv("EXTRA_SYSTEM_PROMPT", "")
         self.patient_id = os.getenv("PATIENT_ID", "")
+        # Cache system prompt and bedrock client
+        self._cached_system_prompt = None
+        self._bedrock_client = None
+        self._chat_context = None
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -150,67 +159,29 @@ class NovaSonic:
         return system_prompt
 
     def get_system_prompt(self, patient_name=None, patient_prompt=None, llm_completion=None):
-        """
-        Build the system prompt for Nova Sonic using patient context and flags.
-        Falls back to environment-provided values set on the instance.
-        """
-        pn = patient_name if patient_name is not None else self.patient_name
-        pp = patient_prompt if patient_prompt is not None else self.patient_prompt
-        lc = self.llm_completion if llm_completion is None else llm_completion
-        extra = self.extra_system_prompt or ""
-        
-        completion_string = """
-                    Once I, the pharmacy student, have give you a diagnosis, politely leave the conversation and wish me goodbye.
-                    Regardless if I have given you the proper diagnosis or not for the patient you are pretending to be, stop talking to me.
-                    """
-        if lc:
-            completion_string = """
-                    Continue this process until you determine that me, the pharmacy student, has properly diagnosed the patient you are pretending to be.
-                    Once the proper diagnosis is provided, include PROPER DIAGNOSIS ACHIEVED in your response and do not continue the conversation.
-                    """
-
-        import os
-
+        """Cached system prompt retrieval"""
+        if self._cached_system_prompt:
+            return self._cached_system_prompt
+            
         try:
-            # Get database credentials from AWS Secrets Manager
-            secrets_client = boto3.client('secretsmanager')
-            db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
-            rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
-
-            if not db_secret_name or not rds_endpoint:
-                logger.warning("Database credentials not available for system prompt retrieval")
-                return self.get_default_system_prompt(patient_name=patient_name)
-
-            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
-            secret = json.loads(secret_response['SecretString'])
-
-            # Connect to database
-            conn = psycopg2.connect(
-                host=rds_endpoint,
-                port=secret['port'],
-                database=secret['dbname'],
-                user=secret['username'],
-                password=secret['password']
-            )
+            conn = get_pg_connection()
             cursor = conn.cursor()
-
-            # Get the latest system prompt
             cursor.execute(
                 'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
             )
-            
             result = cursor.fetchone()
             cursor.close()
-            conn.close()
-
+            pg_conn_pool.putconn(conn)
+            
             if result and result[0]:
-                return result[0]
-            else:
-                return self.get_default_system_prompt(patient_name=patient_name)
-
+                self._cached_system_prompt = result[0]
+                return self._cached_system_prompt
         except Exception as e:
-            logger.error(f"Error retrieving system prompt from DB: {e}")
-            return self.get_default_system_prompt(patient_name=patient_name)
+            logger.error(f"Error retrieving system prompt: {e}")
+            
+        # Fallback to default
+        self._cached_system_prompt = self.get_default_system_prompt(patient_name or self.patient_name)
+        return self._cached_system_prompt
 
 
 
@@ -291,11 +262,13 @@ class NovaSonic:
         })
 
 
-        chat_context = langchain_chat_history.format_chat_history(self.session_id)
+        # Cache chat context to avoid repeated DB calls
+        if not self._chat_context:
+            self._chat_context = langchain_chat_history.format_chat_history(self.session_id)
 
         system_prompt = f"""
                         {self.get_system_prompt()}
-                        {chat_context}
+                        {self._chat_context}
                         """
         
         # 4) textInput (your system prompt)
@@ -464,11 +437,10 @@ class NovaSonic:
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
                 
-                # Evaluate empathy for ALL user messages (like text_generation)
+                # Async empathy evaluation to reduce latency
                 if text.strip():
-                    logger.info(f"🧠 USER MESSAGE DETECTED - Triggering empathy evaluation for: {text[:30]}...")
-                    print(f"🧠 EMPATHY TRIGGER: {text[:50]}", flush=True)
-                    self._evaluate_empathy_sync(text)
+                    logger.info(f"🧠 USER MESSAGE - Async empathy eval: {text[:30]}...")
+                    asyncio.create_task(self._evaluate_empathy_async(text))
                 else:
                     logger.info(f"🧠 Empty user text, skipping empathy evaluation")
                     # Inline diagnosis evaluation
@@ -560,11 +532,17 @@ class NovaSonic:
 
         # else: ignore other event types
     
-    def _evaluate_empathy_sync(self, user_text):
-        """Synchronous empathy evaluation like chat.py"""
+    def _get_bedrock_client(self):
+        """Cached bedrock client"""
+        if not self._bedrock_client:
+            self._bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+        return self._bedrock_client
+    
+    async def _evaluate_empathy_async(self, user_text):
+        """Async empathy evaluation to reduce blocking"""
         try:
             patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            bedrock_client = self._get_bedrock_client()
             
             evaluation_prompt = f"""
     You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
@@ -657,8 +635,17 @@ class NovaSonic:
     }}
 """
             
-            body = {"messages": [{"role": "user", "content": [{"text": evaluation_prompt}]}], "inferenceConfig": {"temperature": 0.1, "maxTokens": 800}}
-            response = bedrock_client.invoke_model(modelId="amazon.nova-pro-v1:0", contentType="application/json", accept="application/json", body=json.dumps(body))
+            body = {"messages": [{"role": "user", "content": [{"text": evaluation_prompt}]}], "inferenceConfig": {"temperature": 0.1, "maxTokens": 600}}
+            
+            # Run in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, lambda: bedrock_client.invoke_model(
+                modelId="amazon.nova-lite-v1:0",  # Use faster model
+                contentType="application/json", 
+                accept="application/json", 
+                body=json.dumps(body)
+            ))
+            
             result = json.loads(response["body"].read())
             response_text = result["output"]["message"]["content"][0]["text"]
             
@@ -668,7 +655,8 @@ class NovaSonic:
             if json_start != -1 and json_end > json_start:
                 json_text = response_text[json_start:json_end]
                 empathy_result = json.loads(json_text)
-                self._save_message_to_db(self.session_id, True, user_text, empathy_result)
+                # Async DB save
+                await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, empathy_result)
                 empathy_feedback = self._build_empathy_feedback(empathy_result)
                 if empathy_feedback:
                     print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
@@ -676,7 +664,8 @@ class NovaSonic:
         except Exception as e:
             print(f"Empathy evaluation failed: {e}", flush=True)
             try:
-                self._save_message_to_db(self.session_id, True, user_text, None)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
             except:
                 pass
     
@@ -865,14 +854,12 @@ Provide JSON response:
         return "".join(lines)
     
     def _save_message_to_db(self, session_id, student_sent, message_content, empathy_evaluation=None):
-        """Save message with empathy evaluation to PostgreSQL"""
+        """Optimized DB save with connection pooling"""
         try:
-            logger.info(f"💾 Connecting to database...")
             conn = get_pg_connection()
             cursor = conn.cursor()
             
             empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
-            logger.info(f"💾 Executing INSERT with empathy_json length: {len(empathy_json) if empathy_json else 0}")
             
             cursor.execute(
                 'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
@@ -881,15 +868,16 @@ Provide JSON response:
             
             conn.commit()
             cursor.close()
+            pg_conn_pool.putconn(conn)  # Return to pool
             
-            if empathy_evaluation:
-                logger.info(f"💾 Empathy data saved to DB successfully")
-            else:
-                logger.info(f"💾 Message saved to DB without empathy data")
+            logger.info(f"💾 Message saved to DB")
                 
         except Exception as e:
-            logger.error(f"Error saving message to database: {e}")
-            logger.exception("Full DB save error:")
+            logger.error(f"Error saving message: {e}")
+            try:
+                pg_conn_pool.putconn(conn, close=True)  # Close bad connection
+            except:
+                pass
 
 
 

@@ -332,62 +332,27 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const socket = await getSocket();
       if (!socket.connected) socket.connect();
 
-      const handleConnect = () => {
-        console.log("✅ WebSocket connected:", socket.id);
-      };
-
-      const handleDisconnect = () => {
-        console.log("❌ WebSocket disconnected");
-      };
-
-      const handleError = (error) => {
-        console.error("🔥 WebSocket connection error:", error);
-      };
-
-      const handleText = (data) => {
-        console.log("💬 Nova Sonic:", data.text);
-      };
-
       const handleAudio = (data) => {
-        // Drop audio immediately if overlay is closed or playback is disabled
-        if (!allowAudioRef.current) {
-          return;
-        }
-        console.log("🎵 Received audio chunk, length:", data.data?.length || 0);
-        if (data.data) {
-          console.log("🔊 Playing audio from StudentChat");
-          playAudio(data.data);
-        }
+        if (!allowAudioRef.current || !data.data) return;
+        playAudio(data.data);
       };
 
       const handleEmpathyFeedback = (data) => {
-        console.log("🧠 Received empathy feedback");
         if (data.content) {
-          setRealtimeEmpathy((prev) => [
-            ...prev,
-            { content: data.content, timestamp: Date.now() },
-          ]);
+          setRealtimeEmpathy((prev) => [...prev, { content: data.content, timestamp: Date.now() }]);
         }
       };
 
       const handleDiagnosisComplete = (data) => {
-        console.log("🎯 Diagnosis completed:", data.message);
-        // Show completion notification or handle UI update
         alert("Congratulations! You have achieved the proper diagnosis.");
       };
 
-      socket.off("connect");
-      socket.off("disconnect");
-      socket.off("connect_error");
-      socket.off("text-message");
+      // Clean up existing listeners
       socket.off("audio-chunk");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
 
-      socket.on("connect", handleConnect);
-      socket.on("disconnect", handleDisconnect);
-      socket.on("connect_error", handleError);
-      socket.on("text-message", handleText);
+      // Add optimized listeners
       socket.on("audio-chunk", handleAudio);
       socket.on("empathy-feedback", handleEmpathyFeedback);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
@@ -685,29 +650,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     let fullResponse = "";
 
     try {
-      const { generateClient } = await import("aws-amplify/api");
-      const { fetchAuthSession } = await import("aws-amplify/auth");
-
-      const authSession = await fetchAuthSession();
-      const client = generateClient({
-        authMode: "userPool",
-        authToken: authSession.tokens?.idToken?.toString(),
-      });
-
       const currentSessionId = overrideSessionId || session?.session_id;
       if (!currentSessionId)
         throw new Error("No session ID available for streaming");
 
-      const subscription = client
+      const subscription = gqlClient
         .graphql({
-          query: `
-            subscription OnTextStream($sessionId: String!) {
-              onTextStream(sessionId: $sessionId) {
-                sessionId
-                data
-              }
-            }
-          `,
+          query: ON_TEXT_STREAM,
           variables: { sessionId: currentSessionId },
         })
         .subscribe({
@@ -717,67 +666,40 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               const t = streamData?.type;
               const content = streamData?.content || "";
 
-              console.log("📶 AppSync stream received:", {
-                type: t,
-                contentLength: content.length,
-              });
-
               if (t === "empathy") {
-                console.log("🧠 Empathy feedback received:", content);
                 try {
                   const empathyData = JSON.parse(content);
-                  console.log("🧠 Parsed empathy data:", empathyData);
-
-                  // Transform data to match EmpathyCoachSummary component expectations
                   const transformedData = {
                     overall_score: empathyData.empathy_score || 3,
                     avg_perspective_taking: empathyData.perspective_taking || 3,
-                    avg_emotional_resonance:
-                      empathyData.emotional_resonance || 3,
+                    avg_emotional_resonance: empathyData.emotional_resonance || 3,
                     avg_acknowledgment: empathyData.acknowledgment || 3,
-                    avg_language_communication:
-                      empathyData.language_communication || 3,
+                    avg_language_communication: empathyData.language_communication || 3,
                     avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
                     avg_affective_empathy: empathyData.affective_empathy || 3,
-                    realism_assessment:
-                      empathyData.realism_flag === "realistic"
-                        ? "Your responses are generally realistic"
-                        : "Your response is unrealistic",
-                    realism_explanation:
-                      empathyData.judge_reasoning?.realism_justification || "",
-                    coach_assessment:
-                      empathyData.judge_reasoning?.overall_assessment || "",
+                    realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
+                    realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
+                    coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
                     strengths: empathyData.feedback?.strengths || [],
-                    areas_for_improvement:
-                      empathyData.feedback?.areas_for_improvement || [],
-                    recommendations:
-                      empathyData.feedback?.improvement_suggestions || [],
-                    recommended_approach:
-                      empathyData.feedback?.alternative_phrasing || "",
+                    areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+                    recommendations: empathyData.feedback?.improvement_suggestions || [],
+                    recommended_approach: empathyData.feedback?.alternative_phrasing || "",
                     timestamp: Date.now(),
                   };
-
-                  console.log("🧠 Transformed empathy data:", transformedData);
                   setRealtimeEmpathy((prev) => [...prev, transformedData]);
                 } catch (e) {
                   console.error("Failed to parse empathy JSON:", e);
-                  console.error("Raw content:", content);
                 }
               } else if (t === "start") {
-                console.log("🚀 Stream started");
                 startStreamingBubble();
               } else if (t === "chunk") {
                 fullResponse += content;
                 appendStreamingChunk(content);
               } else if (t === "end") {
-                console.log("✅ Stream ended");
                 await finalizeStreamingBubble(fullResponse, currentSessionId);
                 subscription.unsubscribe();
               } else if (t === "error") {
-                console.error("❌ AppSync error:", content);
-                setMessages((prev) =>
-                  prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
-                );
+                setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
                 subscription.unsubscribe();
               }
             } catch (err) {
@@ -786,13 +708,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           },
           error: (error) => {
             console.error("❌ AppSync subscription error:", error);
-            setMessages((prev) =>
-              prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
-            );
+            setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
           },
         });
 
-      // Kick off text generation request after subscribing
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -802,16 +721,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         body: JSON.stringify({ message_content: message }),
       });
 
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-
-      const result = await response.json();
-      return result;
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
     } catch (error) {
       console.error("❌ AppSync streaming error:", error);
-      setMessages((prev) =>
-        prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
-      );
+      setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
       throw error;
     }
   };

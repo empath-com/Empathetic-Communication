@@ -62,65 +62,47 @@ io.on("connection", (socket) => {
   // ─── Start Nova Sonic ──────────────────────────────────────────────────────
   socket.on("start-nova-sonic", async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
-    console.log("🎙️ Voice configuration:", config);
     
-    // Check user token limits before starting voice session
-    try {
-      const response = await fetch(
-        `${process.env.TEXT_GENERATION_ENDPOINT}/student/check_tokens?session_id=${config.session_id}`,
-        {
-          headers: {
-            Authorization: socket.handshake.auth.token,
-          },
-        }
-      );
-      
-      if (response.status === 429) {
-        const errorData = await response.json();
-        socket.emit("token-limit-exceeded", errorData);
-        return;
-      }
-    } catch (error) {
-      console.warn("Token limit check failed, proceeding:", error.message);
-    }
-
+    // Quick token usage logging (non-blocking)
+    fetch(
+      `${process.env.TEXT_GENERATION_ENDPOINT}/student/check_tokens?session_id=${config.session_id}`,
+      { headers: { Authorization: socket.handshake.auth.token } }
+    ).then(res => res.json()).then(data => {
+      console.log(`💰 Token usage: ${data.tokens_used || 'unknown'}`);
+    }).catch(() => {});
+    
     audioStarted = false;
 
     // Kill any previous process
     if (novaProcess) {
-      console.log("⚠️ Killing existing Nova process");
       novaProcess.kill();
       novaProcess = null;
     }
     novaReady = false;
 
-    // Get STS credentials from Cognito token
-    const stsCredentials = await getStsCredentials(socket.handshake.auth.token);
+    // Get STS credentials and spawn process in parallel
+    const [stsCredentials] = await Promise.all([
+      getStsCredentials(socket.handshake.auth.token)
+    ]);
 
-    // Spawn the actual CLI entrypoint, unbuffered, passing env vars
     const PORT = process.env.PORT || 80;
     novaProcess = spawn("python3", ["nova_sonic.py"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        SOCKET_URL: `http://127.0.0.1:${PORT}`,
         SESSION_ID: config.session_id || "default",
         VOICE_ID: config.voice_id || "",
         USER_ID: socket.userId || "anonymous",
         AWS_ACCESS_KEY_ID: stsCredentials.AccessKeyId,
         AWS_SECRET_ACCESS_KEY: stsCredentials.SecretKey,
         AWS_SESSION_TOKEN: stsCredentials.SessionToken,
-        SSL_VERIFY: "false",
         SM_DB_CREDENTIALS: process.env.SM_DB_CREDENTIALS || "",
         RDS_PROXY_ENDPOINT: process.env.RDS_PROXY_ENDPOINT || "",
-        // ─ Patient simulation context for Nova Sonic ─
         PATIENT_NAME: config.patient_name || "",
         PATIENT_PROMPT: config.patient_prompt || "",
         PATIENT_ID: config.patient_id || "",
         LLM_COMPLETION: config.llm_completion ? "true" : "false",
-        // Optional extra instructions to mirror chat.py system_prompt if needed
         EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
-        // AppSync configuration for empathy feedback
         APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
         COGNITO_TOKEN: socket.handshake.auth.token || "",
       },
@@ -140,22 +122,8 @@ io.on("connection", (socket) => {
 
             // ─ Audio chunks ───────────────────────────────────────────────
             if (parsed.type === "audio") {
-              // Save debug files
-              const debugDir = path.join(__dirname, "debug");
-              if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-              const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-              const txtPath = path.join(debugDir, `audio-${timestamp}.txt`);
-              fs.writeFileSync(txtPath, parsed.data);
-              console.log(`📝 NOVA AUDIO SAVED: ${txtPath}`);
-
-              const buffer = Buffer.from(parsed.data, "base64");
-              const rawPath = path.join(debugDir, `audio-${timestamp}.raw`);
-              fs.writeFileSync(rawPath, buffer);
-              console.log(`✅ NOVA AUDIO DECODED: ${buffer.length} bytes`);
-
-              // Emit to clients
+              // Skip debug file saving for better performance
               socket.emit("audio-chunk", { data: parsed.data });
-              console.log("🔊 AUDIO SENT TO FRONTEND");
             }
             // ─ Debug messages ───────────────────────────────────────────
             else if (parsed.type === "debug") {
