@@ -63,14 +63,6 @@ io.on("connection", (socket) => {
   socket.on("start-nova-sonic", async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
     
-    // Quick token usage logging (non-blocking)
-    fetch(
-      `${process.env.TEXT_GENERATION_ENDPOINT}/student/check_tokens?session_id=${config.session_id}`,
-      { headers: { Authorization: socket.handshake.auth.token } }
-    ).then(res => res.json()).then(data => {
-      console.log(`💰 Token usage: ${data.tokens_used || 'unknown'}`);
-    }).catch(() => {});
-    
     audioStarted = false;
 
     // Kill any previous process
