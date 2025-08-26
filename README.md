@@ -9,6 +9,7 @@ This project leverages Large Language Models (LLMs) to revolutionize pharmacy ed
 | [User Guide](#user-guide)                           | The working solution                                    |
 | [Directories](#directories)                         | General project directory structure                     |
 | [RAG Documentation](#rag-documentation)             | Documentation on how the project uses RAG               |
+| [Empathy Coach Deep Dive](#empathy-coach-deep-dive) | Detailed documentation on empathy evaluation system      |
 | [Troubleshooting Guide](#troubleshooting-guide)     | Documentation on how to troubleshoot common issues      |
 | [Changelog](#changelog)                             | Any changes post publish                                |
 | [Credits](#credits)                                 | Meet the team behind the solution                       |
@@ -20,28 +21,6 @@ The following architecture diagram illustrates the various AWS components utiliz
 
 ![Alt text](docs/images/architecture.png)
 
-## Package Management
-
-This project uses [Poetry](https://python-poetry.org/) for Python dependency management to ensure consistent, reproducible builds across all environments. See [PYTHON_PACKAGE_MANAGEMENT.md](./PYTHON_PACKAGE_MANAGEMENT.md) for complete setup instructions.
-
-### Quick Setup
-```bash
-# Install Poetry
-curl -sSL https://install.python-poetry.org | py  # Windows
-curl -sSL https://install.python-poetry.org | python3 -  # macOS/Linux
-
-# Install export plugin
-poetry self add poetry-plugin-export
-
-# Install CDK dependencies
-cd cdk
-npm install
-
-# Deploy it now (Poetry handles Python dependencies automatically)
-```
-
-**Note:** Poetry dependencies are installed automatically during Docker builds - no manual `poetry install` required for deployment.
-
 ## Deployment Guide
 
 To deploy this solution, please follow the steps laid out in the [Deployment Guide](./docs/deploymentGuide.md)
@@ -50,7 +29,7 @@ To deploy this solution, please follow the steps laid out in the [Deployment Gui
 
 This system includes optional support for AWS Bedrock Guardrails as an additional layer of content protection. By default, the system uses system prompt protection, but you can optionally enable Bedrock Guardrails for enhanced content filtering.
 
-For complete setup instructions, see [Bedrock Guardrails Configuration](./BEDROCK_GUARDRAILS.md)
+For complete setup instructions, see [Bedrock Guardrails Configuration](./docs/BEDROCK_GUARDRAILS.md)
 
 ## User Guide
 
@@ -101,6 +80,10 @@ Please refer to the [Web App User Guide](./docs/userGuide.md) for instructions o
 ## RAG Documentation
 
 Here you can learn about how this project performs retrieval-augmented generation (RAG). For a deeper dive into how we use Large Language Models (LLMs) to generate text, please refer to the [Text Generation](./docs/text_generation) folder. For more knowledge on how data is consumed and interpreted for the LLM, please refer to the [Data Ingestion](./docs/data_ingestion) folder.
+
+## Empathy Coach Deep Dive
+
+For comprehensive documentation on the Empathy Coach evaluation system, including scoring methodology, judging criteria, prompt engineering, and modification guides, please refer to the [Empathy Coach Deep Dive](./docs/empathy-coach-deepdive.md).
 
 ## Troubleshooting Guide
 

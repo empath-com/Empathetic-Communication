@@ -4,6 +4,7 @@
 - [Deployment Guide](#deployment-guide)
   - [Table of Contents](#table-of-contents)
   - [Requirements](#requirements)
+  - [Package Management](#package-management)
   - [Pre-Deployment](#pre-deployment)
     - [Create GitHub Personal Access Token](#create-github-personal-access-token)
     - [Enable Models in Bedrock](#enable-models-in-bedrock)
@@ -30,6 +31,28 @@ Before you deploy, you must have the following installed on your device:
 - [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
 - [node](https://nodejs.org/en/ln/getting-started/how-to-install-nodejs) *(v20.0.0 > required)*
 - [docker](https://www.docker.com/products/docker-desktop/)
+
+## Package Management
+
+This project uses [Poetry](https://python-poetry.org/) for Python dependency management to ensure consistent, reproducible builds across all environments. See [PYTHON_PACKAGE_MANAGEMENT.md](./PYTHON_PACKAGE_MANAGEMENT.md) for complete setup instructions.
+
+### Quick Setup
+```bash
+# Install Poetry
+curl -sSL https://install.python-poetry.org | py  # Windows
+curl -sSL https://install.python-poetry.org | python3 -  # macOS/Linux
+
+# Install export plugin
+poetry self add poetry-plugin-export
+
+# Install CDK dependencies
+cd cdk
+npm install
+
+# Deploy it now (Poetry handles Python dependencies automatically)
+```
+
+**Note:** Poetry dependencies are installed automatically during Docker builds - no manual `poetry install` required for deployment.
 
 ## Pre-Deployment
 ### Create GitHub Personal Access Token
