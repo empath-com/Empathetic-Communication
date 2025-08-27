@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS "simulation_groups" (
     "group_access_code" varchar,
     "group_student_access" bool,
     "system_prompt" text,
-    "empathy_enabled" bool default false
+    "empathy_enabled" bool default true
 );

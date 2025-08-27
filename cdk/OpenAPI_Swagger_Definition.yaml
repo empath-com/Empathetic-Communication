@@ -1695,6 +1695,70 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /student/empathy_enabled:
+    options:
+      summary: CORS support
+      description: |
+        Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: |
+                {}
+    get:
+      tags:
+        - Student
+      summary: Check if empathy coach is enabled for a simulation group
+      operationId: student_empathy_enabled_GET
+      parameters:
+        - in: query
+          name: simulation_group_id
+          required: true
+          description: ID of the simulation group
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Empathy enabled status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  empathy_enabled:
+                    type: boolean
+                    description: Whether empathy coach is enabled for this simulation group
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "404":
+          description: Simulation group not found
+        "500":
+          description: Internal Server Error
+      security:
+        - studentAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${studentFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   # Endpoint to retrieve empathy evaluation summary and scores for a student's session
   /student/empathy_summary:
     options:
@@ -4108,6 +4172,13 @@ paths:
           schema:
             type: string
           description: A brief description of the simulation group
+        - in: query
+          name: empathy_enabled
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether empathy coach is enabled for this simulation group
       requestBody:
         required: true
         content:
@@ -4315,7 +4386,14 @@ paths:
           required: true
           schema:
             type: boolean
-          description: Email of the instructor
+          description: Student access status for the group
+        - in: query
+          name: empathy_enabled
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether empathy coach is enabled for this simulation group
       responses:
         "200":
           description: Instructor re-enrolled successfully

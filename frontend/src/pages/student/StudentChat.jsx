@@ -116,6 +116,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
   const [empathySummary, setEmpathySummary] = useState(null);
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
+  const [empathyEnabled, setEmpathyEnabled] = useState(false);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
   const [isInfoLoading, setIsInfoLoading] = useState(false);
@@ -522,6 +523,43 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       fetchFiles();
     }
   }, [patient]);
+
+  // Fetch empathy enabled status
+  useEffect(() => {
+    const fetchEmpathyEnabled = async () => {
+      if (!group?.simulation_group_id) return;
+      
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const response = await fetch(
+          `${
+            import.meta.env.VITE_API_ENDPOINT
+          }student/empathy_enabled?simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setEmpathyEnabled(data.empathy_enabled);
+        } else {
+          console.error("Failed to fetch empathy enabled status:", response.statusText);
+        }
+      } catch (error) {
+        console.error("Error fetching empathy enabled status:", error);
+      }
+    };
+    
+    fetchEmpathyEnabled();
+  }, [group]);
 
   async function retrieveKnowledgeBase(message, sessionId) {
     try {
@@ -1322,15 +1360,17 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         {/* Action Buttons */}
         <div className="p-4 border-t border-gray-100 space-y-3">
-          {/* Empathy Coach Button */}
-          <button
-            onClick={fetchEmpathySummary}
-            disabled={isEmpathyLoading}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <PsychologyIcon className="w-5 h-5" />
-            {sidebarWidth > 160 && <span>Empathy Coach</span>}
-          </button>
+          {/* Empathy Coach Button - Only show if enabled */}
+          {empathyEnabled && (
+            <button
+              onClick={fetchEmpathySummary}
+              disabled={isEmpathyLoading}
+              className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PsychologyIcon className="w-5 h-5" />
+              {sidebarWidth > 160 && <span>Empathy Coach</span>}
+            </button>
+          )}
 
           {/* Notes Button */}
           <button

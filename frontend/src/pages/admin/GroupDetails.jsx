@@ -46,6 +46,7 @@ const GroupDetails = ({ group, onBack }) => {
   const groupStatus = JSON.parse(group.status);
   const [activeInstructors, setActiveInstructors] = useState([]);
   const [isActive, setIsActive] = useState(groupStatus);
+  const [empathyEnabled, setEmpathyEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [allInstructors, setAllInstructors] = useState([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -106,6 +107,37 @@ const GroupDetails = ({ group, onBack }) => {
     };
     fetchActiveInstructors();
     fetchInstructors();
+    
+    // Fetch empathy_enabled status
+    const fetchEmpathyStatus = async () => {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const response = await fetch(
+          `${
+            import.meta.env.VITE_API_ENDPOINT
+          }admin/simulation_groups`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const currentGroup = data.find(g => g.simulation_group_id === group.id);
+          if (currentGroup) {
+            setEmpathyEnabled(currentGroup.empathy_enabled !== false);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching empathy status:", error);
+      }
+    };
+    
+    fetchEmpathyStatus();
     setLoading(false);
   }, []);
 
@@ -280,7 +312,7 @@ const GroupDetails = ({ group, onBack }) => {
       const updateGroupAccess = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT}admin/updateGroupAccess?&simulation_group_id=${encodeURIComponent(
           group.id
-        )}&access=${encodeURIComponent(isActive)}`,
+        )}&access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}`,
         {
           method: "POST",
           headers: {
@@ -374,6 +406,15 @@ const GroupDetails = ({ group, onBack }) => {
                 <Switch checked={isActive} onChange={handleStatusChange} />
               }
               label={isActive ? "Active" : "Inactive"}
+            />
+            <FormControlLabel
+              control={
+                <Switch 
+                  checked={empathyEnabled} 
+                  onChange={(e) => setEmpathyEnabled(e.target.checked)} 
+                />
+              }
+              label="Enable empathy coach"
             />
           </Paper>
           <Grid container spacing={2}>

@@ -50,6 +50,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
   );
   const [groupDescription, setGroupDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [empathyEnabled, setEmpathyEnabled] = useState(true);
   const [selectedInstructors, setSelectedInstructors] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -111,7 +112,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           groupDescription
         )}&group_access_code=${encodeURIComponent(
           access_code
-        )}&group_student_access=${encodeURIComponent(isActive)}`,
+        )}&group_student_access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}`,
         {
           method: "POST",
           headers: {
@@ -337,6 +338,20 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
               <Switch checked={isActive} onChange={handleStatusChange} />
             }
             label={isActive ? "Active" : "Inactive"}
+            sx={{
+              color: "black",
+              textAlign: "left",
+              justifyContent: "flex-start",
+            }}
+          />
+          <FormControlLabel
+            control={
+              <Switch 
+                checked={empathyEnabled} 
+                onChange={(e) => setEmpathyEnabled(e.target.checked)} 
+              />
+            }
+            label="Enable empathy coach"
             sx={{
               color: "black",
               textAlign: "left",

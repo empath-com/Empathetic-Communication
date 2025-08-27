@@ -1275,6 +1275,41 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "simulation_group_id and patient_id are required" });
         }
         break;
+      case "GET /student/empathy_enabled":
+        if (
+          event.queryStringParameters &&
+          event.queryStringParameters.simulation_group_id
+        ) {
+          const { simulation_group_id } = event.queryStringParameters;
+          
+          try {
+            // Get empathy_enabled status for the simulation group
+            const empathyResult = await sqlConnection`
+              SELECT empathy_enabled 
+              FROM "simulation_groups" 
+              WHERE simulation_group_id = ${simulation_group_id}
+            `;
+            
+            if (empathyResult.length === 0) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "Simulation group not found" });
+              break;
+            }
+            
+            response.statusCode = 200;
+            response.body = JSON.stringify({ 
+              empathy_enabled: empathyResult[0].empathy_enabled !== false 
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.error(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "simulation_group_id is required" });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

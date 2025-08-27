@@ -1065,15 +1065,14 @@ export const Login = () => {
                       borderRadius: "12px",
                       backgroundColor: "#10b981",
                       fontSize: "1rem",
+                      boxShadow: "none",
+                      color: "white",
                       fontWeight: "600",
                       textTransform: "none",
-                      boxShadow:
-                        "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
                       transition: "all 0.2s ease-in-out",
                       "&:hover": {
                         backgroundColor: "#059669",
-                        boxShadow:
-                          "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                        boxShadow: "none    ",
                         transform: "translateY(-1px)",
                       },
                       "&:active": {
@@ -1162,104 +1161,210 @@ export const Login = () => {
           )}
           {/* new user confirm signup  */}
           {!loading && signUpConfirmation && (
-            <Box
+            <Grid
+              item
+              xs={12}
+              sm={9}
+              md={7}
               sx={{
-                my: 8,
-                mx: 2,
                 display: "flex",
-                flexDirection: "column",
+                justifyContent: "center",
                 alignItems: "center",
-                margin: "0 auto", // Center the content horizontally
-                justifyContent: "center", // Center the content vertically
+                height: "100%",
+                bgcolor: "white",
+                borderRadius: { sm: "20px 0 0 20px" },
+                boxShadow:
+                  "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
               }}
             >
-              <Typography component="h1" variant="h5" paddingBottom={3}>
-                Account not verified
-              </Typography>
-              <p className="text-sm">
-                Please enter the confirmation code sent to your email.
-              </p>
-              <div className="flex flex-col items-center justify-center">
-                <form onSubmit={handleConfirmSignUp}>
-                  <input
-                    className="input input-bordered mt-1 h-10 w-full text-xs bg-gray-200 border border-gray-400 rounded pl-2"
-                    name="confirmationCode"
-                    placeholder="Confirmation Code"
-                    type="password"
-                    maxLength={15}
+              <Box
+                sx={{
+                  my: 8,
+                  mx: 4,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  maxWidth: "400px",
+                }}
+              >
+                <Typography
+                  component="h1"
+                  variant="h4"
+                  sx={{
+                    color: "#1f2937",
+                    fontWeight: 700,
+                    marginBottom: "28px",
+                    fontSize: "1.875rem",
+                    fontFamily: "Outfit, sans-serif",
+                    textAlign: "center",
+                  }}
+                >
+                  Verify your account
+                </Typography>
+                <Box
+                  component="form"
+                  noValidate
+                  onSubmit={handleConfirmSignUp}
+                  sx={{ mt: 1, width: "100%" }}
+                >
+                  <TextField
+                    margin="normal"
                     required
+                    fullWidth
+                    id="confirmationCode"
+                    label="Confirmation Code"
+                    name="confirmationCode"
+                    autoFocus
+                    type="text"
+                    inputProps={{ maxLength: 15, inputMode: "numeric" }}
+                    sx={{
+                      mb: 2,
+                      "& .MuiOutlinedInput-root": {
+                        borderRadius: "12px",
+                        backgroundColor: "#f9fafb",
+                        transition: "all 0.2s ease-in-out",
+                        "&:hover": { backgroundColor: "#f3f4f6" },
+                        "&.Mui-focused": {
+                          backgroundColor: "white",
+                          boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                        },
+                        "& fieldset": { borderColor: "#e5e7eb" },
+                        "&:hover fieldset": { borderColor: "#10b981" },
+                        "&.Mui-focused fieldset": {
+                          borderColor: "#10b981",
+                          borderWidth: "2px",
+                        },
+                      },
+                      "& .MuiInputLabel-root": {
+                        color: "#6b7280",
+                        "&.Mui-focused": { color: "#10b981" },
+                      },
+                    }}
                   />
                   {confirmationError && (
-                    <div className="block text-m mb-1 mt-6 text-red-600">
+                    <Typography
+                      variant="body2"
+                      sx={{ color: "#dc2626", mt: 1, fontWeight: 500 }}
+                    >
                       {confirmationError}
-                    </div>
+                    </Typography>
                   )}
                   <Button
                     type="submit"
                     fullWidth
                     variant="contained"
-                    color="primary"
-                    sx={{ mt: 3, mb: 2 }}
+                    sx={{
+                      mt: 3,
+                      mb: 2,
+                      py: 1.5,
+                      borderRadius: "12px",
+                      backgroundColor: "#10b981",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      textTransform: "none",
+                      boxShadow: "none",
+                      transition: "all 0.2s ease-in-out",
+                      color: "white",
+                      fontFamily: "Outfit, sans-serif",
+                      "&:hover": {
+                        backgroundColor: "#059669",
+                        transform: "translateY(-1px)",
+                        boxShadow: "none",
+                      },
+                      "&:active": { transform: "translateY(0)" },
+                    }}
                   >
-                    Submit
+                    Submit Code
                   </Button>
-                  <Button
-                    type="button"
-                    fullWidth
-                    variant="contained"
-                    color="primary"
-                    sx={{ mt: 3, mb: 2 }}
-                    onClick={resendConfirmationCode}
-                  >
-                    Resend Code
-                  </Button>
-                </form>
-              </div>
-            </Box>
+                  <Box sx={{ textAlign: "center" }}>
+                    <Link
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        resendConfirmationCode();
+                      }}
+                      variant="body2"
+                      sx={{
+                        color: "#10b981",
+                        textDecoration: "none",
+                        fontWeight: 500,
+                        transition: "color 0.2s ease-in-out",
+                        display: "inline-block",
+                        "&:hover": {
+                          color: "#059669",
+                          textDecoration: "underline",
+                        },
+                      }}
+                    >
+                      Didn&apos;t get a code? Resend
+                    </Link>
+                  </Box>
+                </Box>
+              </Box>
+            </Grid>
           )}
           {/* forgot password?  */}
           {!loading && forgotPassword && (
             <Grid
               item
               xs={12}
-              sm={12}
+              sm={9}
               md={7}
-              component={Paper}
-              square
               sx={{
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
-                height: "100vh", // Center vertically and horizontally
+                height: "100%",
+                bgcolor: "white",
+                borderRadius: { sm: "20px 0 0 20px" },
+                boxShadow:
+                  "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
               }}
             >
               <Box
                 sx={{
+                  my: 8,
+                  mx: 4,
                   display: "flex",
                   flexDirection: "column",
-                  justifyContent: "center",
                   alignItems: "center",
                   width: "100%",
-                  maxWidth: "500px", // Adjust for a clean form size
-                  padding: 4, // Spacing around content
+                  maxWidth: "420px",
                 }}
               >
-                {/* Title */}
                 <Typography
                   component="h1"
-                  variant="h5"
+                  variant="h4"
                   sx={{
-                    mb: 3,
+                    color: "#1f2937",
+                    fontWeight: 700,
+                    marginBottom: step === "confirmReset" ? "20px" : "28px",
+                    fontSize: "1.875rem",
+                    fontFamily: "Outfit, sans-serif",
                     textAlign: "center",
-                    fontSize: "1.8rem", // Match font size with Sign In
                   }}
                 >
-                  Reset Password
+                  {step === "confirmReset"
+                    ? "Enter reset code"
+                    : "Reset password"}
                 </Typography>
-
+                {message && step === "confirmReset" && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      mb: 1,
+                      color: "#059669",
+                      textAlign: "center",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {message}
+                  </Typography>
+                )}
                 {/* Request Reset */}
                 {step === "requestReset" && (
-                  <>
+                  <Box sx={{ width: "100%" }}>
                     <TextField
                       label="Email Address"
                       type="email"
@@ -1269,24 +1374,93 @@ export const Login = () => {
                       margin="normal"
                       inputProps={{ maxLength: 40 }}
                       sx={{
-                        fontSize: "1rem", // Ensure input matches font size
+                        mb: 2,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: "12px",
+                          backgroundColor: "#f9fafb",
+                          transition: "all 0.2s ease-in-out",
+                          "&:hover": { backgroundColor: "#f3f4f6" },
+                          "&.Mui-focused": {
+                            backgroundColor: "white",
+                            boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                          },
+                          "& fieldset": { borderColor: "#e5e7eb" },
+                          "&:hover fieldset": { borderColor: "#10b981" },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#10b981",
+                            borderWidth: "2px",
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          color: "#6b7280",
+                          "&.Mui-focused": { color: "#10b981" },
+                        },
                       }}
                     />
                     <Button
                       variant="contained"
-                      color="primary"
                       onClick={() => handleResetPassword(username)}
                       fullWidth
                       sx={{
-                        mt: 3,
-                        mb: 2,
-                        py: 1.2, // Vertical padding for height consistency
-                        fontSize: "1rem", // Match button text font size
+                        mt: 1,
+                        mb: 3,
+                        py: 1.5,
+                        borderRadius: "12px",
+                        backgroundColor: "#10b981",
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        textTransform: "none",
+                        boxShadow: "none",
+                        transition: "all 0.2s ease-in-out",
+                        color: "white",
+                        fontFamily: "Outfit, sans-serif",
+                        "&:hover": {
+                          backgroundColor: "#059669",
+                          transform: "translateY(-1px)",
+                          boxShadow: "none",
+                        },
+                        "&:active": { transform: "translateY(0)" },
                       }}
                     >
                       Send Reset Code
                     </Button>
-                  </>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        textAlign: "center",
+                        color: "#6b7280",
+                        fontSize: "0.85rem",
+                        lineHeight: 1.5,
+                        px: 1,
+                      }}
+                    >
+                      We will send a short‑lived code to your email so you can
+                      create a new password.
+                    </Typography>
+                    <Box sx={{ textAlign: "center", mt: 3 }}>
+                      <Link
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setForgotPassword(false);
+                        }}
+                        variant="body2"
+                        sx={{
+                          color: "#10b981",
+                          textDecoration: "none",
+                          fontWeight: 500,
+                          transition: "color 0.2s ease-in-out",
+                          display: "inline-block",
+                          "&:hover": {
+                            color: "#059669",
+                            textDecoration: "underline",
+                          },
+                        }}
+                      >
+                        Back to sign in
+                      </Link>
+                    </Box>
+                  </Box>
                 )}
 
                 {/* Confirm Reset */}
@@ -1295,6 +1469,7 @@ export const Login = () => {
                     component="form"
                     noValidate
                     onSubmit={handleConfirmResetPassword}
+                    sx={{ width: "100%" }}
                   >
                     <TextField
                       label="Confirmation Code"
@@ -1303,7 +1478,29 @@ export const Login = () => {
                       fullWidth
                       margin="normal"
                       inputProps={{ maxLength: 15 }}
-                      sx={{ fontSize: "1rem" }}
+                      sx={{
+                        mb: 2,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: "12px",
+                          backgroundColor: "#f9fafb",
+                          transition: "all 0.2s ease-in-out",
+                          "&:hover": { backgroundColor: "#f3f4f6" },
+                          "&.Mui-focused": {
+                            backgroundColor: "white",
+                            boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                          },
+                          "& fieldset": { borderColor: "#e5e7eb" },
+                          "&:hover fieldset": { borderColor: "#10b981" },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#10b981",
+                            borderWidth: "2px",
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          color: "#6b7280",
+                          "&.Mui-focused": { color: "#10b981" },
+                        },
+                      }}
                     />
                     <TextField
                       label="New Password"
@@ -1313,62 +1510,104 @@ export const Login = () => {
                       fullWidth
                       margin="normal"
                       inputProps={{ maxLength: 50 }}
-                      sx={{ fontSize: "1rem" }}
+                      sx={{
+                        mb: 3,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: "12px",
+                          backgroundColor: "#f9fafb",
+                          transition: "all 0.2s ease-in-out",
+                          "&:hover": { backgroundColor: "#f3f4f6" },
+                          "&.Mui-focused": {
+                            backgroundColor: "white",
+                            boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.1)",
+                          },
+                          "& fieldset": { borderColor: "#e5e7eb" },
+                          "&:hover fieldset": { borderColor: "#10b981" },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#10b981",
+                            borderWidth: "2px",
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          color: "#6b7280",
+                          "&.Mui-focused": { color: "#10b981" },
+                        },
+                      }}
                     />
+                    {error && (
+                      <Typography
+                        variant="body2"
+                        sx={{ color: "#dc2626", mt: 0, fontWeight: 500 }}
+                      >
+                        {error}
+                      </Typography>
+                    )}
                     <Button
                       type="submit"
                       variant="contained"
-                      color="primary"
                       fullWidth
                       sx={{
-                        mt: 3,
+                        mt: 1,
                         mb: 2,
-                        py: 1.2,
+                        py: 1.5,
+                        borderRadius: "12px",
+                        backgroundColor: "#10b981",
                         fontSize: "1rem",
-                        fontWeight: "bold",
+                        fontWeight: 600,
+                        textTransform: "none",
+                        boxShadow: "none",
+                        transition: "all 0.2s ease-in-out",
+                        color: "white",
+                        fontFamily: "Outfit, sans-serif",
+                        "&:hover": {
+                          backgroundColor: "#059669",
+                          transform: "translateY(-1px)",
+                          boxShadow: "none",
+                        },
+                        "&:active": { transform: "translateY(0)" },
                       }}
                     >
                       Reset Password
                     </Button>
+                    <Box sx={{ textAlign: "center", mt: 1 }}>
+                      <Link
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setForgotPassword(false);
+                          setStep("requestReset");
+                        }}
+                        variant="body2"
+                        sx={{
+                          color: "#10b981",
+                          textDecoration: "none",
+                          fontWeight: 500,
+                          transition: "color 0.2s ease-in-out",
+                          display: "inline-block",
+                          "&:hover": {
+                            color: "#059669",
+                            textDecoration: "underline",
+                          },
+                        }}
+                      >
+                        Back to sign in
+                      </Link>
+                    </Box>
                   </Box>
                 )}
-
-                {/* Success Message */}
                 {step === "done" && (
                   <Typography
                     color="primary"
-                    sx={{ mt: 3, textAlign: "center", fontSize: "1.2rem" }}
+                    sx={{
+                      mt: 1,
+                      textAlign: "center",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                    }}
                   >
                     Password has been successfully reset.
                   </Typography>
                 )}
-
-                {/* Error Message */}
-                {error && (
-                  <Typography
-                    color="error"
-                    sx={{ mt: 2, textAlign: "center", fontSize: "1rem" }}
-                  >
-                    {error}
-                  </Typography>
-                )}
-
-                {/* Remember Password Link */}
-                <Link
-                  href="#"
-                  variant="body2"
-                  onClick={() => setForgotPassword(false)}
-                  sx={{
-                    mt: 3,
-                    textAlign: "center",
-                    display: "block",
-                    fontSize: "1rem",
-                    fontWeight: "bold",
-                    color: "primary.main", // Match link color
-                  }}
-                >
-                  Remember your Password? <strong>Sign in</strong>
-                </Link>
               </Box>
             </Grid>
           )}

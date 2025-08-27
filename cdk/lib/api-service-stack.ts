@@ -145,9 +145,73 @@ export class ApiServiceStack extends cdk.Stack {
         email: true,
       },
       userVerification: {
-        emailSubject: "You need to verify your email",
-        emailBody:
-          "Thank you for signing up to Virtual Care Interactions. \n Your verification code is {####}",
+        emailSubject: "Confirm your email for Virtual Care Interactions",
+        emailBody: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Verify your email</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { margin:0; padding:0; background:#f3faf6; font-family:'Outfit',Arial,'Helvetica Neue',Helvetica,sans-serif; -webkit-font-smoothing:antialiased; color:#203128; }
+    a { color:#0d6b47; text-decoration:none; }
+    .full { width:100%; }
+    .container { max-width:600px; margin:0 auto; }
+    .shadow { box-shadow:0 4px 16px rgba(0,0,0,0.06); }
+    .rounded { border-radius:18px; }
+    .p { padding:40px 44px 36px; }
+    h1 { margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:0.3px; color:#0d6b47; }
+    p { margin:0 0 18px; font-size:15px; line-height:1.55; }
+    .header-bar { background:linear-gradient(135deg,#0d6b47,#15915d); padding:24px 44px 70px; text-align:left; border-radius:24px 24px 0 0; position:relative; overflow:hidden; }
+    .brand { font-size:18px; font-weight:600; color:#ffffff; letter-spacing:0.5px; }
+    .panel { background:#ffffff; position:relative; top:-56px; border:1px solid #dcefe3; }
+    .code-wrap { text-align:center; margin:28px 0 10px; }
+    .code-label { font-size:12px; font-weight:600; letter-spacing:1px; color:#3d5a4b; text-transform:uppercase; margin-bottom:10px; }
+    .code { display:inline-block; background:#0d6b47; color:#ffffff; font-weight:700; font-size:34px; letter-spacing:10px; padding:18px 26px 18px 32px; border-radius:14px; box-shadow:0 4px 10px rgba(13,107,71,0.25); font-family:'Outfit',Arial,sans-serif; }
+    .divider { height:1px; background:linear-gradient(to right,rgba(13,107,71,0.15),rgba(13,107,71,0.05),rgba(13,107,71,0.15)); margin:34px 0 26px; border:none; }
+    ul { margin:0 0 18px 20px; padding:0; }
+    li { margin:0 0 8px; }
+    .muted { font-size:12px; line-height:1.45; color:#5c6b61; margin-top:6px; }
+    .footer { text-align:center; font-size:11px; line-height:1.4; color:#6f7d74; padding:0 24px 40px; }
+    .btn-wrap { text-align:center; margin-top:30px; }
+    .btn { background:#15915d; background:linear-gradient(135deg,#15915d,#0d6b47); color:#ffffff !important; padding:14px 30px; font-size:15px; font-weight:600; border-radius:40px; display:inline-block; letter-spacing:0.4px; box-shadow:0 4px 12px rgba(21,145,93,0.35); }
+    .btn:hover { filter:brightness(1.05); }
+    @media (max-width:640px){ .p { padding:34px 28px 30px; } .header-bar { padding:22px 28px 62px; } h1 { font-size:24px; } .code { font-size:30px; letter-spacing:8px; padding:16px 22px 16px 28px; } }
+    @media (prefers-color-scheme: dark){ body { background:#0c1410; color:#e6efe9; } .panel { background:#15221b; border-color:#1e3027; } h1 { color:#6ee7b7; } p, .muted, .footer, li { color:#d9e7dd; } .code { background:#16a34a; box-shadow:0 4px 12px rgba(0,0,0,0.5); } .header-bar { background:linear-gradient(135deg,#0f5132,#157347); } .btn { background:linear-gradient(135deg,#16a34a,#0f5132); box-shadow:0 4px 12px rgba(0,0,0,0.6); } .divider { background:linear-gradient(to right,rgba(110,231,183,0.25),rgba(110,231,183,0.05),rgba(110,231,183,0.25)); } }
+  </style>
+</head>
+<body>
+  <table role="presentation" class="full" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f3faf6; padding:32px 14px;">
+    <tr>
+      <td>
+        <div class="container">
+          <div class="header-bar">
+            <div class="brand">Virtual Care Interactions</div>
+          </div>
+          <div class="panel rounded shadow">
+            <div class="p">
+              <h1>Confirm your email</h1>
+              <p>Welcome to <strong>Virtual Care Interactions</strong>!</p>
+              <p>Use the verification code below to complete your sign up:</p>
+              <div class="code-wrap">
+                <div class="code-label">Your verification code</div>
+                <div class="code">{####}</div>
+              </div>
+              <hr class="divider" />
+              <p style="margin:0 0 12px; font-weight:600; color:#0d6b47;">Don't remember signing up?</p>
+              <ul>
+                <li>If you didn't request this email you can ignore it safely.</li>
+              </ul>
+            </div>
+            <div class="footer">You are receiving this email because a sign-up was initiated for this address. If this wasn't you, no further action is required.</div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
         emailStyle: cognito.VerificationEmailStyle.CODE,
       },
       passwordPolicy: {
@@ -692,6 +756,17 @@ export class ApiServiceStack extends cdk.Stack {
           "logs:PutLogEvents",
         ],
         resources: ["arn:aws:logs:*:*:*"],
+      })
+    );
+
+    // Grant access to RDS proxy
+    coglambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:*/applicationUsername`,
+        ],
       })
     );
 
