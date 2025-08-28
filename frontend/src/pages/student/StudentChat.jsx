@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AIMessage from "../../components/AIMessage";
 import Session from "../../components/Session";
 import StudentMessage from "../../components/StudentMessage";
-
+import VoiceConversation from "../../components/VoiceConversation";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { useNavigate } from "react-router-dom";
 import { fetchUserAttributes } from "aws-amplify/auth";
@@ -11,7 +11,12 @@ import FilesPopout from "./FilesPopout";
 import EmpathyCoachSummary from "../../components/EmpathyCoachSummary";
 import { getSocket } from "../../utils/socket";
 
-
+import {
+  startSpokenLLM,
+  stopSpokenLLM,
+  playAudio,
+  stopAudioPlayback,
+} from "../../utils/voiceStream";
 
 import { signOut } from "aws-amplify/auth";
 
@@ -50,16 +55,18 @@ const ON_TEXT_STREAM = /* GraphQL */ `
   }
 `;
 
-
+// Importing l-mirage animation
+import { mirage } from "ldrs";
+mirage.register();
 
 // Temporary ID used for the streaming bubble
 const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
 
-// TypingIndicator
+// TypingIndicator using l-mirage
 const TypingIndicator = ({ patientName }) => (
   <div className="flex items-center justify-center py-4">
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-4 flex items-center space-x-3">
-      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+      <l-mirage size="24" speed="2.5" color="#10b981"></l-mirage>
       <span className="text-gray-600 font-medium text-sm">
         {patientName
           ? `${titleCase(patientName)} is thinking...`
@@ -1482,8 +1489,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 if (isRecording) {
                   // Stop immediately
                   allowAudioRef.current = false;
-                  // stopAudioPlayback();
-                  // stopSpokenLLM();
+                  stopAudioPlayback();
+                  stopSpokenLLM();
                   setIsRecording(false);
                   setShowVoiceOverlay(false);
                   setLoading(false);
@@ -1491,15 +1498,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                   // Start voice; allow audio playback
                   allowAudioRef.current = true;
                   setShowVoiceOverlay(true);
-                  // fetchVoiceID().then((voice_id) => {
-                  //   console.log("Session ID:", currentSessionId);
-                  //   startSpokenLLM(voice_id, setLoading, currentSessionId, {
-                  //     patient_name: patient?.patient_name,
-                  //     patient_prompt: patient?.patient_prompt,
-                  //     llm_completion: !!patient?.llm_completion,
-                  //     system_prompt: group?.system_prompt || "",
-                  //   });
-                  // });
+                  fetchVoiceID().then((voice_id) => {
+                    console.log("Session ID:", currentSessionId);
+                    startSpokenLLM(voice_id, setLoading, currentSessionId, {
+                      patient_name: patient?.patient_name,
+                      patient_prompt: patient?.patient_prompt,
+                      llm_completion: !!patient?.llm_completion,
+                      // If you have a group/system prompt available, pass it here; otherwise omit or keep empty
+                      system_prompt: group?.system_prompt || "",
+                    });
+                  });
                   setIsRecording(true);
                   setLoading(true);
                 }
@@ -1598,7 +1606,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         <DialogContent sx={{ pt: 3 }}>
           {isEmpathyLoading ? (
             <div className="flex items-center space-x-3 py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+              <l-mirage size="32" speed="2.5" color="#10b981"></l-mirage>
               <Typography className="text-gray-600">
                 Loading empathy summary...
               </Typography>
@@ -1697,7 +1705,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       {loading && (
         <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm z-[2000] flex flex-col items-center justify-center">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+            <l-mirage size="48" speed="2.5" color="#10b981" />
             <div className="text-center">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">
                 Starting conversation...
@@ -1716,7 +1724,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-[3002]">
                 <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+                  <l-mirage size="48" speed="2.5" color="#10b981" />
                   <div className="text-center">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">
                       Preparing microphone...
@@ -1780,8 +1788,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                   // Disable any further playback and stop immediately
                   allowAudioRef.current = false;
                   getMessages();
-                  // stopAudioPlayback();
-                  // stopSpokenLLM();
+                  stopAudioPlayback();
+                  stopSpokenLLM();
                   setIsRecording(false);
                   setShowVoiceOverlay(false);
                   setLoading(false);
