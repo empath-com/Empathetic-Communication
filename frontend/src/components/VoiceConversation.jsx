@@ -31,10 +31,21 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
     const socketUrl = import.meta.env.VITE_VOICE_SOCKETIO_URL || 'http://localhost:3001';
     console.log('Connecting to Socket.IO voice service:', socketUrl);
     
+    // Get JWT token from localStorage
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) {
+      console.error('No authentication token found');
+      setConnectionStatus('error');
+      return;
+    }
+    
     // Import socket.io-client dynamically
     import('socket.io-client').then(({ io }) => {
       websocketRef.current = io(socketUrl, {
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        auth: {
+          token: token
+        }
       });
       
       websocketRef.current.on('connect', () => {
