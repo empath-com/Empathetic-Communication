@@ -53,11 +53,6 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
           token: token
         }
       });
-    } catch (error) {
-      console.error('Error getting auth token:', error);
-      setConnectionStatus('error');
-      return;
-    }
       
       websocketRef.current.on('connect', () => {
         console.log('Socket.IO connected');
@@ -90,6 +85,12 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
         console.error('Socket.IO connection error:', error);
         setConnectionStatus('error');
       });
+      
+    } catch (error) {
+      console.error('Error getting auth token:', error);
+      setConnectionStatus('error');
+      return;
+    }
   };
 
   const disconnectFromVoiceService = () => {
