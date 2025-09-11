@@ -72,34 +72,54 @@ io.on("connection", (socket) => {
     }
     novaReady = false;
 
-    // Get STS credentials and spawn process in parallel
-    const [stsCredentials] = await Promise.all([
-      getStsCredentials(socket.handshake.auth.token)
-    ]);
+    // Get Cognito Identity Pool credentials for user-specific access
+    console.log("🔑 Getting Cognito Identity Pool credentials for user:", socket.userEmail);
+    let stsCredentials;
+    try {
+      stsCredentials = await getStsCredentials(socket.handshake.auth.token);
+      console.log("✅ Successfully obtained Cognito Identity Pool credentials");
+    } catch (error) {
+      console.error("❌ Failed to get Cognito credentials:", error.message);
+      socket.emit("nova-error", { error: "Failed to authenticate with AWS services" });
+      return;
+    }
 
     const PORT = process.env.PORT || 80;
-    novaProcess = spawn("python3", ["nova_sonic.py"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        SESSION_ID: config.session_id || "default",
-        VOICE_ID: config.voice_id || "",
-        USER_ID: socket.userId || "anonymous",
-        AWS_ACCESS_KEY_ID: stsCredentials.AccessKeyId,
-        AWS_SECRET_ACCESS_KEY: stsCredentials.SecretKey,
-        AWS_SESSION_TOKEN: stsCredentials.SessionToken,
-        SM_DB_CREDENTIALS: process.env.SM_DB_CREDENTIALS || "",
-        RDS_PROXY_ENDPOINT: process.env.RDS_PROXY_ENDPOINT || "",
-        PATIENT_NAME: config.patient_name || "",
-        PATIENT_PROMPT: config.patient_prompt || "",
-        PATIENT_ID: config.patient_id || "",
-        LLM_COMPLETION: config.llm_completion ? "true" : "false",
-        EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
-        APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
-        COGNITO_TOKEN: socket.handshake.auth.token || "",
-      },
-    });
-    console.log("📡 Nova process spawned with PID:", novaProcess.pid);
+    
+    // Try python3 first, then python if that fails
+    const pythonCmd = process.env.PYTHON_CMD || "python3";
+    console.log(`🐍 PYTHON_CMD env var: ${process.env.PYTHON_CMD}`);
+    console.log(`🐍 Using command: ${pythonCmd}`);
+    console.log(`🐍 Attempting to spawn: ${pythonCmd} nova_sonic.py`);
+    
+    try {
+      novaProcess = spawn(pythonCmd, ["nova_sonic.py"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          SESSION_ID: config.session_id || "default",
+          VOICE_ID: config.voice_id || "",
+          USER_ID: socket.userId || "anonymous",
+          AWS_ACCESS_KEY_ID: stsCredentials.AccessKeyId,
+          AWS_SECRET_ACCESS_KEY: stsCredentials.SecretKey,
+          AWS_SESSION_TOKEN: stsCredentials.SessionToken,
+          SM_DB_CREDENTIALS: process.env.SM_DB_CREDENTIALS || "",
+          RDS_PROXY_ENDPOINT: process.env.RDS_PROXY_ENDPOINT || "",
+          PATIENT_NAME: config.patient_name || "",
+          PATIENT_PROMPT: config.patient_prompt || "",
+          PATIENT_ID: config.patient_id || "",
+          LLM_COMPLETION: config.llm_completion ? "true" : "false",
+          EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
+          APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
+          COGNITO_TOKEN: socket.handshake.auth.token || "",
+        },
+      });
+      console.log("📡 Nova process spawned with PID:", novaProcess.pid);
+    } catch (error) {
+      console.error("❌ Failed to spawn Nova process:", error.message);
+      socket.emit("nova-error", { error: "Failed to start voice system" });
+      return;
+    }
 
     // Capture stdout and stderr
     novaProcess.stdout.on("data", (data) => {
@@ -171,6 +191,43 @@ io.on("connection", (socket) => {
 
     novaProcess.stderr.on("data", (data) => {
       console.warn("⚠️ Nova stderr:", data.toString().trim());
+    });
+
+    novaProcess.on("error", (error) => {
+      console.error("❌ Nova process error:", error.message);
+      if (error.code === "ENOENT") {
+        console.log("🐍 Trying 'python' instead of 'python3'");
+        // Retry with 'python' command
+        try {
+          novaProcess = spawn("python", ["nova_sonic.py"], {
+            stdio: ["pipe", "pipe", "pipe"],
+            env: {
+              ...process.env,
+              SESSION_ID: config.session_id || "default",
+              VOICE_ID: config.voice_id || "",
+              USER_ID: socket.userId || "anonymous",
+              AWS_ACCESS_KEY_ID: stsCredentials.AccessKeyId,
+              AWS_SECRET_ACCESS_KEY: stsCredentials.SecretKey,
+              AWS_SESSION_TOKEN: stsCredentials.SessionToken,
+              SM_DB_CREDENTIALS: process.env.SM_DB_CREDENTIALS || "",
+              RDS_PROXY_ENDPOINT: process.env.RDS_PROXY_ENDPOINT || "",
+              PATIENT_NAME: config.patient_name || "",
+              PATIENT_PROMPT: config.patient_prompt || "",
+              PATIENT_ID: config.patient_id || "",
+              LLM_COMPLETION: config.llm_completion ? "true" : "false",
+              EXTRA_SYSTEM_PROMPT: config.system_prompt || "",
+              APPSYNC_GRAPHQL_URL: process.env.APPSYNC_GRAPHQL_URL || "",
+              COGNITO_TOKEN: socket.handshake.auth.token || "",
+            },
+          });
+          console.log("📡 Nova process spawned with 'python', PID:", novaProcess.pid);
+        } catch (retryError) {
+          console.error("❌ Failed to spawn with 'python' too:", retryError.message);
+          socket.emit("nova-error", { error: "Python not found" });
+        }
+      } else {
+        socket.emit("nova-error", { error: error.message });
+      }
     });
 
     novaProcess.on("close", (code) => {

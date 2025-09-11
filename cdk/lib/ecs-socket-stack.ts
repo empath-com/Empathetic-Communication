@@ -142,6 +142,7 @@ export class EcsSocketStack extends Stack {
         IDENTITY_POOL_ID: apiServiceStack.getIdentityPoolId(),
         TEXT_GENERATION_ENDPOINT: apiServiceStack.getEndpointUrl(),
         APPSYNC_GRAPHQL_URL: apiServiceStack.appSyncApi.graphqlUrl,
+        SOCKET_EXECUTION_ROLE_ARN: taskRole.roleArn,
       },
     });
 
@@ -149,7 +150,7 @@ export class EcsSocketStack extends Stack {
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 1,
+      desiredCount: 2, // Always keep 2 running to prevent cold starts
       assignPublicIp: true,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
@@ -167,7 +168,7 @@ export class EcsSocketStack extends Stack {
       "Allow NLB to reach ECS service"
     );
 
-    // 6) Network Load Balancer on TCP 80
+    // 6) Network Load Balancer on TCP 80
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
       internetFacing: true,
@@ -185,9 +186,9 @@ export class EcsSocketStack extends Stack {
         protocol: elbv2.Protocol.TCP,
         port: "80",
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 10,
-        interval: Duration.seconds(120),
-        timeout: Duration.seconds(60),
+        unhealthyThresholdCount: 3,
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(10),
       },
     });
 
