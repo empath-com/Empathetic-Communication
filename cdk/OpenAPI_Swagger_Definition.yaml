@@ -1759,6 +1759,71 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+
+  /student/voice_enabled:
+    options:
+      summary: CORS support
+      description: |
+        Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: |
+                {}
+    get:
+      tags:
+        - Student
+      summary: Check if voice is enabled for a simulation group
+      operationId: student_voice_enabled_GET
+      parameters:
+        - in: query
+          name: simulation_group_id
+          required: true
+          description: ID of the simulation group
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Voice enabled status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  voice_enabled:
+                    type: boolean
+                    description: Whether voice is enabled for this simulation group
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "404":
+          description: Simulation group not found
+        "500":
+          description: Internal Server Error
+      security:
+        - studentAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${studentFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   # Endpoint to retrieve empathy evaluation summary and scores for a student's session
   /student/empathy_summary:
     options:
