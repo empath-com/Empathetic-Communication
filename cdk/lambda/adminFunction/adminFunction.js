@@ -704,6 +704,127 @@ exports.handler = async (event) => {
           response.body = "token_limit is required";
         }
         break;
+      case "GET /admin/empathy_prompts":
+        try {
+          // Get the latest empathy prompt from history table
+          const latestPrompt = await sqlConnectionTableCreator`
+            SELECT prompt_content, created_at
+            FROM "empathy_prompt_history"
+            ORDER BY created_at DESC
+            LIMIT 1;
+          `;
+
+          // Get prompt history excluding the latest one
+          const promptHistory = await sqlConnectionTableCreator`
+            SELECT history_id, prompt_content, created_at
+            FROM "empathy_prompt_history"
+            ORDER BY created_at DESC
+            OFFSET 1;
+          `;
+
+          response.body = JSON.stringify({
+            current_prompt: latestPrompt[0]?.prompt_content || "",
+            history: promptHistory,
+          });
+        } catch (err) {
+          response.statusCode = 500;
+          console.log(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "POST /admin/update_empathy_prompt":
+        if (event.body) {
+          try {
+            const { prompt_content } = JSON.parse(event.body);
+            if (!prompt_content || !prompt_content.trim()) {
+              response.statusCode = 400;
+              response.body = "prompt_content is required";
+              break;
+            }
+
+            // Insert new prompt into history
+            await sqlConnectionTableCreator`
+              INSERT INTO "empathy_prompt_history" (prompt_content)
+              VALUES (${prompt_content});
+            `;
+
+            response.body = JSON.stringify({
+              message: "Empathy prompt updated successfully",
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "prompt_content is required";
+        }
+        break;
+      case "POST /admin/restore_empathy_prompt":
+        try {
+          const historyId =
+            event.queryStringParameters &&
+            event.queryStringParameters.history_id
+              ? event.queryStringParameters.history_id
+              : null;
+
+          if (historyId) {
+            // Fetch the prompt_content for the given history_id and insert as new active prompt
+            const rows = await sqlConnectionTableCreator`
+              SELECT prompt_content
+              FROM "empathy_prompt_history"
+              WHERE history_id = ${historyId}
+              LIMIT 1;
+            `;
+
+            const fromHistory = rows[0]?.prompt_content;
+            if (!fromHistory) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({
+                error: "History entry not found",
+              });
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              INSERT INTO "empathy_prompt_history" (prompt_content)
+              VALUES (${fromHistory});
+            `;
+
+            response.body = JSON.stringify({
+              message: "Empathy prompt restored successfully",
+            });
+            break;
+          }
+
+          // Fallback: body-based restore
+          if (event.body) {
+            const { prompt_content } = JSON.parse(event.body);
+            if (!prompt_content || !prompt_content.trim()) {
+              response.statusCode = 400;
+              response.body = "prompt_content is required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              INSERT INTO "empathy_prompt_history" (prompt_content)
+              VALUES (${prompt_content});
+            `;
+
+            response.body = JSON.stringify({
+              message: "Empathy prompt restored successfully",
+            });
+          } else {
+            response.statusCode = 400;
+            response.body = "history_id or prompt_content is required";
+          }
+        } catch (err) {
+          response.statusCode = 500;
+          console.log(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

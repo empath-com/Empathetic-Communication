@@ -34,8 +34,11 @@ const AISettings = () => {
   const [users, setUsers] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptHistory, setPromptHistory] = useState([]);
+  const [empathyPrompt, setEmpathyPrompt] = useState("");
+  const [empathyPromptHistory, setEmpathyPromptHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [empathyHistoryIndex, setEmpathyHistoryIndex] = useState(0);
   const [alert, setAlert] = useState({
     show: false,
     message: "",
@@ -43,6 +46,7 @@ const AISettings = () => {
   });
   const [authToken, setAuthToken] = useState(null);
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
+  const [openEmpathyConfirmDialog, setOpenEmpathyConfirmDialog] = useState(false);
   const DEFAULT_PROMPT = `
      You are a patient and you are going to pretend to be a patient talking to a pharmacy student.
         Look at the document(s) provided to you and act as a patient with those symptoms, but do not say anything outisde of the scope of what is provided in the documents.
@@ -70,6 +74,95 @@ const AISettings = () => {
         Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.
   `;
 
+  const DEFAULT_EMPATHY_PROMPT = `You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
+
+**EVALUATION CONTEXT:**
+Patient Context: {patient_context}
+Student Response: {user_text}
+
+**JUDGE INSTRUCTIONS:**
+As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
+1. A score (1-5 scale)
+2. Clear justification for the score
+3. Specific evidence from the student's response
+4. Actionable improvement recommendations
+
+IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
+
+**SCORING CRITERIA:**
+
+**Perspective-Taking (1-5):**
+• 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
+• 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
+• 3-Competent: Shows awareness of patient's perspective with minor gaps
+• 2-Advanced Beginner: Limited attempt to understand patient's perspective
+• 1-Novice: Little or no effort to consider patient's viewpoint
+
+**Emotional Resonance/Compassionate Care (1-5):**
+• 5-Extending: Exceptional warmth, deeply attuned to emotional needs
+• 4-Proficient: Genuine concern and sensitivity, warm and respectful
+• 3-Competent: Expresses concern with slightly less empathetic tone
+• 2-Advanced Beginner: Some emotional awareness but lacks warmth
+• 1-Novice: Emotionally flat or dismissive response
+
+**Acknowledgment of Patient's Experience (1-5):**
+• 5-Extending: Deeply validates and honors patient's experience
+• 4-Proficient: Clearly validates feelings in patient-centered way
+• 3-Competent: Attempts validation with minor omissions
+• 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
+• 1-Novice: Ignores or invalidates patient's feelings
+
+**Language & Communication (1-5):**
+• 5-Extending: Masterful therapeutic communication, perfectly tailored
+• 4-Proficient: Patient-friendly, non-judgmental, inclusive language
+• 3-Competent: Mostly clear and respectful, minor improvements needed
+• 2-Advanced Beginner: Some unclear/technical language, minor judgmental tone
+• 1-Novice: Overly technical, dismissive, or insensitive language
+
+**Cognitive Empathy (Understanding) (1-5):**
+Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
+Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
+
+**Affective Empathy (Feeling) (1-5):**
+Focus: Recognizing and responding to patient's emotions, providing emotional support
+Evaluate: How well does the response show emotional attunement and comfort?
+
+**Realism Assessment:**
+• Realistic: Medically appropriate, honest, evidence-based responses
+• Unrealistic: False reassurances, impossible promises, medical inaccuracies
+
+**JUDGE OUTPUT FORMAT:**
+Provide structured evaluation with detailed justifications for each score.
+
+{
+    "empathy_score": <integer 1-5>,
+    "perspective_taking": <integer 1-5>,
+    "emotional_resonance": <integer 1-5>,
+    "acknowledgment": <integer 1-5>,
+    "language_communication": <integer 1-5>,
+    "cognitive_empathy": <integer 1-5>,
+    "affective_empathy": <integer 1-5>,
+    "realism_flag": "realistic|unrealistic",
+    "judge_reasoning": {
+        "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
+        "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
+        "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
+        "language_justification": "Detailed explanation for language score with specific evidence",
+        "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
+        "affective_empathy_justification": "Detailed explanation for affective empathy score",
+        "realism_justification": "Detailed explanation for realism assessment",
+        "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
+    },
+    "feedback": {
+        "strengths": ["Specific strengths with evidence from response"],
+        "areas_for_improvement": ["Specific areas needing improvement with examples"],
+        "why_realistic": "Judge explanation for realistic assessment (if applicable)",
+        "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
+        "improvement_suggestions": ["Actionable, specific improvement recommendations"],
+        "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
+    }
+}`;
+
   useEffect(() => {
     const getAuthToken = async () => {
       try {
@@ -90,6 +183,7 @@ const AISettings = () => {
   useEffect(() => {
     if (authToken) {
       fetchSystemPrompts();
+      fetchEmpathyPrompts();
       fetchUsers();
     }
   }, [authToken]);
@@ -97,6 +191,10 @@ const AISettings = () => {
   useEffect(() => {
     setHistoryIndex(0);
   }, [promptHistory.length]);
+
+  useEffect(() => {
+    setEmpathyHistoryIndex(0);
+  }, [empathyPromptHistory.length]);
 
   if (!user) {
     return (
@@ -139,6 +237,31 @@ const AISettings = () => {
     }
   };
 
+  const fetchEmpathyPrompts = async () => {
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
+        {
+          headers: {
+            Authorization: token,
+          },
+        }
+      );
+      const data = await response.json();
+      setEmpathyPrompt(data.current_prompt || "");
+      setEmpathyPromptHistory(data.history || []);
+    } catch (error) {
+      console.error("Error fetching empathy prompts:", error);
+      showAlert("Failed to fetch empathy prompts", "error");
+      setEmpathyPromptHistory([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateSystemPrompt = async () => {
     if (!systemPrompt.trim()) return;
 
@@ -168,6 +291,40 @@ const AISettings = () => {
       }
     } catch (error) {
       showAlert("Failed to update system prompt", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateEmpathyPrompt = async () => {
+    if (!empathyPrompt.trim()) return;
+
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/update_empathy_prompt`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token,
+          },
+          body: JSON.stringify({
+            prompt_content: empathyPrompt,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        showAlert("Empathy prompt updated successfully", "success");
+        fetchEmpathyPrompts();
+      } else {
+        showAlert("Failed to update empathy prompt", "error");
+      }
+    } catch (error) {
+      showAlert("Failed to update empathy prompt", "error");
     } finally {
       setLoading(false);
     }
@@ -283,6 +440,36 @@ const AISettings = () => {
     }
   };
 
+  const restoreEmpathyPrompt = async (historyId) => {
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_ENDPOINT
+        }/admin/restore_empathy_prompt?history_id=${historyId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: token,
+          },
+        }
+      );
+
+      if (response.ok) {
+        showAlert("Empathy prompt restored successfully", "success");
+        fetchEmpathyPrompts();
+      } else {
+        showAlert("Failed to restore empathy prompt", "error");
+      }
+    } catch (error) {
+      showAlert("Failed to restore empathy prompt", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const showAlert = (message, severity) => {
     setAlert({ show: true, message, severity });
     setTimeout(
@@ -306,6 +493,20 @@ const AISettings = () => {
       setOpenConfirmDialog(true);
     } else {
       loadDefaultPrompt();
+    }
+  };
+
+  const loadDefaultEmpathyPrompt = () => {
+    setEmpathyPrompt(DEFAULT_EMPATHY_PROMPT);
+    setOpenEmpathyConfirmDialog(false);
+    showAlert("Default empathy prompt loaded", "success");
+  };
+
+  const handleDefaultEmpathyPromptClick = () => {
+    if (empathyPrompt && empathyPrompt.trim() !== "") {
+      setOpenEmpathyConfirmDialog(true);
+    } else {
+      loadDefaultEmpathyPrompt();
     }
   };
 
@@ -441,6 +642,60 @@ const AISettings = () => {
         </CardContent>
       </Card>
 
+      {/* Empathy Coach Prompt Settings */}
+      <Card sx={{ mb: 3, boxShadow: 3 }}>
+        <CardContent>
+          <div>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              Empathy Coach Prompt Manager
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Altering the empathy prompt will change how the AI evaluates student empathy for ALL users.
+            </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>Required Format:</strong> Your prompt must include <code>{patient_context}</code> and <code>{user_text}</code> placeholders, 
+                and instruct the AI to return JSON with fields: empathy_score, perspective_taking, emotional_resonance, acknowledgment, 
+                language_communication, cognitive_empathy, affective_empathy, realism_flag, judge_reasoning, and feedback.
+              </Typography>
+            </Alert>
+          </div>
+          <TextField
+            fullWidth
+            multiline
+            minRows={4}
+            maxRows={100}
+            value={empathyPrompt}
+            onChange={(e) => setEmpathyPrompt(e.target.value)}
+            placeholder="Enter the empathy evaluation prompt for the AI..."
+            variant="outlined"
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+            <Button
+              startIcon={<ResetIcon />}
+              onClick={handleDefaultEmpathyPromptClick}
+              disabled={loading}
+              variant="outlined"
+            >
+              Load Default Prompt
+            </Button>
+            <Button
+              startIcon={<SaveIcon />}
+              onClick={updateEmpathyPrompt}
+              disabled={loading || !empathyPrompt.trim()}
+              variant="contained"
+              sx={{
+                backgroundColor: "#10b981",
+                "&:hover": { backgroundColor: "#059669" },
+              }}
+            >
+              {loading ? "Saving..." : "Save Empathy Prompt"}
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
+
       {/* Previous System Prompts */}
       {promptHistory.length > 0 && (
         <Card sx={{ mb: 3, boxShadow: 3 }}>
@@ -503,6 +758,68 @@ const AISettings = () => {
         </Card>
       )}
 
+      {/* Previous Empathy Prompts */}
+      {empathyPromptHistory.length > 0 && (
+        <Card sx={{ mb: 3, boxShadow: 3 }}>
+          <CardContent>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              Previous Empathy Prompts
+            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <IconButton
+                onClick={() => setEmpathyHistoryIndex((p) => Math.max(0, p - 1))}
+                disabled={empathyHistoryIndex === 0}
+              >
+                <ArrowBackIosNewIcon />
+              </IconButton>
+              <Typography variant="body2" sx={{ mx: 1 }}>
+                {empathyHistoryIndex + 1} / {empathyPromptHistory.length}
+              </Typography>
+              <IconButton
+                onClick={() =>
+                  setEmpathyHistoryIndex((p) =>
+                    Math.min(empathyPromptHistory.length - 1, p + 1)
+                  )
+                }
+                disabled={empathyHistoryIndex >= empathyPromptHistory.length - 1}
+              >
+                <ArrowForwardIosIcon />
+              </IconButton>
+            </Box>
+            {empathyPromptHistory[empathyHistoryIndex] && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  {formatDate(empathyPromptHistory[empathyHistoryIndex].created_at)}
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  value={empathyPromptHistory[empathyHistoryIndex].prompt_content}
+                  InputProps={{ readOnly: true }}
+                  variant="outlined"
+                  sx={{ mb: 2 }}
+                />
+                <Button
+                  startIcon={<RestoreIcon />}
+                  onClick={() =>
+                    restoreEmpathyPrompt(empathyPromptHistory[empathyHistoryIndex].history_id)
+                  }
+                  disabled={loading}
+                  variant="contained"
+                  sx={{
+                    backgroundColor: "#10b981",
+                    "&:hover": { backgroundColor: "#059669" },
+                  }}
+                >
+                  Restore
+                </Button>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Confirmation Dialog */}
       <Dialog
         open={openConfirmDialog}
@@ -522,6 +839,36 @@ const AISettings = () => {
           <Button onClick={() => setOpenConfirmDialog(false)}>Cancel</Button>
           <Button
             onClick={loadDefaultPrompt}
+            variant="contained"
+            sx={{
+              backgroundColor: "#10b981",
+              "&:hover": { backgroundColor: "#059669" },
+            }}
+          >
+            Load Default
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Empathy Confirmation Dialog */}
+      <Dialog
+        open={openEmpathyConfirmDialog}
+        onClose={() => setOpenEmpathyConfirmDialog(false)}
+      >
+        <DialogTitle>
+          <WarningIcon sx={{ mr: 1, color: "#f59e0b" }} />
+          Confirm Loading Default Empathy Prompt
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure? Using the default empathy prompt will discard any unsaved
+            changes.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenEmpathyConfirmDialog(false)}>Cancel</Button>
+          <Button
+            onClick={loadDefaultEmpathyPrompt}
             variant="contained"
             sx={{
               backgroundColor: "#10b981",

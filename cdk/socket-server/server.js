@@ -157,6 +157,34 @@ io.on("connection", (socket) => {
               console.log("🧠 EMPATHY FEEDBACK:", parsed.content?.substring(0, 100));
               socket.emit("empathy-feedback", { content: parsed.content });
             }
+            // ─ Raw empathy data for frontend processing ──────────────────────────────────────────
+            else if (parsed.type === "empathy_data") {
+              console.log("🧠 RAW EMPATHY DATA:", parsed.content?.substring(0, 100));
+              try {
+                const empathyData = JSON.parse(parsed.content);
+                // Transform to match StudentChat format
+                const transformedData = {
+                  overall_score: empathyData.empathy_score || 3,
+                  avg_perspective_taking: empathyData.perspective_taking || 3,
+                  avg_emotional_resonance: empathyData.emotional_resonance || 3,
+                  avg_acknowledgment: empathyData.acknowledgment || 3,
+                  avg_language_communication: empathyData.language_communication || 3,
+                  avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
+                  avg_affective_empathy: empathyData.affective_empathy || 3,
+                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
+                  realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
+                  coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
+                  strengths: empathyData.feedback?.strengths || [],
+                  areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+                  recommendations: empathyData.feedback?.improvement_suggestions || [],
+                  recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+                  timestamp: Date.now(),
+                };
+                socket.emit("empathy-data", transformedData);
+              } catch (e) {
+                console.error("Failed to parse empathy data:", e);
+              }
+            }
             // ─ Diagnosis completion ──────────────────────────────────────
             else if (parsed.type === "diagnosis_complete") {
               console.log("🎯 DIAGNOSIS COMPLETE:", parsed.text);
@@ -165,7 +193,7 @@ io.on("connection", (socket) => {
             else if (parsed.type === "diagnosis_verdict") {
               console.log("🩺 DIAGNOSIS VERDICT:", parsed.verdict);
               if (parsed.verdict) {
-                socket.emit("diagnosis-complete", { message: "Proper diagnosis achieved" });
+                socket.emit("diagnosis-complete", { message: "Session completed successfully" });
               }
             }
           } catch {
@@ -181,9 +209,13 @@ io.on("connection", (socket) => {
             if (line.includes("**Empathy Coach:**")) {
               socket.emit("empathy-feedback", { content: line });
             }
+            // Forward voice transcriptions to text chat for empathy evaluation
+            if (line.includes("User:") || line.includes("Assistant:")) {
+              socket.emit("text-message", { text: line });
+            }
             // Handle diagnosis completion in plain text fallback
-            if (line.includes("Proper diagnosis achieved")) {
-              socket.emit("diagnosis-complete", { message: "Proper diagnosis achieved" });
+            if (line.includes("SESSION COMPLETED")) {
+              socket.emit("diagnosis-complete", { message: "Session completed successfully" });
             }
           }
         });
@@ -328,6 +360,8 @@ io.on("connection", (socket) => {
       console.log("🛑 Sent end_audio to Nova process");
     }
   });
+
+
 
   // ─── Optional Stop event ────────────────────────────────────────────────
   socket.on("stop-nova-sonic", () => {

@@ -1249,6 +1249,116 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /admin/empathy_prompts:
+    <<: *commonOptions
+    get:
+      tags:
+        - Admin
+      summary: Get empathy prompt history
+      operationId: admin_get_empathy_prompts_GET
+      responses:
+        "200":
+          description: List of empathy prompts with history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    prompt_content:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+  /admin/update_empathy_prompt:
+    <<: *commonOptions
+    post:
+      tags:
+        - Admin
+      summary: Update empathy evaluation prompt
+      operationId: admin_update_empathy_prompt_POST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt_content:
+                  type: string
+                  description: New empathy evaluation prompt content
+              required:
+                - prompt_content
+      responses:
+        "200":
+          description: Empathy prompt updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Empathy prompt updated successfully"
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+  /admin/restore_empathy_prompt:
+    <<: *commonOptions
+    post:
+      tags:
+        - Admin
+      summary: Restore default empathy evaluation prompt
+      operationId: admin_restore_empathy_prompt_POST
+      responses:
+        "200":
+          description: Default empathy prompt restored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Default empathy prompt restored successfully"
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /student/patient_voice_id:
     options:
       summary: CORS support

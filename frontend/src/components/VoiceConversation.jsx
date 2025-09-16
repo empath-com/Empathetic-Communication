@@ -86,18 +86,6 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
         setConnectionStatus('error');
       });
       
-      // Handle empathy feedback from voice conversations
-      websocketRef.current.on('empathy-feedback', (data) => {
-        console.log('🧠 Empathy feedback received:', data.content?.substring(0, 100));
-        handleVoiceMessage({ type: 'empathy_feedback', content: data.content });
-      });
-      
-      // Handle text messages from voice (transcriptions)
-      websocketRef.current.on('text-message', (data) => {
-        console.log('📝 Text message from voice:', data.text);
-        handleVoiceMessage({ type: 'text_message', text: data.text });
-      });
-      
       // Handle empathy data from voice conversations
       websocketRef.current.on('empathy-data', (data) => {
         console.log('🧠 Empathy data from voice:', data);
@@ -142,7 +130,7 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
         break;
         
       case 'student_transcription':
-        console.log('👨‍🎓 Student said:', data.text);
+        console.log('👨🎓 Student said:', data.text);
         setConversationLog(prev => [...prev, {
           type: 'student',
           message: data.text,
@@ -181,24 +169,6 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
         setConversationLog(prev => [...prev, {
           type: 'system',
           message: 'Voice conversation ended.',
-          timestamp: new Date()
-        }]);
-        break;
-        
-      case 'empathy_feedback':
-        console.log('🧠 Empathy feedback received');
-        setConversationLog(prev => [...prev, {
-          type: 'empathy',
-          message: data.content,
-          timestamp: new Date()
-        }]);
-        break;
-        
-      case 'text_message':
-        console.log('📝 Text message from voice session');
-        setConversationLog(prev => [...prev, {
-          type: 'transcription',
-          message: data.text,
           timestamp: new Date()
         }]);
         break;
@@ -504,17 +474,13 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
                         fontWeight: entry.type === 'student' ? 'bold' : 'normal',
                         color: entry.type === 'patient' ? 'primary.main' : 
                                entry.type === 'error' ? 'error.main' : 
-                               entry.type === 'system' ? 'text.secondary' :
-                               entry.type === 'empathy' ? 'success.main' :
-                               entry.type === 'transcription' ? 'info.main' : 'text.primary'
+                               entry.type === 'system' ? 'text.secondary' : 'text.primary'
                       }}
                     >
                       <strong>
                         {entry.type === 'student' ? 'You: ' : 
                          entry.type === 'patient' ? 'Patient: ' : 
-                         entry.type === 'system' ? 'System: ' :
-                         entry.type === 'empathy' ? 'Empathy Coach: ' :
-                         entry.type === 'transcription' ? 'Transcript: ' : 'Error: '}
+                         entry.type === 'system' ? 'System: ' : 'Error: '}
                       </strong>
                       {entry.message}
                     </Typography>

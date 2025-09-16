@@ -438,7 +438,7 @@ def get_response(
     if llm_completion:
         completion_string = """
                 Continue this process until you determine that me, the pharmacy student, has properly diagnosed the patient you are pretending to be.
-                Once the proper diagnosis is provided, include PROPER DIAGNOSIS ACHIEVED in your response and do not continue the conversation.
+                Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
     # Create a system prompt for the question answering
@@ -824,18 +824,18 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
             llm_verdict=False
         )
     
-    elif "PROPER DIAGNOSIS ACHIEVED" not in response:
+    elif "SESSION COMPLETED" not in response:
         return dict(
             llm_output=response,
             llm_verdict=False
         )
     
-    elif "PROPER DIAGNOSIS ACHIEVED" in response:
+    elif "SESSION COMPLETED" in response:
         sentences = split_into_sentences(response)
         
         for i in range(len(sentences)):
             
-            if "PROPER DIAGNOSIS ACHIEVED" in sentences[i]:
+            if "SESSION COMPLETED" in sentences[i]:
                 llm_response=' '.join(sentences[0:i-1])
                 
                 if sentences[i-1][-1] == '?':
@@ -878,6 +878,142 @@ def get_empathy_level_name(score: int) -> str:
         5: "Extending"
     }
     return level_names.get(score, "Competent")
+
+def get_empathy_prompt() -> str:
+    """Retrieve the latest empathy prompt from the empathy_prompt_history table."""
+    try:
+        # Get database credentials from AWS Secrets Manager
+        secrets_client = boto3.client('secretsmanager')
+        db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+        rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+
+        if not db_secret_name or not rds_endpoint:
+            logger.warning("Database credentials not available for empathy prompt retrieval")
+            return get_default_empathy_prompt()
+
+        secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+        secret = json.loads(secret_response['SecretString'])
+
+        # Connect to database
+        conn = psycopg2.connect(
+            host=rds_endpoint,
+            port=secret['port'],
+            database=secret['dbname'],
+            user=secret['username'],
+            password=secret['password']
+        )
+        cursor = conn.cursor()
+
+        # Get the latest empathy prompt
+        cursor.execute(
+            'SELECT prompt_content FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
+        )
+        
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if result and result[0]:
+            return result[0]
+        else:
+            return get_default_empathy_prompt()
+
+    except Exception as e:
+        logger.error(f"Error retrieving empathy prompt from DB: {e}")
+        return get_default_empathy_prompt()
+
+def get_default_empathy_prompt() -> str:
+    """Default empathy evaluation prompt."""
+    return """
+You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
+
+**EVALUATION CONTEXT:**
+Patient Context: {patient_context}
+Student Response: {user_text}
+
+**JUDGE INSTRUCTIONS:**
+As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
+1. A score (1-5 scale)
+2. Clear justification for the score
+3. Specific evidence from the student's response
+4. Actionable improvement recommendations
+
+IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
+
+**SCORING CRITERIA:**
+
+**Perspective-Taking (1-5):**
+• 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
+• 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
+• 3-Competent: Shows awareness of patient's perspective with minor gaps
+• 2-Advanced Beginner: Limited attempt to understand patient's perspective
+• 1-Novice: Little or no effort to consider patient's viewpoint
+
+**Emotional Resonance/Compassionate Care (1-5):**
+• 5-Extending: Exceptional warmth, deeply attuned to emotional needs
+• 4-Proficient: Genuine concern and sensitivity, warm and respectful
+• 3-Competent: Expresses concern with slightly less empathetic tone
+• 2-Advanced Beginner: Some emotional awareness but lacks warmth
+• 1-Novice: Emotionally flat or dismissive response
+
+**Acknowledgment of Patient's Experience (1-5):**
+• 5-Extending: Deeply validates and honors patient's experience
+• 4-Proficient: Clearly validates feelings in patient-centered way
+• 3-Competent: Attempts validation with minor omissions
+• 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
+• 1-Novice: Ignores or invalidates patient's feelings
+
+**Language & Communication (1-5):**
+• 5-Extending: Masterful therapeutic communication, perfectly tailored
+• 4-Proficient: Patient-friendly, non-judgmental, inclusive language
+• 3-Competent: Mostly clear and respectful, minor improvements needed
+• 2-Advanced Beginner: Some unclear/technical language, minor judgmental tone
+• 1-Novice: Overly technical, dismissive, or insensitive language
+
+**Cognitive Empathy (Understanding) (1-5):**
+Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
+Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
+
+**Affective Empathy (Feeling) (1-5):**
+Focus: Recognizing and responding to patient's emotions, providing emotional support
+Evaluate: How well does the response show emotional attunement and comfort?
+
+**Realism Assessment:**
+• Realistic: Medically appropriate, honest, evidence-based responses
+• Unrealistic: False reassurances, impossible promises, medical inaccuracies
+
+**JUDGE OUTPUT FORMAT:**
+Provide structured evaluation with detailed justifications for each score.
+
+{{
+    "empathy_score": <integer 1-5>,
+    "perspective_taking": <integer 1-5>,
+    "emotional_resonance": <integer 1-5>,
+    "acknowledgment": <integer 1-5>,
+    "language_communication": <integer 1-5>,
+    "cognitive_empathy": <integer 1-5>,
+    "affective_empathy": <integer 1-5>,
+    "realism_flag": "realistic|unrealistic",
+    "judge_reasoning": {{
+        "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
+        "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
+        "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
+        "language_justification": "Detailed explanation for language score with specific evidence",
+        "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
+        "affective_empathy_justification": "Detailed explanation for affective empathy score",
+        "realism_justification": "Detailed explanation for realism assessment",
+        "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
+    }},
+    "feedback": {{
+        "strengths": ["Specific strengths with evidence from response"],
+        "areas_for_improvement": ["Specific areas needing improvement with examples"],
+        "why_realistic": "Judge explanation for realistic assessment (if applicable)",
+        "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
+        "improvement_suggestions": ["Actionable, specific improvement recommendations"],
+        "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
+    }}
+}}
+"""
 
 
 def build_empathy_feedback(e):
@@ -1011,96 +1147,14 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     dict: Contains empathy_score, realism_flag, and feedback with justifications
     """
 
-    evaluation_prompt = f"""
-    You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
-
-    **EVALUATION CONTEXT:**
-    Patient Context: {patient_context}
-    Student Response: {student_response}
-
-    **JUDGE INSTRUCTIONS:**
-    As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
-    1. A score (1-5 scale)
-    2. Clear justification for the score
-    3. Specific evidence from the student's response
-    4. Actionable improvement recommendations
+    # Get empathy prompt from database
+    empathy_prompt_template = get_empathy_prompt()
     
-    IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
-
-    **SCORING CRITERIA:**
-
-    **Perspective-Taking (1-5):**
-    • 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
-    • 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
-    • 3-Competent: Shows awareness of patient's perspective with minor gaps
-    • 2-Advanced Beginner: Limited attempt to understand patient's perspective
-    • 1-Novice: Little or no effort to consider patient's viewpoint
-
-    **Emotional Resonance/Compassionate Care (1-5):**
-    • 5-Extending: Exceptional warmth, deeply attuned to emotional needs
-    • 4-Proficient: Genuine concern and sensitivity, warm and respectful
-    • 3-Competent: Expresses concern with slightly less empathetic tone
-    • 2-Advanced Beginner: Some emotional awareness but lacks warmth
-    • 1-Novice: Emotionally flat or dismissive response
-
-    **Acknowledgment of Patient's Experience (1-5):**
-    • 5-Extending: Deeply validates and honors patient's experience
-    • 4-Proficient: Clearly validates feelings in patient-centered way
-    • 3-Competent: Attempts validation with minor omissions
-    • 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
-    • 1-Novice: Ignores or invalidates patient's feelings
-
-    **Language & Communication (1-5):**
-    • 5-Extending: Masterful therapeutic communication, perfectly tailored
-    • 4-Proficient: Patient-friendly, non-judgmental, inclusive language
-    • 3-Competent: Mostly clear and respectful, minor improvements needed
-    • 2-Advanced Beginner: Some unclear/technical language, minor judgmental tone
-    • 1-Novice: Overly technical, dismissive, or insensitive language
-
-    **Cognitive Empathy (Understanding) (1-5):**
-    Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
-    Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
-
-    **Affective Empathy (Feeling) (1-5):**
-    Focus: Recognizing and responding to patient's emotions, providing emotional support
-    Evaluate: How well does the response show emotional attunement and comfort?
-
-    **Realism Assessment:**
-    • Realistic: Medically appropriate, honest, evidence-based responses
-    • Unrealistic: False reassurances, impossible promises, medical inaccuracies
-
-    **JUDGE OUTPUT FORMAT:**
-    Provide structured evaluation with detailed justifications for each score.
-
-    {{
-        "empathy_score": <integer 1-5>,
-        "perspective_taking": <integer 1-5>,
-        "emotional_resonance": <integer 1-5>,
-        "acknowledgment": <integer 1-5>,
-        "language_communication": <integer 1-5>,
-        "cognitive_empathy": <integer 1-5>,
-        "affective_empathy": <integer 1-5>,
-        "realism_flag": "realistic|unrealistic",
-        "judge_reasoning": {{
-            "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
-            "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
-            "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
-            "language_justification": "Detailed explanation for language score with specific evidence",
-            "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
-            "affective_empathy_justification": "Detailed explanation for affective empathy score",
-            "realism_justification": "Detailed explanation for realism assessment",
-            "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
-        }},
-        "feedback": {{
-            "strengths": ["Specific strengths with evidence from response"],
-            "areas_for_improvement": ["Specific areas needing improvement with examples"],
-            "why_realistic": "Judge explanation for realistic assessment (if applicable)",
-            "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
-            "improvement_suggestions": ["Actionable, specific improvement recommendations"],
-            "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
-        }}
-    }}
-    """
+    # Format the prompt with actual values
+    evaluation_prompt = empathy_prompt_template.format(
+        patient_context=patient_context,
+        user_text=student_response
+    )
 
     body = {
         "messages": [{
