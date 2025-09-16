@@ -654,7 +654,7 @@ Provide structured evaluation with detailed justifications for each score.
             </Typography>
             <Alert severity="info" sx={{ mb: 2 }}>
               <Typography variant="body2">
-                <strong>Required Format:</strong> Your prompt must include <code>{patient_context}</code> and <code>{user_text}</code> placeholders, 
+                <strong>Required Format:</strong> Your prompt must include <code>{'{patient_context}'}</code> and <code>{'{user_text}'}</code> placeholders, 
                 and instruct the AI to return JSON with fields: empathy_score, perspective_taking, emotional_resonance, acknowledgment, 
                 language_communication, cognitive_empathy, affective_empathy, realism_flag, judge_reasoning, and feedback.
               </Typography>
