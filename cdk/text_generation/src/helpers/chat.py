@@ -285,8 +285,10 @@ def get_response(
     # Re-enable empathy evaluation for non-streaming mode
     empathy_evaluation = None
     empathy_feedback = ""
-    if query.strip() and "Greet me" not in query:
+    logger.info(f"🔍 NON-STREAMING: Checking empathy conditions: query='{query}', stripped='{query.strip()}', is_initial_prompt={query.strip().startswith('Greet me and then ask me a question')}")
+    if query.strip() and not query.strip().startswith('Greet me and then ask me a question'):
         try:
+            logger.info(f"🧠 NON-STREAMING: Starting empathy evaluation")
             patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
             deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
             nova_client = {
@@ -299,8 +301,11 @@ def get_response(
             logger.error(f"Empathy evaluation failed: {e}")
             save_message_to_db(session_id, True, query, None)
     else:
+        logger.info(f"🔍 NON-STREAMING: Skipping empathy evaluation - Query stripped: '{query.strip()}', Is initial prompt: {query.strip().startswith('Greet me and then ask me a question')}")
         save_message_to_db(session_id, True, query, None)
-        if empathy_evaluation:
+    
+    # Build empathy feedback if evaluation exists
+    if empathy_evaluation:
             # Calculate overall empathy score as average of all dimensions
             pt_score = empathy_evaluation.get('perspective_taking', 3)
             er_score = empathy_evaluation.get('emotional_resonance', 3)
@@ -436,6 +441,8 @@ def get_response(
                 empathy_feedback += "**Feedback:** System temporarily unavailable.\\n"
                 
             empathy_feedback += "---\\n\\n" # Clean separator between feedback and AI response
+    else:
+        empathy_feedback = ""
     
     completion_string = """
                 Once I, the pharmacy student, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -577,6 +584,10 @@ def generate_streaming_response(
     """
     import time
     from threading import Thread
+    
+    logger.info(f"🚀 STREAMING FUNCTION STARTED with query: '{query}'") 
+    logger.info(f"🚀 Query contains 'Greet me': {'Greet me' in query}")
+    logger.info(f"🚀 Query stripped: '{query.strip()}'")
 
     def empathy_async():
         try:
@@ -596,7 +607,9 @@ def generate_streaming_response(
             # Send empathy data to frontend
             if evaluation:
                 logger.info(f"🧠 Publishing empathy data to AppSync")
-                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
+                # Build formatted empathy feedback for streaming mode
+                empathy_feedback = build_empathy_feedback(evaluation)
+                publish_to_appsync(session_id, {"type": "empathy", "content": empathy_feedback})
             else:
                 logger.warning(f"🧠 No empathy evaluation to publish")
         except Exception as e:
@@ -606,17 +619,19 @@ def generate_streaming_response(
 
     try:
         # kick empathy off in the background for real student message
-        logger.info(f"🔍 Checking empathy conditions: query='{query}', stripped='{query.strip()}', Greet check={'Greet me' in query}")
+        logger.info(f"🔍 EMPATHY CHECK: query='{query}'")
+        logger.info(f"🔍 EMPATHY CHECK: stripped='{query.strip()}'")
+        logger.info(f"🔍 EMPATHY CHECK: is_initial_prompt={query.strip().startswith('Greet me and then ask me a question')}")
+        logger.info(f"🔍 EMPATHY CHECK: condition result={query.strip() and not query.strip().startswith('Greet me and then ask me a question')}")
 
         # Start empathy evaluation in background if this is a real student message
-        if query.strip() and "Greet me" not in query:
-            logger.info(f"📝 Starting empathy evaluation in background")
+        if query.strip() and not query.strip().startswith('Greet me and then ask me a question'):
+            logger.info(f"✅ EMPATHY EVALUATION WILL START")
             empathy_thread = Thread(target=empathy_async)
-            empathy_thread.daemon = True  # Make thread daemon so it doesn't block Lambda shutdown
             empathy_thread.start()
-            logger.info(f"📝 Empathy thread started successfully")
+            logger.info(f"✅ EMPATHY THREAD STARTED")
         else:
-            logger.info(f"📝 Skipping empathy evaluation for greeting message")
+            logger.info(f"❌ EMPATHY EVALUATION SKIPPED")
             # Save student message without empathy evaluation for greeting
             save_message_to_db(session_id, True, query, None)
 
@@ -895,51 +910,49 @@ def get_empathy_level_name(score: int) -> str:
 
 def get_empathy_prompt() -> str:
     """Retrieve the latest empathy prompt from the empathy_prompt_history table."""
-    # TEMPORARY: Use default prompt to get empathy coach working again
-    logger.info("🔧 Using default empathy prompt (bypassing database for now)")
-    return get_default_empathy_prompt()
-    
-    # TODO: Re-enable database retrieval after fixing the issue
-    # try:
-    #     # Get database credentials from AWS Secrets Manager
-    #     secrets_client = boto3.client('secretsmanager')
-    #     db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
-    #     rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+    try:
+        # Get database credentials from AWS Secrets Manager
+        secrets_client = boto3.client('secretsmanager')
+        db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+        rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
 
-    #     if not db_secret_name or not rds_endpoint:
-    #         logger.warning("Database credentials not available for empathy prompt retrieval")
-    #         return get_default_empathy_prompt()
+        if not db_secret_name or not rds_endpoint:
+            logger.warning("Database credentials not available for empathy prompt retrieval")
+            return get_default_empathy_prompt()
 
-    #     secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
-    #     secret = json.loads(secret_response['SecretString'])
+        secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+        secret = json.loads(secret_response['SecretString'])
 
-    #     # Connect to database
-    #     conn = psycopg2.connect(
-    #         host=rds_endpoint,
-    #         port=secret['port'],
-    #         database=secret['dbname'],
-    #         user=secret['username'],
-    #         password=secret['password']
-    #     )
-    #     cursor = conn.cursor()
+        # Connect to database
+        conn = psycopg2.connect(
+            host=rds_endpoint,
+            port=secret['port'],
+            database=secret['dbname'],
+            user=secret['username'],
+            password=secret['password']
+        )
+        cursor = conn.cursor()
 
-    #     # Get the latest empathy prompt
-    #     cursor.execute(
-    #         'SELECT prompt_content FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
-    #     )
-    #     
-    #     result = cursor.fetchone()
-    #     cursor.close()
-    #     conn.close()
+        # Get the latest empathy prompt
+        cursor.execute(
+            'SELECT prompt_content FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
+        )
+        
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    #     if result and result[0]:
-    #         return result[0]
-    #     else:
-    #         return get_default_empathy_prompt()
+        if result and result[0]:
+            logger.info("🎯 Using admin-configured empathy prompt from database")
+            return result[0]
+        else:
+            logger.info("🔧 No admin prompt found, using default empathy prompt")
+            return get_default_empathy_prompt()
 
-    # except Exception as e:
-    #     logger.error(f"Error retrieving empathy prompt from DB: {e}")
-    #     return get_default_empathy_prompt()
+    except Exception as e:
+        logger.error(f"Error retrieving empathy prompt from DB: {e}")
+        logger.info("🔧 Falling back to default empathy prompt")
+        return get_default_empathy_prompt()
 
 def get_default_empathy_prompt() -> str:
     """Default empathy evaluation prompt."""
@@ -1035,97 +1048,147 @@ Provide structured evaluation with detailed justifications for each score.
 """
 
 
-def build_empathy_feedback(e):
-    """Turn evaluate_empathy() dict into the same markdown you had before."""
-    if not e:
-        return ""
+def build_empathy_feedback(evaluation):
+    """Build formatted empathy feedback from evaluation dict."""
+    if not evaluation:
+        return "**Empathy Coach:** System temporarily unavailable.\n"
 
-    # Pull scores with sane defaults
-    pt = int(e.get('perspective_taking', 3))
-    er = int(e.get('emotional_resonance', 3))
-    ack = int(e.get('acknowledgment', 3))
-    lang = int(e.get('language_communication', 3))
-    cog = int(e.get('cognitive_empathy', 3))
-    aff = int(e.get('affective_empathy', 3))
-    realism_flag = e.get('realism_flag', 'unknown')
-    feedback = e.get('feedback', {})
-    judge = e.get('judge_reasoning', {})
-
-    # Overall score = avg of six dims, rounded
-    overall = max(1, min(5, round((pt + er + ack + lang + cog + aff) / 6)))
-
-    def stars(n): return "⭐" * max(1, min(5, int(n))) + f" ({n}/5)"
-    def lvl(n):   return get_empathy_level_name(int(n))
-
-    # Overall stars text
-    overall_stars = ["⭐ (1/5)", "⭐⭐ (2/5)", "⭐⭐⭐ (3/5)", "⭐⭐⭐⭐ (4/5)", "⭐⭐⭐⭐⭐ (5/5)"][overall-1]
-    realism_icon = "✅" if realism_flag != "unrealistic" else ""
-
-    lines = []
-    lines.append("**Empathy Coach:**\n")
-    lines.append(f"**Overall Empathy Score:** {lvl(overall)} {overall_stars}\n")
-    lines.append("**Category Breakdown:**")
-    lines.append(f"• Perspective-Taking: {lvl(pt)} {stars(pt)}")
-    lines.append(f"• Emotional Resonance/Compassionate Care: {lvl(er)} {stars(er)}")
-    lines.append(f"• Acknowledgment of Patient's Experience: {lvl(ack)} {stars(ack)}")
-    lines.append(f"• Language & Communication: {lvl(lang)} {stars(lang)}\n")
-    lines.append("**Empathy Type Analysis:**")
-    lines.append(f"• Cognitive Empathy (Understanding): {lvl(cog)} {stars(cog)}")
-    lines.append(f"• Affective Empathy (Feeling): {lvl(aff)} {stars(aff)}\n")
-    lines.append(f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\n")
-
-    # Judge assessment rewrite (light soften)
-    overall_assessment = judge.get('overall_assessment', '')
-    if overall_assessment:
-        assessment = (overall_assessment
-                      .replace("The student's response", "Your response")
-                      .replace("The student", "You")
-                      .replace("demonstrates", "show")
-                      .replace("fails to", "could better")
-                      .replace("lacks", "would benefit from more"))
-        lines.append("**Coach Assessment:**")
-        lines.append(assessment + "\n")
-
-    # Structured feedback bullets (if dict)
-    if isinstance(feedback, dict):
-        strengths = feedback.get('strengths') or []
-        if strengths:
-            lines.append("**Strengths:**")
-            for s in strengths:
-                lines.append(f"• {s}")
-            lines.append("")  # spacer
-
-        areas = feedback.get('areas_for_improvement') or []
-        if areas:
-            lines.append("**Areas for improvement:**")
-            for a in areas:
-                lines.append(f"• {a}")
-            lines.append("")
-
-        why_real = feedback.get('why_realistic')
-        why_unreal = feedback.get('why_unrealistic')
-        if why_real:
-            lines.append(f"**Your response is {realism_flag} because:** {why_real}\n")
-        elif why_unreal:
-            lines.append(f"**Your response is {realism_flag} because:** {why_unreal}\n")
-
-        sugg = feedback.get('improvement_suggestions') or []
-        if sugg:
-            lines.append("**Coach Recommendations:**")
-            for s in sugg:
-                lines.append(f"• {s}")
-            lines.append("")
-
-        alt = feedback.get('alternative_phrasing')
-        if alt:
-            lines.append(f"**Coach-Recommended Approach:** *{alt}*\n")
-    elif isinstance(feedback, str) and len(feedback) > 10:
-        lines.append(f"**Feedback:** {feedback}\n")
+    # Calculate overall empathy score as average of all dimensions
+    pt_score = evaluation.get('perspective_taking', 3)
+    er_score = evaluation.get('emotional_resonance', 3)
+    ack_score = evaluation.get('acknowledgment', 3)
+    lang_score = evaluation.get('language_communication', 3)
+    cognitive_score = evaluation.get('cognitive_empathy', 3)
+    affective_score = evaluation.get('affective_empathy', 3)
+    
+    # Calculate average and round to nearest whole number
+    overall_score = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
+    
+    realism_flag = evaluation.get('realism_flag', 'unknown')
+    feedback = evaluation.get('feedback', '')
+    
+    # Use markdown formatting with star ratings and icons
+    empathy_feedback = f"**Empathy Coach:**\\n\\n"
+    
+    # Add star rating based on calculated overall score
+    if overall_score == 1:
+        stars = "⭐ (1/5)"
+    elif overall_score == 2:
+        stars = "⭐⭐ (2/5)"
+    elif overall_score == 3:
+        stars = "⭐⭐⭐ (3/5)"
+    elif overall_score == 4:
+        stars = "⭐⭐⭐⭐ (4/5)"
+    elif overall_score == 5:
+        stars = "⭐⭐⭐⭐⭐ (5/5)"
     else:
-        lines.append("**Feedback:** System temporarily unavailable.\n")
-
-    lines.append("---\n")
-    return "\n".join(lines)
+        stars = "⭐⭐⭐ (3/5)"  # Default fallback
+        
+    # Add icon for realism
+    if realism_flag == "unrealistic":
+        realism_icon = ""
+    else:
+        realism_icon = "✅"
+        
+    # Display overall score and breakdown
+    overall_level = get_empathy_level_name(overall_score)
+    empathy_feedback += f"**Overall Empathy Score:** {overall_level} {stars}\\n\\n"
+    
+    # Display individual category scores
+    empathy_feedback += f"**Category Breakdown:**\\n"
+    
+    # Perspective-Taking
+    pt_score = evaluation.get('perspective_taking', 3)
+    pt_level = get_empathy_level_name(pt_score)
+    pt_stars = "⭐" * pt_score + f" ({pt_score}/5)"
+    empathy_feedback += f"• Perspective-Taking: {pt_level} {pt_stars}\\n"
+    
+    # Emotional Resonance
+    er_score = evaluation.get('emotional_resonance', 3)
+    er_level = get_empathy_level_name(er_score)
+    er_stars = "⭐" * er_score + f" ({er_score}/5)"
+    empathy_feedback += f"• Emotional Resonance/Compassionate Care: {er_level} {er_stars}\\n"
+    
+    # Acknowledgment
+    ack_score = evaluation.get('acknowledgment', 3)
+    ack_level = get_empathy_level_name(ack_score)
+    ack_stars = "⭐" * ack_score + f" ({ack_score}/5)"
+    empathy_feedback += f"• Acknowledgment of Patient's Experience: {ack_level} {ack_stars}\\n"
+    
+    # Language & Communication
+    lang_score = evaluation.get('language_communication', 3)
+    lang_level = get_empathy_level_name(lang_score)
+    lang_stars = "⭐" * lang_score + f" ({lang_score}/5)"
+    empathy_feedback += f"• Language & Communication: {lang_level} {lang_stars}\\n\\n"
+    
+    # Add Cognitive vs Affective Empathy breakdown (already calculated above)
+    cognitive_level = get_empathy_level_name(cognitive_score)
+    affective_level = get_empathy_level_name(affective_score)
+    cognitive_stars = "⭐" * cognitive_score + f" ({cognitive_score}/5)"
+    affective_stars = "⭐" * affective_score + f" ({affective_score}/5)"
+    
+    empathy_feedback += f"**Empathy Type Analysis:**\\n"
+    empathy_feedback += f"• Cognitive Empathy (Understanding): {cognitive_level} {cognitive_stars}\\n"
+    empathy_feedback += f"• Affective Empathy (Feeling): {affective_level} {affective_stars}\\n\\n"
+    
+    empathy_feedback += f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\\n\\n"
+    
+    # Add LLM-as-a-Judge reasoning and detailed feedback
+    judge_reasoning = evaluation.get('judge_reasoning', {})
+    if judge_reasoning:
+        empathy_feedback += f"**Coach Assessment:**\\n"
+        if 'overall_assessment' in judge_reasoning:
+            # Convert third-person to second-person and soften tone
+            assessment = judge_reasoning['overall_assessment']
+            assessment = assessment.replace("The student's response", "Your response")
+            assessment = assessment.replace("The student", "You")
+            assessment = assessment.replace("demonstrates", "show")
+            assessment = assessment.replace("fails to", "could better")
+            assessment = assessment.replace("lacks", "would benefit from more")
+            empathy_feedback += f"{assessment}\\n\\n"
+    
+    if feedback:
+        if isinstance(feedback, dict):  # Structured feedback from LLM Judge
+            # Add strengths
+            if 'strengths' in feedback and feedback['strengths']:
+                empathy_feedback += f"**Strengths:**\\n"
+                for strength in feedback['strengths']:
+                    empathy_feedback += f"• {strength}\\n"
+                empathy_feedback += "\\n"
+            
+            # Add areas for improvement
+            if 'areas_for_improvement' in feedback and feedback['areas_for_improvement']:
+                empathy_feedback += f"**Areas for improvement:**\\n"
+                for area in feedback['areas_for_improvement']:
+                    empathy_feedback += f"• {area}\\n"
+                empathy_feedback += "\\n"
+            
+            # Add why realistic/unrealistic with judge reasoning
+            if 'why_realistic' in feedback and feedback['why_realistic']:
+                empathy_feedback += f"**Your response is {realism_flag} because:** {feedback['why_realistic']}\\n\\n"
+            elif 'why_unrealistic' in feedback and feedback['why_unrealistic']:
+                empathy_feedback += f"**Your response is {realism_flag} because:** {feedback['why_unrealistic']}\\n\\n"
+            
+            # Add improvement suggestions
+            if 'improvement_suggestions' in feedback and feedback['improvement_suggestions']:
+                empathy_feedback += f"**Coach Recommendations:**\\n"
+                for suggestion in feedback['improvement_suggestions']:
+                    empathy_feedback += f"• {suggestion}\\n"
+                empathy_feedback += "\\n"
+            
+            # Add alternative phrasing
+            if 'alternative_phrasing' in feedback and feedback['alternative_phrasing']:
+                empathy_feedback += f"**Coach-Recommended Approach:** *{feedback['alternative_phrasing']}*\\n\\n"
+                
+        elif isinstance(feedback, str) and len(feedback) > 10:  # Simple string feedback
+            empathy_feedback += f"**Feedback:** {feedback}\\n"
+        else:
+            empathy_feedback += f"**Feedback:** Unable to provide detailed feedback at this time.\\n"
+    else:
+        empathy_feedback += "**Feedback:** System temporarily unavailable.\\n"
+        
+    empathy_feedback += "---\\n\\n" # Clean separator between feedback and AI response
+    return empathy_feedback
 
 
 
@@ -1165,17 +1228,27 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     Returns:
     dict: Contains empathy_score, realism_flag, and feedback with justifications
     """
+    logger.info(f"🧠 EMPATHY EVALUATION STARTED")
+    logger.info(f"🧠 Student response: {student_response}")
+    logger.info(f"🧠 Patient context: {patient_context}")
 
     # Get empathy prompt from database
     empathy_prompt_template = get_empathy_prompt()
     logger.info(f"🔍 Retrieved empathy prompt: {empathy_prompt_template[:200]}...")
     
     # Format the prompt with actual values
-    evaluation_prompt = empathy_prompt_template.format(
-        patient_context=patient_context,
-        user_text=student_response
-    )
-    logger.info(f"🔍 Formatted evaluation prompt: {evaluation_prompt[:300]}...")
+    try:
+        evaluation_prompt = empathy_prompt_template.format(
+            patient_context=patient_context,
+            user_text=student_response
+        )
+        logger.info(f"🔍 Formatted evaluation prompt: {evaluation_prompt[:300]}...")
+    except Exception as format_error:
+        logger.error(f"❌ PROMPT FORMATTING ERROR: {format_error}")
+        logger.error(f"❌ TEMPLATE: {empathy_prompt_template[:500]}...")
+        logger.error(f"❌ PATIENT CONTEXT: {patient_context}")
+        logger.error(f"❌ USER TEXT: {student_response}")
+        return None
 
     body = {
         "messages": [{
@@ -1211,6 +1284,8 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         response_text = result["output"]["message"]["content"][0]["text"]
         
         logger.info(f"🔍 RAW NOVA RESPONSE: {response_text}")
+        logger.info(f"🔍 NOVA RESPONSE LENGTH: {len(response_text)}")
+        logger.info(f"🔍 NOVA RESPONSE TYPE: {type(response_text)}")
         
         # Extract and clean JSON from response
         try:
@@ -1221,8 +1296,14 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             if json_start != -1 and json_end > json_start:
                 json_text = response_text[json_start:json_end]
                 logger.info(f"🔍 EXTRACTED JSON: {json_text}")
+                logger.info(f"🔍 JSON START: {json_start}, JSON END: {json_end}")
                 evaluation = json.loads(json_text)
                 logger.info(f"🔍 PARSED EVALUATION: {json.dumps(evaluation, indent=2)}")
+                
+                # Debug individual fields
+                logger.info(f"🔍 EMPATHY SCORE: {evaluation.get('empathy_score')}")
+                logger.info(f"🔍 FEEDBACK TYPE: {type(evaluation.get('feedback'))}")
+                logger.info(f"🔍 FEEDBACK CONTENT: {evaluation.get('feedback')}")
                 
                 # Add judge metadata
                 evaluation["evaluation_method"] = "LLM-as-a-Judge"
@@ -1235,7 +1316,9 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             # Fallback if Nova Pro doesn't return valid JSON
             logger.error(f"❌ JSON DECODE ERROR: {e}")
             logger.error(f"❌ INVALID JSON FROM NOVA PRO: {response_text}")
-            return {
+            logger.error(f"❌ JSON START POSITION: {json_start}")
+            logger.error(f"❌ JSON END POSITION: {json_end}")
+            fallback_result = {
                 "empathy_score": 3,
                 "perspective_taking": 3,
                 "emotional_resonance": 3,
@@ -1246,6 +1329,9 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
                 "realism_flag": "realistic",
                 "evaluation_method": "LLM-as-a-Judge",
                 "judge_model": bedrock_client["model_id"],
+                "judge_reasoning": {
+                    "overall_assessment": "System temporarily unavailable for evaluation"
+                },
                 "feedback": {
                     "strengths": ["Response received but could not be evaluated"],
                     "areas_for_improvement": ["System temporarily unavailable"],
@@ -1253,10 +1339,13 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
                     "alternative_phrasing": "System evaluation unavailable"
                 }
             }
+            logger.info(f"🧠 EMPATHY EVALUATION FALLBACK RESULT: {json.dumps(fallback_result)}")
+            return fallback_result
         
     except Exception as e:
         logger.error(f"❌ EMPATHY EVALUATION ERROR: {e}")
         logger.exception("Full empathy evaluation error:")
+        logger.info(f"🧠 EMPATHY EVALUATION FAILED - RETURNING NULL")
         # Return None to indicate failure
         return None
 

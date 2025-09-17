@@ -218,7 +218,7 @@ Provide structured evaluation with detailed justifications for each score.
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/system_prompts`,
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/system_prompts`,
         {
           headers: {
             Authorization: token,
@@ -243,7 +243,7 @@ Provide structured evaluation with detailed justifications for each score.
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/empathy_prompts`,
         {
           headers: {
             Authorization: token,
@@ -337,7 +337,7 @@ Provide structured evaluation with detailed justifications for each score.
       const response = await fetch(
         `${
           import.meta.env.VITE_API_ENDPOINT
-        }admin/instructors?instructor_email=all`,
+        }/admin/instructors?instructor_email=all`,
         {
           headers: {
             Authorization: token,

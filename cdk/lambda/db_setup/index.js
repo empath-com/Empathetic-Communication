@@ -67,7 +67,8 @@ async function fixMigrationTracking(db) {
       '1704110940000_create_feedback',
       '1704111000000_create_system_prompt_history',
       '1704111060000_add_vector_extension',
-      '1704111120000_add_voice_toggles'
+      '1704111120000_add_voice_toggles',
+      '1704111180000_create_empathy_prompt_history'
     ];
     
     for (const migration of basicMigrations) {

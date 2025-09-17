@@ -1,21 +1,12 @@
-exports.up = async (pgm) => {
-  // Create empathy_prompt_history table
-  pgm.createTable('empathy_prompt_history', {
-    history_id: {
-      type: 'uuid',
-      primaryKey: true,
-      default: pgm.func('uuid_generate_v4()')
-    },
-    prompt_content: {
-      type: 'text',
-      notNull: true
-    },
-    created_at: {
-      type: 'timestamp',
-      default: pgm.func('CURRENT_TIMESTAMP')
-    }
-  });
-
+exports.up = (pgm) => {
+  pgm.sql(`
+    CREATE TABLE IF NOT EXISTS "empathy_prompt_history" (
+      "history_id" uuid PRIMARY KEY DEFAULT (uuid_generate_v4()),
+      "prompt_content" text NOT NULL,
+      "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  
   // Insert default empathy prompt
   pgm.sql(`
     INSERT INTO "empathy_prompt_history" (prompt_content) VALUES (
@@ -107,10 +98,10 @@ Provide structured evaluation with detailed justifications for each score.
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
     }
 }'
-    );
+    ) ON CONFLICT DO NOTHING;
   `);
 };
 
-exports.down = async (pgm) => {
-  pgm.dropTable('empathy_prompt_history');
+exports.down = (pgm) => {
+  pgm.dropTable("empathy_prompt_history", { ifExists: true, cascade: true });
 };

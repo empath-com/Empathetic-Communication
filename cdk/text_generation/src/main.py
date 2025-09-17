@@ -187,6 +187,7 @@ def get_patient_details(patient_id):
 def handler(event, context):
     logger.info("Text Generation Lambda function is called!")
     logger.info(f"📝 Event headers: {event.get('headers', {})}")
+    logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
     initialize_constants()
     
     # Extract the user's Cognito token from the API Gateway event
@@ -260,6 +261,10 @@ def handler(event, context):
 
     body = {} if event.get("body") is None else json.loads(event.get("body"))
     question = body.get("message_content", "")
+    
+    logger.info(f"🔍 RAW BODY: {event.get('body')}")
+    logger.info(f"🔍 PARSED BODY: {body}")
+    logger.info(f"🔍 QUESTION: '{question}'")
 
     if not question:
         logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
@@ -267,6 +272,8 @@ def handler(event, context):
     else:
         logger.info(f"Processing student question: {question}")
         student_query = get_student_query(question)
+        
+    logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
     
 
 
@@ -338,6 +345,7 @@ def handler(event, context):
     try:
         logger.info("Generating response from the LLM.")
         
+        logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
         response = get_response(
             query=student_query,
             patient_name=patient_name,
