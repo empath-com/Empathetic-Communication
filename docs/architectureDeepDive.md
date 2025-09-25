@@ -17,6 +17,8 @@
 9. Users can start chatting with the LLM by sending an API request that invokes the Lambda function to generate a response. The Lambda function runs a Docker container with Amazon ECR.
 10. The Lambda function stores the embedded messages in Amazon DynamoDB
 11. This Lambda function uses RAG architecture and LangChain to retrieve the response from LLMs hosted on Amazon Bedrock augmented with the patient's information stored in the Amazon RDS. This project uses Meta Llama 3 70 B as its selected LLM. 
+12. The LLM responses are streamed as chunks to the frontend using AppSync as a websocket implementation, so that the frontend may receive realtime responses as they are generated rather than receiving all of the generated text at once.
+13. An ECS server invokes Amazon Nova Sonic through bedrock and delivers chunks of audio to and from the backend via CloudFront and a websocket connection.
 
 ## Database Schema
 
