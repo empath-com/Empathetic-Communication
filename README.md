@@ -94,7 +94,7 @@ N/A
 
 ## Credits
 
-This application was architected and developed by Sharon Marfatia and Zayan Sheikh with project assistance by Anya Ameen. Thanks to the UBC Cloud Innovation Centre Technical and Project Management teams for their guidance and support.
+This application was architected and developed by [Sharon Marfatia](https://www.linkedin.com/in/sharon-cs/) and Zayan Sheikh with project assistance by Anya Ameen. Thanks to the UBC Cloud Innovation Centre Technical and Project Management teams for their guidance and support.
 
 ## License
 
