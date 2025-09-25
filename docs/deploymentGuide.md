@@ -78,7 +78,7 @@ Finally, enable the relevant models, click next and on the next page click submi
 The relevant models are now enabled in Bedrock.
 ## Deployment
 ### Step 1: Fork & Clone The Repository
-First, you need to fork the repository. To create a fork, navigate to the [main branch](https://github.com/UBC-CIC/Virtual-Care-Interaction) of this repository. Then, in the top-right corner, click `Fork`.
+First, you need to fork the repository. To create a fork, navigate to the [main branch](https://github.com/UBC-CIC/Empathetic-Communication) of this repository. Then, in the top-right corner, click `Fork`.
 
 ![](./images/fork.jpeg)
 
@@ -89,11 +89,11 @@ Now let's clone the GitHub repository onto your machine. To do this:
 2. For an Apple computer, open Terminal. If on a Windows machine, open Command Prompt or Windows Terminal. Enter into the folder you made using the command `cd path/to/folder`. To find the path to a folder on a Mac, right click on the folder and press `Get Info`, then select the whole text found under `Where:` and copy with ⌘C. On Windows (not WSL), enter into the folder on File Explorer and click on the path box (located to the left of the search bar), then copy the whole text that shows up.
 3. Clone the GitHub repository by entering the following command. Be sure to replace `<YOUR-GITHUB-USERNAME>` with your own username.
 ```
-git clone https://github.com/<YOUR-GITHUB-USERNAME>/Virtual-Care-Interaction.git
+git clone https://github.com/<YOUR-GITHUB-USERNAME>/Empathetic-Communication.git
 ```
 The code should now be in the folder you created. Navigate into the root folder containing the entire codebase by running the command:
 ```
-cd Virtual-Care-Interaction
+cd Empathetic-Communication
 ```
 
 ### Step 2: Upload Secrets
@@ -380,13 +380,13 @@ The stack prefix will be prefixed onto the physical names of the resources creat
 If you have trouble running the above command, try removing all the \ and run it in one line.
 ```
 cdk deploy --all \
- --parameters <your-stack-prefix>-Amplify:githubRepoName=VIRTUAL-CARE-INTERACTION \
+ --parameters <your-stack-prefix>-Amplify:githubRepoName=EMPATHETIC-COMMUNICATION \
  --context StackPrefix=<your-stack-prefix> \
  --profile <your-profile-name>
 ```
 For example: 
 ```
-cdk deploy --all --parameters VirtualCareInteraction-Amplify:githubRepoName=VIRTUAL-CARE-INTERACTION --context StackPrefix=VirtualCareInteraction --profile <your-profile-name>
+cdk deploy --all --parameters Empathetic-Communication-Amplify:githubRepoName=EMPATHETIC-COMMUNICATION --context StackPrefix=Empathetic-Communication --profile <your-profile-name>
 ```
 
 ## Post-Deployment
