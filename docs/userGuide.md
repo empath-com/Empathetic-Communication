@@ -47,9 +47,18 @@ In the "Simulation Groups" tab, the administrator can view a list of the simulat
 Clicking on a simulation group leads to a page where the administrator can view all the instructors in that group while being able to change the status of the group:
 ![image](./images/admin-active.png)
 
-In the "Create Simulation Group" tab, the administrator can create a simulation group by specifying the name and description of the group. The administrator can also assign instructors to the group here while changing the "System Prompt" that the Large Language Model (LLM) uses as instructions when generating responses:
+Upon clicking the "Create Group" tab, the administrator can create a simulation group by specifying the name and description of the group. The administrator can also assign instructors to the group here while changing the "System Prompt" that the Large Language Model (LLM) uses as instructions when generating responses:
 ![image](./images/admin-create-group-button.png)
 ![image](./images/admin-create-group.png)
+
+In the "AI Settings" tab, the administrator can set and alter the system prompt for the text and voice interaction, and the empathy coach.
+
+Here is an example of the system prompt for the text and voice-based interaction:
+![image](./images/ai_setting_sys_prompt_setting.png)
+Here is an example the system prompt for the empathy coach:
+Your prompt must include `{patient_context}` and `{user_text}` placeholders, and instruct the AI to return JSON with fields: empathy_score, perspective_taking, emotional_resonance, acknowledgment, language_communication, cognitive_empathy, affective_empathy, realism_flag, judge_reasoning, and feedback. These evaluation metrics were provided by the UBC Faculty of Pharmaceutical Sciences sponsors.
+![image](./images/ai_setting_empathy_coach_prompt_setting.png)
+
 
 ## Instructor View
 
