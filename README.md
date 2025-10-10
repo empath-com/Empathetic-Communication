@@ -44,6 +44,8 @@ Please refer to the [Web App User Guide](./docs/userGuide.md) for instructions o
 │   ├── lambda
 │   ├── layers
 │   ├── lib
+│   ├── socket-server
+│   ├── test
 │   ├── text_generation
 ├── docs
 └── frontend
@@ -64,6 +66,8 @@ Please refer to the [Web App User Guide](./docs/userGuide.md) for instructions o
     - `/lambda`: Contains the lambda functions for the project
     - `/layers`: Contains the required layers for lambda functions
     - `/lib`: Contains the deployment code for all infrastructure stacks
+    - `/socket-server`: Contains the Socket.IO server code for real-time communication, voice processing with Nova Sonic, and WebSocket connections deployed in ECS Fargate containers
+    - `/test`: Contains CDK unit tests for infrastructure validation
     - `/text_generation`: Contains the code required for the Text Generation step in retrieval-augmented generation. This folder is used by a Lambda function that runs a container which retrieves specific documents and invokes the LLM to generate appropriate responses during a conversation.
 2. `/docs`: Contains documentation for the application
 3. `/frontend`: Contains the user interface of the application
