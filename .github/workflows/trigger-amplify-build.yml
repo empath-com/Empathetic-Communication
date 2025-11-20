@@ -1,0 +1,129 @@
+name: Trigger AWS Amplify Build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: 'Amplify App ID'
+        required: false
+      branch_name:
+        description: 'Branch name to build'
+        required: true
+        default: 'main'
+      release_tag:
+        description: 'Release tag to deploy (leave empty for latest)'
+        required: false
+
+env:
+  AWS_REGION: ca-central-1
+  BRANCH_NAME: ${{ github.event.inputs.branch_name || 'main' }}
+
+jobs:
+  trigger-amplify:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Amplify App ID from Stack
+        id: get-app-id
+        run: |
+          if [ -z "${{ github.event.inputs.app_id }}" ]; then
+            # Try to get from CloudFormation stack outputs
+            STACK_PREFIX="${{ secrets.STACK_PREFIX || 'Empathetic-Communication' }}"
+            APP_ID=$(aws cloudformation describe-stacks \
+              --stack-name "${STACK_PREFIX}-Amplify" \
+              --query "Stacks[0].Outputs[?OutputKey=='AmplifyAppId'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$APP_ID" ]; then
+              echo "::error::Could not find Amplify App ID. Please provide it as workflow input."
+              exit 1
+            fi
+            echo "app_id=${APP_ID}" >> $GITHUB_OUTPUT
+          else
+            echo "app_id=${{ github.event.inputs.app_id }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Amplify build
+        run: |
+          APP_ID="${{ steps.get-app-id.outputs.app_id }}"
+          echo "Triggering build for Amplify App: $APP_ID, Branch: ${{ env.BRANCH_NAME }}"
+          
+          JOB_ID=$(aws amplify start-job \
+            --app-id "$APP_ID" \
+            --branch-name "${{ env.BRANCH_NAME }}" \
+            --job-type RELEASE \
+            --query 'jobSummary.jobId' \
+            --output text)
+          
+          echo "::notice::Amplify build triggered with Job ID: $JOB_ID"
+          echo "JOB_ID=${JOB_ID}" >> $GITHUB_ENV
+
+      - name: Wait for build completion
+        run: |
+          APP_ID="${{ steps.get-app-id.outputs.app_id }}"
+          JOB_ID="${{ env.JOB_ID }}"
+          
+          echo "Monitoring build status..."
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(aws amplify get-job \
+              --app-id "$APP_ID" \
+              --branch-name "${{ env.BRANCH_NAME }}" \
+              --job-id "$JOB_ID" \
+              --query 'job.summary.status' \
+              --output text)
+            
+            echo "Build status: $STATUS (Attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)"
+            
+            case "$STATUS" in
+              SUCCEED)
+                echo "::notice::Build completed successfully!"
+                exit 0
+                ;;
+              FAILED|CANCELLED)
+                echo "::error::Build failed with status: $STATUS"
+                exit 1
+                ;;
+              PENDING|RUNNING)
+                echo "Build in progress..."
+                sleep 30
+                ;;
+            esac
+            
+            ATTEMPT=$((ATTEMPT+1))
+          done
+          
+          echo "::error::Build monitoring timed out after 30 minutes"
+          exit 1
+
+      - name: Get Amplify App URL
+        if: success()
+        run: |
+          APP_ID="${{ steps.get-app-id.outputs.app_id }}"
+          RELEASE_TAG="${{ github.event.inputs.release_tag || github.event.release.tag_name || 'manual' }}"
+          
+          APP_URL=$(aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.defaultDomain' \
+            --output text)
+          
+          echo "::notice::Release Tag: ${RELEASE_TAG}"
+          echo "::notice::Application deployed at: https://${{ env.BRANCH_NAME }}.${APP_URL}"
