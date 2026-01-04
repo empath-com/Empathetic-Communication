@@ -16,3 +16,4 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.dropTable("user_engagement_log");
 };
+

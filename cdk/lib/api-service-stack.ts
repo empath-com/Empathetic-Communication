@@ -316,6 +316,37 @@ export class ApiServiceStack extends cdk.Stack {
     this.stageARN_APIGW = this.api.deploymentStage.stageArn;
     this.apiGW_basedURL = this.api.urlForPath();
 
+    // Add CORS support for all origins
+    this.api.addGatewayResponse(`${id}-Default4xxResponse`, {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: {
+        "Access-Control-Allow-Origin": "'*'",
+        "Access-Control-Allow-Headers":
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS,PATCH'",
+      },
+    });
+
+    this.api.addGatewayResponse(`${id}-Default5xxResponse`, {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        "Access-Control-Allow-Origin": "'*'",
+        "Access-Control-Allow-Headers":
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS,PATCH'",
+      },
+    });
+
+    this.api.addGatewayResponse(`${id}-UnauthorizedResponse`, {
+      type: apigateway.ResponseType.UNAUTHORIZED,
+      responseHeaders: {
+        "Access-Control-Allow-Origin": "'*'",
+        "Access-Control-Allow-Headers":
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS,PATCH'",
+      },
+    });
+
     const studentRole = new iam.Role(this, `${id}-StudentRole`, {
       assumedBy: new iam.FederatedPrincipal(
         "cognito-identity.amazonaws.com",
@@ -1103,10 +1134,13 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-TextGenLambdaDockerFunction`,
       {
-        code: lambda.DockerImageCode.fromImageAsset("./text_generation"),
+        code: lambda.DockerImageCode.fromImageAsset("./text_generation", {
+          platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+        }),
         memorySize: 512,
         timeout: cdk.Duration.seconds(300),
         vpc: vpcStack.vpc, // Pass the VPC
+        architecture: lambda.Architecture.X86_64,
         functionName: `${id}-TextGenLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,

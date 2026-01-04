@@ -11,3 +11,4 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.dropTable("system_prompt_history", { ifExists: true, cascade: true });
 };
+

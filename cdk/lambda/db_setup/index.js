@@ -276,3 +276,4 @@ exports.handler = async function () {
   await createAppUsers(adminDb, DB_SECRET_NAME, DB_USER_SECRET_NAME, DB_PROXY);
   return { status: "ok" };
 };
+

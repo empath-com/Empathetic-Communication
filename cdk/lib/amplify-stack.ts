@@ -77,10 +77,11 @@ export class AmplifyStack extends cdk.Stack {
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
         // Use explicit exported ALB DNS to avoid missing auto-export names
-        VITE_SOCKET_URL: cdk.Fn.join("", [
+        VITE_SOCKET_URL: "wss://empathai.ec.gl", //Temporary hardcoded value for ssl
+        /*/cdk.Fn.join("", [
           "ws://",
           cdk.Fn.importValue(`${ecsSocketStack.stackName}-ALB-DNS`),
-        ]),
+        ]),*/
         VITE_APPSYNC_GRAPHQL_URL: apiStack.appSyncApi.graphqlUrl,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),

@@ -111,3 +111,4 @@ Provide structured evaluation with detailed justifications for each score.
 exports.down = (pgm) => {
   pgm.dropTable("empathy_prompt_history", { ifExists: true, cascade: true });
 };
+

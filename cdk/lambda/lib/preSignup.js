@@ -24,3 +24,4 @@ exports.handler = async (event) => {
     throw new Error("Error validating email domain during pre-signup.");
   }
 };
+

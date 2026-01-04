@@ -14,3 +14,4 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.dropColumns('simulation_groups', ['admin_voice_enabled', 'instructor_voice_enabled']);
 };
+
