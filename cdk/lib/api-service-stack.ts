@@ -659,7 +659,7 @@ export class ApiServiceStack extends cdk.Stack {
           USER_POOL: this.userPool.userPoolId,
         },
         functionName: `${id}-studentFunction`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -691,7 +691,7 @@ export class ApiServiceStack extends cdk.Stack {
           USER_POOL: this.userPool.userPoolId,
         },
         functionName: `${id}-instructorFunction`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -722,7 +722,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
         },
         functionName: `${id}-adminFunction`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -885,7 +885,7 @@ export class ApiServiceStack extends cdk.Stack {
         },
         vpc: vpcStack.vpc,
         functionName: `${id}-addStudentOnSignUp`,
-        memorySize: 128,
+        memorySize: 256,
         layers: [postgres],
         role: coglambdaRole,
       }
@@ -902,7 +902,7 @@ export class ApiServiceStack extends cdk.Stack {
       },
       vpc: db.dbInstance.vpc,
       functionName: `${id}-adjustUserRoles`,
-      memorySize: 512,
+      memorySize: 1024,
       layers: [postgres],
       role: coglambdaRole,
     });
@@ -937,7 +937,7 @@ export class ApiServiceStack extends cdk.Stack {
       },
       vpc: vpcStack.vpc,
       functionName: `${id}-preSignupLambda`,
-      memorySize: 128,
+      memorySize: 256,
       role: coglambdaRole,
     });
     this.userPool.addTrigger(
@@ -962,7 +962,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-adminLambdaAuthorizer`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -995,7 +995,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-studentLambdaAuthorizer`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -1030,7 +1030,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-instructorLambdaAuthorizer`,
-        memorySize: 512,
+        memorySize: 1024,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -1137,7 +1137,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.DockerImageCode.fromImageAsset("./text_generation", {
           platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
         }),
-        memorySize: 512,
+        memorySize: 1024,
         timeout: cdk.Duration.seconds(300),
         vpc: vpcStack.vpc, // Pass the VPC
         architecture: lambda.Architecture.X86_64,
@@ -1286,7 +1286,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/generatePreSignedURL"),
         handler: "generatePreSignedURL.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
@@ -1329,7 +1329,9 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-DataIngestLambdaDockerFunction`,
       {
-        code: lambda.DockerImageCode.fromImageAsset("./data_ingestion"),
+        code: lambda.DockerImageCode.fromImageAsset("./data_ingestion", {
+          platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+        }),
         memorySize: 3008,
         timeout: cdk.Duration.seconds(900),
         vpc: vpcStack.vpc, // Pass the VPC
@@ -1485,7 +1487,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/timeoutHandler"),
         handler: "timeoutHandler.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
@@ -1524,7 +1526,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/getFilesFunction"),
         handler: "getFilesFunction.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
@@ -1578,7 +1580,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/getFilesFunction"),
         handler: "getFilesFunction.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
@@ -1632,7 +1634,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/getProfilePictures"),
         handler: "getProfilePictures.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
@@ -1686,7 +1688,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/getProfilePictures"),
         handler: "getProfilePictures.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
@@ -1737,7 +1739,7 @@ export class ApiServiceStack extends cdk.Stack {
       code: lambda.Code.fromAsset("lambda/deleteFile"),
       handler: "deleteFile.lambda_handler",
       timeout: Duration.seconds(300),
-      memorySize: 128,
+      memorySize: 256,
       vpc: vpcStack.vpc,
       environment: {
         SM_DB_CREDENTIALS: db.secretPathUser.secretName, // Database User Credentials
@@ -1789,7 +1791,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/deletePatient"),
         handler: "deletePatient.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
@@ -1827,7 +1829,7 @@ export class ApiServiceStack extends cdk.Stack {
         code: lambda.Code.fromAsset("lambda/deleteLastMessage"),
         handler: "deleteLastMessage.lambda_handler",
         timeout: Duration.seconds(300),
-        memorySize: 128,
+        memorySize: 256,
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,

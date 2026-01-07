@@ -141,8 +141,8 @@ export class EcsSocketStack extends Stack {
 
     // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
-      cpu: 1024,
-      memoryLimitMiB: 2048,
+      cpu: 2048,
+      memoryLimitMiB: 4096,
       taskRole,
       executionRole: taskRole,
       runtimePlatform: {
@@ -179,12 +179,28 @@ export class EcsSocketStack extends Stack {
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 1, // Start with 1 task (will scale down after deploy if needed)
+      desiredCount: 2, // Start with 2 tasks for better availability
       assignPublicIp: false, // No public IPs
       vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
       deploymentController: {
         type: ecs.DeploymentControllerType.ECS,
       },
+    });
+
+    // Auto-scaling configuration
+    const scaling = service.autoScaleTaskCount({
+      minCapacity: 2,
+      maxCapacity: 10,
+    });
+
+    scaling.scaleOnCpuUtilization("CpuScaling", {
+      targetUtilizationPercent: 70,
+      scaleInCooldown: Duration.seconds(60),
+      scaleOutCooldown: Duration.seconds(60),
+    });
+
+    scaling.scaleOnMemoryUtilization("MemoryScaling", {
+      targetUtilizationPercent: 80,
     });
 
     // ============================================
