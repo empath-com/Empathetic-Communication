@@ -17,5 +17,6 @@ RUN poetry config virtualenvs.create false && \
 # Copy the source code
 COPY src/ ${LAMBDA_TASK_ROOT}/
 
-# Set the CMD to your handler
-CMD [ "main.handler" ]
+# Set the CMD to your handler (handler function in main.py)
+# Updated: 2026-01-02 - Force rebuild
+CMD ["main.handler"]

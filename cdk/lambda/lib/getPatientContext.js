@@ -19,7 +19,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 400,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },
@@ -50,7 +50,7 @@ exports.getPatientContext = async (event) => {
       return {
         statusCode: 404,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
           "Access-Control-Allow-Headers": "*", 
           "Access-Control-Allow-Methods": "*",
         },
@@ -69,7 +69,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },
@@ -81,7 +81,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 500,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },
@@ -89,3 +89,4 @@ exports.getPatientContext = async (event) => {
     };
   }
 };
+

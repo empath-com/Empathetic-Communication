@@ -125,7 +125,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameter: session_id')
@@ -150,7 +150,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"No conversation history found for session_id: {session_id}")
@@ -166,7 +166,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Not enough messages to delete for session_id: {session_id}")
@@ -199,7 +199,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Successfully deleted the last human and AI messages for session_id: {session_id}")
@@ -211,7 +211,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Error deleting last messages from the database for session_id: {session_id}")
@@ -224,8 +224,9 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps(f"Error deleting last message: {e}")
         }
+

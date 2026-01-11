@@ -11,7 +11,7 @@ exports.handler = async (event) => {
     headers: {
       "Access-Control-Allow-Headers":
         "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
       "Access-Control-Allow-Methods": "*",
     },
     body: "",
@@ -21,6 +21,39 @@ exports.handler = async (event) => {
   if (!sqlConnectionTableCreator) {
     await initializeConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT);
     sqlConnectionTableCreator = global.sqlConnectionTableCreator;
+  }
+
+  // DEBUG: List all tables in the database
+  try {
+    const allTables = await sqlConnectionTableCreator`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `;
+    console.log('=== ALL TABLES IN DATABASE ===');
+    allTables.forEach(t => console.log(`  - ${t.table_name}`));
+
+    // DEBUG: List permissions for each table
+    const permissions = await sqlConnectionTableCreator`
+      SELECT 
+        table_name,
+        grantee,
+        privilege_type
+      FROM information_schema.table_privileges
+      WHERE table_schema = 'public'
+      ORDER BY table_name, grantee, privilege_type;
+    `;
+    console.log('=== TABLE PERMISSIONS ===');
+    permissions.forEach(p => console.log(`  ${p.table_name} - ${p.grantee}: ${p.privilege_type}`));
+
+    // DEBUG: Current user and database
+    const userInfo = await sqlConnectionTableCreator`SELECT current_user, current_database()`;
+    console.log('=== CURRENT CONNECTION ===');
+    console.log(`  User: ${userInfo[0].current_user}`);
+    console.log(`  Database: ${userInfo[0].current_database}`);
+  } catch (err) {
+    console.error('Error listing tables/permissions:', err);
   }
 
   // Function to format student full names (lowercase and spaces replaced with "_")
@@ -848,3 +881,5 @@ exports.handler = async (event) => {
   console.log(response);
   return response;
 };
+
+

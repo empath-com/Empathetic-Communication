@@ -5,3 +5,4 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.dropExtension("vector", { ifExists: true });
 };
+

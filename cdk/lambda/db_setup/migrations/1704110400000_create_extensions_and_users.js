@@ -20,3 +20,4 @@ exports.down = (pgm) => {
   pgm.dropExtension("vector", { ifExists: true });
   pgm.dropExtension("uuid-ossp", { ifExists: true });
 };
+

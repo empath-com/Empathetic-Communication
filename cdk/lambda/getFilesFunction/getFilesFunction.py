@@ -151,7 +151,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameters: simulation_group_id or patient_id')
@@ -218,7 +218,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps({
@@ -235,8 +235,9 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Internal server error')
         }
+

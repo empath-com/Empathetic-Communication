@@ -34,3 +34,5 @@ async function initializeConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT) {
 }
 
 module.exports = { initializeConnection };
+
+

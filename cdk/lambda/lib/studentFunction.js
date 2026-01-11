@@ -39,7 +39,7 @@ exports.handler = async (event) => {
       headers: {
         "Access-Control-Allow-Headers":
           "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
         "Access-Control-Allow-Methods": "*",
       },
       body: JSON.stringify({ error: "Unauthorized" }),
@@ -51,7 +51,7 @@ exports.handler = async (event) => {
     headers: {
       "Access-Control-Allow-Headers":
         "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
       "Access-Control-Allow-Methods": "*",
     },
     body: "",
@@ -1364,3 +1364,5 @@ exports.handler = async (event) => {
 
   return response;
 };
+
+

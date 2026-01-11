@@ -398,8 +398,20 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         if json_start != -1 and json_end > json_start:
             json_text = response_text[json_start:json_end]
             logger.info(f"📝 EXTRACTED JSON LENGTH: {len(json_text)} characters")
-            evaluation = json.loads(json_text)
+            
+            try:
+                evaluation = json.loads(json_text)
+            except json.JSONDecodeError as parse_error:
+                logger.error(f"❌ FAILED TO PARSE EXTRACTED JSON: {parse_error}")
+                logger.error(f"❌ EXTRACTED TEXT: {json_text[:200]}")
+                return None
+                
             logger.info(f"✅ JSON PARSING SUCCESSFUL - Keys: {list(evaluation.keys())}")
+            
+            # Validate that it's a dict and not a string
+            if not isinstance(evaluation, dict):
+                logger.error(f"❌ EVALUATION IS NOT A DICT: {type(evaluation)}")
+                return None
             
             # Convert string scores to integers and validate
             required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
@@ -426,15 +438,17 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
             return evaluation
         else:
-            logger.error(f"❌ NO JSON FOUND IN RESPONSE: {response_text}")
-            raise json.JSONDecodeError("No JSON found", response_text, 0)
+            logger.error(f"❌ NO JSON FOUND IN RESPONSE: {response_text[:200]}")
+            return None
                 
     except json.JSONDecodeError as e:
         logger.error(f"❌ JSON DECODE ERROR: {e}")
+        logger.error(f"❌ RESPONSE TEXT: {response_text[:200] if 'response_text' in locals() else 'N/A'}")
         return None
         
     except Exception as e:
         logger.error(f"❌ EMPATHY EVALUATION ERROR: {e}")
+        logger.exception("Full traceback:")
         return None
 
 def get_empathy_level_name(score: int) -> str:

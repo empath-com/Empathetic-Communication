@@ -91,7 +91,12 @@ def store_group_data(
         record_manager = SQLRecordManager(
             namespace, db_url=connection_string
         )
-        record_manager.create_schema()
+        try:
+            record_manager.create_schema()
+        except psycopg2.errors.UniqueViolation as e:
+            logger.info(f"Schema already exists for namespace {namespace}, skipping creation: {e}")
+        except Exception as e:
+            logger.warning(f"Error creating schema for namespace {namespace}: {e}")
 
     if not vectorstore:
         logger.error("VectorStore could not be initialized")
