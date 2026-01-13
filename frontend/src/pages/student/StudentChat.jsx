@@ -684,21 +684,23 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       {
         message_id: STREAMING_TEMP_ID,
         student_sent: false,
-        message_content: " ", // space ensures bubble renders
+        message_content: "",
         _streaming: true, // enable typing cursor
       },
     ]);
-    setIsAItyping(false);
+    // Keep isAItyping true - will be set false on first chunk
   };
 
   const appendStreamingChunk = (text) => {
+    // Hide thinking indicator on first chunk
+    setIsAItyping(false);
+    
     setMessages((prev) =>
       prev.map((m) =>
         m.message_id === STREAMING_TEMP_ID
           ? {
               ...m,
-              message_content:
-                (m.message_content === " " ? "" : m.message_content) + text,
+              message_content: m.message_content + text,
             }
           : m
       )
