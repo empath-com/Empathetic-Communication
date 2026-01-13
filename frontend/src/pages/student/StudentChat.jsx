@@ -727,13 +727,18 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     overrideSessionId = null
   ) => {
     let fullResponse = "";
+    let subscription;
 
     try {
       const currentSessionId = overrideSessionId || session?.session_id;
       if (!currentSessionId)
         throw new Error("No session ID available for streaming");
 
-      const subscription = gqlClient
+      // ✅ CRITICAL FIX: Establish subscription BEFORE making the POST request
+      // This ensures we don't miss any streaming events
+      console.log("📡 Setting up AppSync subscription for session:", currentSessionId);
+      
+      subscription = gqlClient
         .graphql({
           query: ON_TEXT_STREAM,
           variables: { sessionId: currentSessionId },
@@ -776,10 +781,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 appendStreamingChunk(content);
               } else if (t === "end") {
                 await finalizeStreamingBubble(fullResponse, currentSessionId);
-                subscription.unsubscribe();
+                subscription?.unsubscribe();
               } else if (t === "error") {
                 setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-                subscription.unsubscribe();
+                subscription?.unsubscribe();
               }
             } catch (err) {
               console.error("Error processing stream data:", err);
@@ -791,6 +796,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           },
         });
 
+      // ✅ Wait a brief moment to ensure subscription is ready
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      console.log("🚀 Making POST request to:", url);
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -800,10 +809,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         body: JSON.stringify({ message_content: message }),
       });
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        subscription?.unsubscribe();
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       return await response.json();
     } catch (error) {
       console.error("❌ AppSync streaming error:", error);
+      subscription?.unsubscribe();
       setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
       throw error;
     }
