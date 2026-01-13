@@ -77,7 +77,7 @@ export class AmplifyStack extends cdk.Stack {
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
         // Use explicit exported ALB DNS to avoid missing auto-export names
-        VITE_SOCKET_URL: "wss://empathai.ec.gl", //Temporary hardcoded value for ssl
+        VITE_SOCKET_URL: "wss://ws.empath-ai.pharmsci.ubc.ca", //Temporary hardcoded value for ssl
         /*/cdk.Fn.join("", [
           "ws://",
           cdk.Fn.importValue(`${ecsSocketStack.stackName}-ALB-DNS`),
