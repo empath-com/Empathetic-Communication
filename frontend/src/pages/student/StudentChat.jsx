@@ -134,8 +134,26 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     setRealtimeEmpathy(prev => [...prev, empathyData]);
   };
 
-  // Remove global AppSync subscription approach; we'll subscribe per request
-  // const streamSubRef = useRef(null);
+  // Persistent AppSync stream subscription + auth cache
+  const streamSubRef = useRef(null);
+  const streamSessionIdRef = useRef(null);
+  const fullResponseRef = useRef("");
+  const [authCache, setAuthCache] = useState({ token: null, exp: 0, email: null });
+
+  const getAuth = async () => {
+    const now = Date.now() / 1000;
+    if (authCache.token && authCache.exp - 60 > now && authCache.email) {
+      return authCache;
+    }
+
+    const session = await fetchAuthSession();
+    const token = session.tokens.idToken;
+    const exp = session.tokens?.idToken?.payload?.exp || now + 300;
+    const { email } = await fetchUserAttributes();
+    const updated = { token, exp, email };
+    setAuthCache(updated);
+    return updated;
+  };
 
   const navigate = useNavigate();
 
@@ -237,6 +255,19 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       setNewMessage(null);
     }
   }, [session, newMessage, currentSessionId, messages]);
+
+  // Keep a warm AppSync subscription for the active session
+  useEffect(() => {
+    if (session?.session_id) {
+      subscribeToStream(session.session_id);
+    }
+
+    return () => {
+      streamSubRef.current?.unsubscribe();
+      streamSubRef.current = null;
+      streamSessionIdRef.current = null;
+    };
+  }, [session?.session_id]);
 
   useEffect(() => {
     const fetchPatient = async () => {
@@ -722,84 +753,92 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     );
   };
 
+  const subscribeToStream = (sessionId) => {
+    if (!sessionId) return null;
+
+    if (streamSubRef.current) {
+      streamSubRef.current.unsubscribe();
+      streamSubRef.current = null;
+    }
+
+    streamSubRef.current = gqlClient
+      .graphql({
+        query: ON_TEXT_STREAM,
+        variables: { sessionId },
+      })
+      .subscribe({
+        next: async ({ data }) => {
+          try {
+            const streamData = JSON.parse(data.onTextStream.data);
+            const t = streamData?.type;
+            const content = streamData?.content || "";
+
+            if (t === "empathy") {
+              try {
+                const empathyData = JSON.parse(content);
+                const transformedData = {
+                  overall_score: empathyData.empathy_score || 3,
+                  avg_perspective_taking: empathyData.perspective_taking || 3,
+                  avg_emotional_resonance: empathyData.emotional_resonance || 3,
+                  avg_acknowledgment: empathyData.acknowledgment || 3,
+                  avg_language_communication: empathyData.language_communication || 3,
+                  avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
+                  avg_affective_empathy: empathyData.affective_empathy || 3,
+                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
+                  realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
+                  coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
+                  strengths: empathyData.feedback?.strengths || [],
+                  areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+                  recommendations: empathyData.feedback?.improvement_suggestions || [],
+                  recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+                  timestamp: Date.now(),
+                };
+                setRealtimeEmpathy((prev) => [...prev, transformedData]);
+              } catch (e) {
+                console.error("Failed to parse empathy JSON:", e);
+              }
+            } else if (t === "start") {
+              fullResponseRef.current = "";
+              startStreamingBubble();
+            } else if (t === "chunk") {
+              fullResponseRef.current += content;
+              appendStreamingChunk(content);
+            } else if (t === "end") {
+              await finalizeStreamingBubble(fullResponseRef.current, sessionId);
+            } else if (t === "error") {
+              setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
+            }
+          } catch (err) {
+            console.error("Error processing stream data:", err);
+          }
+        },
+        error: (error) => {
+          console.error("❌ AppSync subscription error:", error);
+          setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
+        },
+      });
+
+    streamSessionIdRef.current = sessionId;
+
+    return streamSubRef.current;
+  };
+
   const handleStreamingResponse = async (
     url,
     authToken,
     message,
     overrideSessionId = null
   ) => {
-    let fullResponse = "";
-    let subscription;
-
     try {
       const currentSessionId = overrideSessionId || session?.session_id;
       if (!currentSessionId)
         throw new Error("No session ID available for streaming");
 
-      // ✅ CRITICAL FIX: Establish subscription BEFORE making the POST request
-      // This ensures we don't miss any streaming events
-      console.log("📡 Setting up AppSync subscription for session:", currentSessionId);
-      
-      subscription = gqlClient
-        .graphql({
-          query: ON_TEXT_STREAM,
-          variables: { sessionId: currentSessionId },
-        })
-        .subscribe({
-          next: async ({ data }) => {
-            try {
-              const streamData = JSON.parse(data.onTextStream.data);
-              const t = streamData?.type;
-              const content = streamData?.content || "";
-
-              if (t === "empathy") {
-                try {
-                  const empathyData = JSON.parse(content);
-                  const transformedData = {
-                    overall_score: empathyData.empathy_score || 3,
-                    avg_perspective_taking: empathyData.perspective_taking || 3,
-                    avg_emotional_resonance: empathyData.emotional_resonance || 3,
-                    avg_acknowledgment: empathyData.acknowledgment || 3,
-                    avg_language_communication: empathyData.language_communication || 3,
-                    avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-                    avg_affective_empathy: empathyData.affective_empathy || 3,
-                    realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
-                    realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-                    coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
-                    strengths: empathyData.feedback?.strengths || [],
-                    areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-                    recommendations: empathyData.feedback?.improvement_suggestions || [],
-                    recommended_approach: empathyData.feedback?.alternative_phrasing || "",
-                    timestamp: Date.now(),
-                  };
-                  setRealtimeEmpathy((prev) => [...prev, transformedData]);
-                } catch (e) {
-                  console.error("Failed to parse empathy JSON:", e);
-                }
-              } else if (t === "start") {
-                startStreamingBubble();
-              } else if (t === "chunk") {
-                fullResponse += content;
-                appendStreamingChunk(content);
-              } else if (t === "end") {
-                await finalizeStreamingBubble(fullResponse, currentSessionId);
-                subscription?.unsubscribe();
-              } else if (t === "error") {
-                setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-                subscription?.unsubscribe();
-              }
-            } catch (err) {
-              console.error("Error processing stream data:", err);
-            }
-          },
-          error: (error) => {
-            console.error("❌ AppSync subscription error:", error);
-            setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-          },
-        });
-
-      // ✅ Wait a brief moment to ensure subscription is ready
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Ensure a warm, persistent subscription is active for this session
+      if (!streamSubRef.current || streamSessionIdRef.current !== currentSessionId) {
+        console.log("📡 Warming AppSync subscription for session:", currentSessionId);
+        subscribeToStream(currentSessionId);
+      }
 
       console.log("🚀 Making POST request to:", url);
       const response = await fetch(url, {
@@ -812,13 +851,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       });
 
       if (!response.ok) {
-        subscription?.unsubscribe();
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       return await response.json();
     } catch (error) {
       console.error("❌ AppSync streaming error:", error);
-      subscription?.unsubscribe();
       setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
       throw error;
     }
@@ -855,13 +892,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       .then((retrievedSession) => {
         newSession = retrievedSession;
         setCurrentSessionId(newSession.session_id);
-        return fetchAuthSession();
+        return getAuth();
       })
-      .then((authSession) => {
-        authToken = authSession.tokens.idToken;
-        return fetchUserAttributes();
-      })
-      .then(({ email }) => {
+      .then(({ token, email }) => {
+        authToken = token;
         userEmail = email;
         const messageUrl = `${
           import.meta.env.VITE_API_ENDPOINT
@@ -1015,13 +1049,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     let authToken;
 
     setTimeout(() => setIsAItyping(true), 775);
-
-    return fetchAuthSession()
-      .then((session) => {
-        authToken = session.tokens.idToken;
-        return fetchUserAttributes();
-      })
-      .then(({ email }) => {
+    return getAuth()
+      .then(({ token, email }) => {
+        authToken = token;
         userEmail = email;
         const session_name = "New chat";
         const url = `${
