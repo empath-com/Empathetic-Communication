@@ -984,7 +984,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       })
       .finally(() => {
         setIsSubmitting(false);
-        setIsAItyping(false);
       });
   };
 
@@ -1089,7 +1088,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         setIsAItyping(false);
       })
       .finally(() => {
-        setIsAItyping(false);
       });
   };
 
