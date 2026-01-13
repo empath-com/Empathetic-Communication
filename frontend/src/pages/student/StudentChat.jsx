@@ -815,7 +815,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     let newSession;
     let authToken;
     let userEmail;
-    let messageContent = textareaRef.current.value.trim();
+    let messageContent = novaTextInput.trim();
 
     console.log("📝 Submitting message:", messageContent);
     let getSession;
@@ -878,7 +878,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       .then((messageData) => {
         setNewMessage(messageData[0]);
         setIsAItyping(true);
-        textareaRef.current.value = "";
+        setNovaTextInput("");
 
         const message = messageData[0].message_content;
 
@@ -1568,6 +1568,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             {/* Textarea */}
             <textarea
               ref={textareaRef}
+              value={novaTextInput}
+              onChange={(e) => setNovaTextInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Type your message..."
               className="flex-1 bg-transparent text-gray-900 placeholder-gray-500 resize-none outline-none max-h-32 py-1"
               style={{ maxHeight: "2.4rem" }}
@@ -1656,13 +1659,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               </Typography>
             </div>
           ) : (
-            <>
-              {console.log(
-                "🎯 Rendering EmpathyCoachSummary with data:",
-                empathySummary
-              )}
-              <EmpathyCoachSummary empathyData={empathySummary} />
-            </>
+            <EmpathyCoachSummary empathyData={empathySummary} />
           )}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 2 }}>
