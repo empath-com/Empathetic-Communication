@@ -1170,6 +1170,15 @@ export class ApiServiceStack extends cdk.Stack {
       sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/*/student*`,
     });
 
+    // Allow the function to self-invoke for async handoff (API returns 202 immediately)
+    textGenLambdaDockerFunc.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        // Use wildcard to avoid CloudFormation circular dependency on the function ARN
+        resources: ["*"],
+      })
+    );
+
     // Custom policy statement for Bedrock access
     const bedrockPolicyStatement = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,

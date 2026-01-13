@@ -53,6 +53,19 @@ embeddings = None
 # 🔴 CRITICAL: Use connection pool to prevent creating new connection per request
 db_connection_pool = None
 
+def get_secret(secret_name):
+    """Retrieve a secret from AWS Secrets Manager"""
+    global db_secret
+    if db_secret is None:
+        try:
+            response = secrets_manager_client.get_secret_value(SecretId=secret_name)["SecretString"]
+            db_secret = json.loads(response)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Secret {secret_name} is not properly formatted as JSON.")
+        except Exception as e:
+            raise
+    return db_secret
+
 def get_connection_pool():
     """Get or create a connection pool for text generation"""
     global db_connection_pool
@@ -68,28 +81,18 @@ def get_connection_pool():
                 'connect_timeout': 5,
             }
             
-            # Create a smaller pool for text generation (3-10 connections)
+            # Create a larger pool for text generation (10-50 connections)
             db_connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=2,
-                maxconn=10,  # Keep text generation isolated from voice (which uses up to 20)
+                minconn=5,
+                maxconn=50,  # Increased from 10 to handle concurrent text generation
                 **connection_params
             )
-            logger.info(f"✅ TEXT_GEN: Connection pool created with min=2, max=10")
+            logger.info(f"✅ TEXT_GEN: Connection pool created with min=5, max=50")
         except Exception as e:
             logger.error(f"❌ TEXT_GEN: Failed to create connection pool: {e}")
             raise
     
     return db_connection_pool
-    global db_secret
-    if db_secret is None:
-        try:
-            response = secrets_manager_client.get_secret_value(SecretId=secret_name)["SecretString"]
-            db_secret = json.loads(response) if expect_json else response
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Secret {secret_name} is not properly formatted as JSON.")
-        except Exception as e:
-            raise
-    return db_secret
 
 
 def get_parameter(param_name, cached_var):
@@ -120,14 +123,13 @@ def initialize_constants():
     
     create_dynamodb_history_table(TABLE_NAME)
 
-def connect_to_db():
-    """Get a connection from the pool (NEW: uses connection pooling)"""
-    global connection
+def get_db_connection():
+    """Get a connection from the pool with context manager support"""
     try:
         pool = get_connection_pool()
-        connection = pool.getconn()
+        conn = pool.getconn()
         logger.info("🔌 TEXT_GEN: Got connection from pool")
-        return connection
+        return conn
     except Exception as e:
         logger.error(f"❌ TEXT_GEN: Failed to get connection from pool: {e}")
         raise
@@ -141,16 +143,19 @@ def return_db_connection(conn):
         except Exception as e:
             logger.warning(f"⚠️ TEXT_GEN: Failed to return connection to pool: {e}")
 
+def close_db_connection(conn):
+    """Close and return connection to pool, even if in error state"""
+    if conn:
+        try:
+            conn.rollback()  # Rollback any pending transaction
+        except:
+            pass
+        return_db_connection(conn)
+
 def get_system_prompt(simulation_group_id):
-    connection = connect_to_db()
-    if connection is None:
-        logger.error("No database connection available.")
-        return {
-            "statusCode": 500,
-            "body": json.dumps("Database connection failed.")
-        }
-    
+    connection = None
     try:
+        connection = get_db_connection()
         cur = connection.cursor()
         
         cur.execute("""
@@ -174,22 +179,15 @@ def get_system_prompt(simulation_group_id):
 
     except Exception as e:
         logger.error(f"Error fetching system prompt: {e}")
-        if cur:
-            cur.close()
-        connection.rollback()
         return None
+    finally:
+        close_db_connection(connection)
 
 
 def get_patient_details(patient_id):
-    connection = connect_to_db()
-    if connection is None:
-        logger.error("No database connection available.")
-        return {
-            "statusCode": 500,
-            "body": json.dumps("Database connection failed.")
-        }
-    
+    connection = None
     try:
+        connection = get_db_connection()
         cur = connection.cursor()
         logger.info("Connected to RDS instance!")
         cur.execute("""
@@ -211,16 +209,51 @@ def get_patient_details(patient_id):
 
     except Exception as e:
         logger.error(f"Error fetching patient details: {e}")
-        if cur:
-            cur.close()
-        connection.rollback()
-        return None, None, None
+        return None, None, None, None
+    finally:
+        close_db_connection(connection)
 
 
 
 
 def handler(event, context):
     # Version: 2026-01-12 - Add timeout protection and connection pooling
+    # Version: 2026-01-13 - Offload long work to async worker for AppSync streaming
+
+    # Fast-path: fire-and-forget a background invocation so API Gateway can return immediately
+    if not event.get("async_worker"):
+        try:
+            lambda_client = boto3.client("lambda")
+            async_payload = dict(event)
+            async_payload["async_worker"] = True
+            lambda_client.invoke(
+                FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"],
+                InvocationType="Event",  # async
+                Payload=json.dumps(async_payload),
+            )
+            return {
+                "statusCode": 202,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({"message": "Processing asynchronously; stream over AppSync"}),
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to trigger async worker: {e}")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps("Failed to start async processing"),
+            }
+
     # 🔴 CRITICAL: Wrap entire handler in try-finally to return connection to pool
     connection_obj = None
     
@@ -233,7 +266,7 @@ def handler(event, context):
         initialize_constants()
         
         # 🔴 CRITICAL: Get connection from pool at start
-        connection_obj = connect_to_db()
+        connection_obj = get_db_connection()
         if connection_obj is None:
             logger.error("❌ TEXT_GEN: Failed to get database connection")
             return {
@@ -530,9 +563,9 @@ def handler(event, context):
             'body': json.dumps('Internal server error')
         }
     finally:
-        # 🔴 CRITICAL: Always return connection to the pool
+        # 🔴 CRITICAL: Always return connection to the pool, even if error
         if connection_obj:
-            return_db_connection(connection_obj)
+            close_db_connection(connection_obj)
 
     query_params = event.get("queryStringParameters", {})
     simulation_group_id = query_params.get("simulation_group_id", "")

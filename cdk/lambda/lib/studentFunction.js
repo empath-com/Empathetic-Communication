@@ -949,10 +949,24 @@ exports.handler = async (event) => {
             const { session_id } = event.queryStringParameters;
             const { session_name } = JSON.parse(event.body);
 
+            // Reject undefined/null/empty session names up front to avoid undefined values in SQL
+            if (
+              session_name === undefined ||
+              session_name === null ||
+              (typeof session_name === "string" && session_name.trim() === "")
+            ) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({ error: "session_name is required" });
+              break;
+            }
+
+            const normalizedSessionName =
+              typeof session_name === "string" ? session_name.trim() : session_name;
+
             // Update the session name
             const updateResult = await sqlConnection`
                 UPDATE "sessions"
-                SET session_name = ${session_name}
+                SET session_name = ${normalizedSessionName}
                 WHERE session_id = ${session_id}
                 RETURNING *;
               `;
