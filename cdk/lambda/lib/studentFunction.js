@@ -949,14 +949,14 @@ exports.handler = async (event) => {
             const { session_id } = event.queryStringParameters;
             const { session_name } = JSON.parse(event.body);
 
-            // Reject undefined/null/empty session names up front to avoid undefined values in SQL
+            // If no session_name is provided, treat as no-op to avoid undefined in SQL
             if (
               session_name === undefined ||
               session_name === null ||
               (typeof session_name === "string" && session_name.trim() === "")
             ) {
-              response.statusCode = 400;
-              response.body = JSON.stringify({ error: "session_name is required" });
+              response.statusCode = 200;
+              response.body = JSON.stringify({ message: "No session_name provided; session not updated" });
               break;
             }
 
