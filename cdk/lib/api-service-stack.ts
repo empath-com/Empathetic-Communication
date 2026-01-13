@@ -1142,6 +1142,7 @@ export class ApiServiceStack extends cdk.Stack {
         vpc: vpcStack.vpc, // Pass the VPC
         architecture: lambda.Architecture.X86_64,
         functionName: `${id}-TextGenLambdaDockerFunction`,
+        reservedConcurrentExecutions: 20, // 🔴 CRITICAL: Limit concurrency to prevent DB connection exhaustion
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
@@ -1152,6 +1153,7 @@ export class ApiServiceStack extends cdk.Stack {
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
           APPSYNC_GRAPHQL_URL: this.appSyncApi.graphqlUrl,
           APPSYNC_API_ID: this.appSyncApi.apiId,
+          BEDROCK_TIMEOUT_SECONDS: "15", // 🔴 CRITICAL: Timeout for Bedrock API calls
         },
       }
     );
