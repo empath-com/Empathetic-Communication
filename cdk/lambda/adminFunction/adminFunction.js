@@ -65,6 +65,81 @@ exports.handler = async (event) => {
   try {
     const pathData = event.httpMethod + " " + event.resource;
     switch (pathData) {
+      case "GET /admin/active_students_count":
+        try {
+          // Count users with 'student' role and a non-null last_sign_in
+          const result = await sqlConnectionTableCreator`
+            SELECT COUNT(*)::int AS active_students
+            FROM "users"
+            WHERE roles @> ARRAY['student']::varchar[]
+              AND last_sign_in IS NOT NULL;
+          `;
+
+          response.body = JSON.stringify({ active_students: result[0].active_students });
+        } catch (err) {
+          response.statusCode = 500;
+          console.error(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "GET /admin/completed_exercises_count":
+        try {
+          // Count of unique students who have completed at least one exercise
+          const result = await sqlConnectionTableCreator`
+            SELECT COUNT(DISTINCT e.user_id)::int AS completed_students
+            FROM "student_interactions" si
+            JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+            WHERE si.is_completed = TRUE;
+          `;
+
+          response.body = JSON.stringify({ completed_students: result[0].completed_students });
+        } catch (err) {
+          response.statusCode = 500;
+          console.error(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "GET /admin/active_students_trend":
+        try {
+          const days = parseInt(event.queryStringParameters?.days || "30", 10);
+          // Trend of active students per day based on last_sign_in
+          const trend = await sqlConnectionTableCreator`
+            SELECT u.last_sign_in::date AS day, COUNT(*)::int AS count
+            FROM "users" u
+            WHERE u.roles @> ARRAY['student']::varchar[]
+              AND u.last_sign_in IS NOT NULL
+              AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+            GROUP BY day
+            ORDER BY day;
+          `;
+          response.body = JSON.stringify(trend);
+        } catch (err) {
+          response.statusCode = 500;
+          console.error(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "GET /admin/completed_exercises_trend":
+        try {
+          const days = parseInt(event.queryStringParameters?.days || "30", 10);
+          // Trend: unique students with a completed exercise per day (using last_accessed as proxy timestamp)
+          const trend = await sqlConnectionTableCreator`
+            SELECT si.last_accessed::date AS day, COUNT(DISTINCT e.user_id)::int AS count
+            FROM "student_interactions" si
+            JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+            WHERE si.is_completed = TRUE
+              AND si.last_accessed IS NOT NULL
+              AND si.last_accessed >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+            GROUP BY day
+            ORDER BY day;
+          `;
+          response.body = JSON.stringify(trend);
+        } catch (err) {
+          response.statusCode = 500;
+          console.error(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
       case "GET /admin/instructors":
         if (
           event.queryStringParameters != null &&

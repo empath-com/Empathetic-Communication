@@ -3,6 +3,7 @@ import AdminSidebar from "./AdminSidebar";
 import AdminHeader from "../../components/AdminHeader";
 import AdminInstructors from "./AdminInstructors";
 import AdminSimulationGroups from "./AdminSimulationGroups";
+import AdminStatistics from "./AdminStatistics";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
 import AISettings from "./AISettings";
 import PageContainer from "../Container";
@@ -43,6 +44,8 @@ export const AdminHomepage = () => {
         );
       case "AdminSimulationGroups":
         return <AdminSimulationGroups setSelectedGroup={setSelectedGroup} />;
+      case "AdminStatistics":
+        return <AdminStatistics />;
       case "AdminCreateSimulationGroup":
         return (
           <AdminCreateSimulationGroup
