@@ -825,23 +825,58 @@ exports.handler = async (event) => {
             event.queryStringParameters;
 
           try {
-            // Step 1: Retrieve the user ID using the student_email
-            const userResult = await sqlConnection`
+            // Step 1: Retrieve or create the user ID using the student_email
+            let userResult = await sqlConnection`
                   SELECT user_id
                   FROM "users"
                   WHERE user_email = ${student_email}
                   LIMIT 1;
               `;
 
+            let user_id;
+            
             if (userResult.length === 0) {
-              response.statusCode = 404;
-              response.body = JSON.stringify({
-                error: "Student not found.",
-              });
-              break;
+              // User exists in Cognito but not in database - create them
+              console.log(`Creating database record for authenticated user: ${student_email}`);
+              
+              try {
+                // Get user details from Cognito using the authenticated user's email
+                const cognitoUserCommand = new AdminGetUserCommand({
+                  UserPoolId: USER_POOL,
+                  Username: cognito_id,
+                });
+                const cognitoUser = await client.send(cognitoUserCommand);
+                
+                // Extract user attributes
+                const getAttr = (name) => {
+                  const attr = cognitoUser.UserAttributes?.find(a => a.Name === name);
+                  return attr ? attr.Value : null;
+                };
+                
+                const given_name = getAttr('given_name') || 'Student';
+                const family_name = getAttr('family_name') || 'User';
+                const username = getAttr('preferred_username') || student_email.split('@')[0];
+                
+                // Create the user in the database
+                const newUserResult = await sqlConnection`
+                  INSERT INTO "users" (user_email, username, first_name, last_name, time_account_created, roles, last_sign_in)
+                  VALUES (${student_email}, ${username}, ${given_name}, ${family_name}, CURRENT_TIMESTAMP, ARRAY['student'], CURRENT_TIMESTAMP)
+                  RETURNING user_id;
+                `;
+                
+                user_id = newUserResult[0].user_id;
+                console.log(`Created database user with ID: ${user_id}`);
+              } catch (createErr) {
+                console.error("Error creating user in database:", createErr);
+                response.statusCode = 500;
+                response.body = JSON.stringify({
+                  error: "Failed to create user record. Please try again or contact support.",
+                });
+                break;
+              }
+            } else {
+              user_id = userResult[0].user_id;
             }
-
-            const user_id = userResult[0].user_id;
 
             // Step 2: Retrieve the simulation_group_id using the access code
             const groupResult = await sqlConnection`
