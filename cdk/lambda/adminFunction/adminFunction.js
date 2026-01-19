@@ -67,9 +67,11 @@ exports.handler = async (event) => {
     switch (pathData) {
       case "GET /admin/active_students_count":
         try {
+          console.log('[active_students_count] Request received');
           const qs = event.queryStringParameters || {};
           const days = qs.days ? parseInt(qs.days, 10) : null; // optional days filter
           const groupId = qs.simulation_group_id || null; // optional group filter
+          console.log(`[active_students_count] Params - days: ${days}, groupId: ${groupId}`);
 
           // Build base query with optional JOIN when scoping to a group
           if (groupId) {
@@ -93,17 +95,20 @@ exports.handler = async (event) => {
             `;
             response.body = JSON.stringify({ active_students: result[0].active_students });
           }
+          console.log('[active_students_count] Success');
         } catch (err) {
           response.statusCode = 500;
-          console.error(err);
-          response.body = JSON.stringify({ error: "Internal server error" });
+          console.error('[active_students_count] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
         }
         break;
       case "GET /admin/completed_exercises_count":
         try {
+          console.log('[completed_exercises_count] Request received');
           const qs = event.queryStringParameters || {};
           const days = qs.days ? parseInt(qs.days, 10) : null;
           const groupId = qs.simulation_group_id || null;
+          console.log(`[completed_exercises_count] Params - days: ${days}, groupId: ${groupId}`);
 
           const result = await sqlConnectionTableCreator`
             SELECT COUNT(DISTINCT e.user_id)::int AS completed_students
@@ -115,17 +120,20 @@ exports.handler = async (event) => {
           `;
 
           response.body = JSON.stringify({ completed_students: result[0].completed_students });
+          console.log('[completed_exercises_count] Success');
         } catch (err) {
           response.statusCode = 500;
-          console.error(err);
-          response.body = JSON.stringify({ error: "Internal server error" });
+          console.error('[completed_exercises_count] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
         }
         break;
       case "GET /admin/active_students_trend":
         try {
+          console.log('[active_students_trend] Request received');
           const qs = event.queryStringParameters || {};
           const days = parseInt(qs.days || "30", 10);
           const groupId = qs.simulation_group_id || null;
+          console.log(`[active_students_trend] Params - days: ${days}, groupId: ${groupId}`);
 
           if (groupId) {
             const trend = await sqlConnectionTableCreator`
@@ -152,17 +160,22 @@ exports.handler = async (event) => {
             `;
             response.body = JSON.stringify(trend);
           }
+
+          response.body = JSON.stringify(trend);
+          console.log('[active_students_trend] Success');
         } catch (err) {
           response.statusCode = 500;
-          console.error(err);
-          response.body = JSON.stringify({ error: "Internal server error" });
+          console.error('[active_students_trend] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
         }
         break;
       case "GET /admin/completed_exercises_trend":
         try {
+          console.log('[completed_exercises_trend] Request received');
           const qs = event.queryStringParameters || {};
           const days = parseInt(qs.days || "30", 10);
           const groupId = qs.simulation_group_id || null;
+          console.log(`[completed_exercises_trend] Params - days: ${days}, groupId: ${groupId}`);
 
           const trend = await sqlConnectionTableCreator`
             SELECT si.last_accessed::date AS day, COUNT(DISTINCT e.user_id)::int AS count
@@ -176,10 +189,11 @@ exports.handler = async (event) => {
             ORDER BY day;
           `;
           response.body = JSON.stringify(trend);
+          console.log('[completed_exercises_trend] Success');
         } catch (err) {
           response.statusCode = 500;
-          console.error(err);
-          response.body = JSON.stringify({ error: "Internal server error" });
+          console.error('[completed_exercises_trend] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
         }
         break;
       case "GET /admin/instructors":
@@ -988,14 +1002,16 @@ exports.handler = async (event) => {
         }
         break;
       default:
-        throw new Error(`Unsupported route: "${pathData}"`);
+        console.error(`Unsupported route: "${pathData}"`);
+        response.statusCode = 404;
+        response.body = JSON.stringify({ error: `Unsupported route: "${pathData}"` });
     }
   } catch (error) {
+    console.error('[Main catch block] Error:', error);
     response.statusCode = 400;
-    console.log(error);
-    response.body = JSON.stringify(error.message);
+    response.body = JSON.stringify({ error: error.message });
   }
-  console.log(response);
+  console.log('[Response]', response);
   return response;
 };
 
