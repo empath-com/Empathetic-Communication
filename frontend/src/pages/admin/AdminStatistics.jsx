@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, Typography, Box } from "@mui/material";
+import { Card, CardContent, Typography, Box, Stack, FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 import { fetchAuthSession } from "aws-amplify/auth";
 
 const Sparkline = ({ data = [], width = 220, height = 48, stroke = "#10b981" }) => {
@@ -61,84 +61,94 @@ const AdminStatistics = () => {
   const [completedTrend, setCompletedTrend] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [groupId, setGroupId] = useState(""); // empty string means All groups
+  const [days, setDays] = useState(30);
+
+  const normalizeTrend = (rows, windowDays) => {
+    // rows: [{ day: 'YYYY-MM-DD', count: number }, ...]
+    if (!Array.isArray(rows) || rows.length === 0) return Array(windowDays).fill(0);
+    const map = new Map(rows.map(r => [String(r.day), r.count]));
+    const out = [];
+    const today = new Date();
+    // build from oldest to newest over the window
+    for (let i = windowDays - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const s = d.toISOString().slice(0, 10);
+      out.push(map.get(s) || 0);
+    }
+    return out;
+  };
+
+  const fetchGroups = async (token) => {
+    const res = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/simulation_groups`, {
+      method: "GET",
+      headers: { Authorization: token, "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || res.statusText);
+    setGroups(Array.isArray(data) ? data.map(g => ({ id: g.simulation_group_id, name: g.group_name })) : []);
+  };
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+
+      // Fetch groups once (if empty)
+      if (groups.length === 0) {
+        try { await fetchGroups(token); } catch (e) { /* non-blocking */ }
+      }
+
+      const params = new URLSearchParams();
+      if (days) params.set("days", String(days));
+      if (groupId) params.set("simulation_group_id", groupId);
+
+      // KPIs
+      const resActive = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/active_students_count?${params.toString()}`, {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+      });
+      const dataActive = await resActive.json();
+      if (!resActive.ok) throw new Error(dataActive?.error || resActive.statusText);
+      setActiveStudents(dataActive.active_students ?? 0);
+
+      const resCompleted = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_count?${params.toString()}`, {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+      });
+      const dataCompleted = await resCompleted.json();
+      if (!resCompleted.ok) throw new Error(dataCompleted?.error || resCompleted.statusText);
+      setCompletedExercises(dataCompleted.completed_students ?? 0);
+
+      // Trends
+      const resActiveTrend = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/active_students_trend?${params.toString()}`, {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+      });
+      const trendActiveRows = await resActiveTrend.json();
+      setActiveTrend(normalizeTrend(trendActiveRows, days));
+
+      const resCompletedTrend = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_trend?${params.toString()}`, {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+      });
+      const trendCompletedRows = await resCompletedTrend.json();
+      setCompletedTrend(normalizeTrend(trendCompletedRows, days));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-
-        const res = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/active_students_count`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || res.statusText);
-        }
-        setActiveStudents(data.active_students ?? 0);
-
-        // Fetch completed exercises KPI
-        const resCompleted = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_count`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const dataCompleted = await resCompleted.json();
-        if (!resCompleted.ok) {
-          throw new Error(dataCompleted?.error || resCompleted.statusText);
-        }
-        // using unique student count who completed at least one exercise
-        setCompletedExercises(dataCompleted.completed_students ?? 0);
-
-        // Fetch trends (last 30 days)
-        const resActiveTrend = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/active_students_trend?days=30`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const trendActive = await resActiveTrend.json();
-        // Map to daily counts array in order
-        setActiveTrend(Array.isArray(trendActive) ? trendActive.map((d) => d.count) : []);
-
-        const resCompletedTrend = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_trend?days=30`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const trendCompleted = await resCompletedTrend.json();
-        setCompletedTrend(Array.isArray(trendCompleted) ? trendCompleted.map((d) => d.count) : []);
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, days]);
 
   return (
     <Box sx={{ ml: { xs: 0, md: 28 }, mt: 12, p: 3 }}>
@@ -146,29 +156,49 @@ const AdminStatistics = () => {
         Statistics
       </Typography>
       <Typography variant="body2" sx={{ mb: 3, color: "#6b7280" }}>
-        Overview of key metrics. More KPIs and graphs coming soon.
+        Overview of key metrics. Use filters to refine.
       </Typography>
 
-      <Box
-        sx={{
-          value={loading ? "…" : error ? "—" : activeStudents}
-          trend={loading ? [] : activeTrend}
-          gridTemplateColumns: {
-            xs: "1fr",
-          title="Students Completed ≥1 Exercise"
-          value={loading ? "…" : error ? "—" : completedExercises}
-          trend={loading ? [] : completedTrend}
-          },
-          gap: 2,
-        }}
-      >
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel id="group-select-label">Group</InputLabel>
+          <Select
+            labelId="group-select-label"
+            value={groupId}
+            label="Group"
+            onChange={(e) => setGroupId(e.target.value)}
+          >
+            <MenuItem value="">All groups</MenuItem>
+            {groups.map((g) => (
+              <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel id="days-select-label">Range</InputLabel>
+          <Select
+            labelId="days-select-label"
+            value={days}
+            label="Range"
+            onChange={(e) => setDays(Number(e.target.value))}
+          >
+            <MenuItem value={7}>Last 7 days</MenuItem>
+            <MenuItem value={30}>Last 30 days</MenuItem>
+            <MenuItem value={90}>Last 90 days</MenuItem>
+          </Select>
+        </FormControl>
+      </Stack>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2 }}>
         <KPICard
           title="Active Students"
           value={loading ? "…" : error ? "—" : activeStudents}
+          trend={loading ? [] : activeTrend}
         />
         <KPICard
-          title="Completed Exercises"
+          title="Students Completed ≥1 Exercise"
           value={loading ? "…" : error ? "—" : completedExercises}
+          trend={loading ? [] : completedTrend}
         />
       </Box>
 

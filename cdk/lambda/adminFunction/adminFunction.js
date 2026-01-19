@@ -67,15 +67,32 @@ exports.handler = async (event) => {
     switch (pathData) {
       case "GET /admin/active_students_count":
         try {
-          // Count users with 'student' role and a non-null last_sign_in
-          const result = await sqlConnectionTableCreator`
-            SELECT COUNT(*)::int AS active_students
-            FROM "users"
-            WHERE roles @> ARRAY['student']::varchar[]
-              AND last_sign_in IS NOT NULL;
-          `;
+          const qs = event.queryStringParameters || {};
+          const days = qs.days ? parseInt(qs.days, 10) : null; // optional days filter
+          const groupId = qs.simulation_group_id || null; // optional group filter
 
-          response.body = JSON.stringify({ active_students: result[0].active_students });
+          // Build base query with optional JOIN when scoping to a group
+          if (groupId) {
+            const result = await sqlConnectionTableCreator`
+              SELECT COUNT(DISTINCT u.user_id)::int AS active_students
+              FROM "users" u
+              JOIN "enrolments" e ON e.user_id = u.user_id
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                ${days ? sqlConnectionTableCreator`AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``}
+                AND e.simulation_group_id = ${groupId};
+            `;
+            response.body = JSON.stringify({ active_students: result[0].active_students });
+          } else {
+            const result = await sqlConnectionTableCreator`
+              SELECT COUNT(*)::int AS active_students
+              FROM "users" u
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                ${days ? sqlConnectionTableCreator`AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``};
+            `;
+            response.body = JSON.stringify({ active_students: result[0].active_students });
+          }
         } catch (err) {
           response.statusCode = 500;
           console.error(err);
@@ -84,12 +101,17 @@ exports.handler = async (event) => {
         break;
       case "GET /admin/completed_exercises_count":
         try {
-          // Count of unique students who have completed at least one exercise
+          const qs = event.queryStringParameters || {};
+          const days = qs.days ? parseInt(qs.days, 10) : null;
+          const groupId = qs.simulation_group_id || null;
+
           const result = await sqlConnectionTableCreator`
             SELECT COUNT(DISTINCT e.user_id)::int AS completed_students
             FROM "student_interactions" si
             JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
-            WHERE si.is_completed = TRUE;
+            WHERE si.is_completed = TRUE
+              ${days ? sqlConnectionTableCreator`AND si.last_accessed IS NOT NULL AND si.last_accessed >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``}
+              ${groupId ? sqlConnectionTableCreator`AND e.simulation_group_id = ${groupId}` : sqlConnectionTableCreator``};
           `;
 
           response.body = JSON.stringify({ completed_students: result[0].completed_students });
@@ -101,18 +123,35 @@ exports.handler = async (event) => {
         break;
       case "GET /admin/active_students_trend":
         try {
-          const days = parseInt(event.queryStringParameters?.days || "30", 10);
-          // Trend of active students per day based on last_sign_in
-          const trend = await sqlConnectionTableCreator`
-            SELECT u.last_sign_in::date AS day, COUNT(*)::int AS count
-            FROM "users" u
-            WHERE u.roles @> ARRAY['student']::varchar[]
-              AND u.last_sign_in IS NOT NULL
-              AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
-            GROUP BY day
-            ORDER BY day;
-          `;
-          response.body = JSON.stringify(trend);
+          const qs = event.queryStringParameters || {};
+          const days = parseInt(qs.days || "30", 10);
+          const groupId = qs.simulation_group_id || null;
+
+          if (groupId) {
+            const trend = await sqlConnectionTableCreator`
+              SELECT u.last_sign_in::date AS day, COUNT(DISTINCT u.user_id)::int AS count
+              FROM "users" u
+              JOIN "enrolments" e ON e.user_id = u.user_id
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+                AND e.simulation_group_id = ${groupId}
+              GROUP BY day
+              ORDER BY day;
+            `;
+            response.body = JSON.stringify(trend);
+          } else {
+            const trend = await sqlConnectionTableCreator`
+              SELECT u.last_sign_in::date AS day, COUNT(*)::int AS count
+              FROM "users" u
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+              GROUP BY day
+              ORDER BY day;
+            `;
+            response.body = JSON.stringify(trend);
+          }
         } catch (err) {
           response.statusCode = 500;
           console.error(err);
@@ -121,8 +160,10 @@ exports.handler = async (event) => {
         break;
       case "GET /admin/completed_exercises_trend":
         try {
-          const days = parseInt(event.queryStringParameters?.days || "30", 10);
-          // Trend: unique students with a completed exercise per day (using last_accessed as proxy timestamp)
+          const qs = event.queryStringParameters || {};
+          const days = parseInt(qs.days || "30", 10);
+          const groupId = qs.simulation_group_id || null;
+
           const trend = await sqlConnectionTableCreator`
             SELECT si.last_accessed::date AS day, COUNT(DISTINCT e.user_id)::int AS count
             FROM "student_interactions" si
@@ -130,6 +171,7 @@ exports.handler = async (event) => {
             WHERE si.is_completed = TRUE
               AND si.last_accessed IS NOT NULL
               AND si.last_accessed >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+              ${groupId ? sqlConnectionTableCreator`AND e.simulation_group_id = ${groupId}` : sqlConnectionTableCreator``}
             GROUP BY day
             ORDER BY day;
           `;
