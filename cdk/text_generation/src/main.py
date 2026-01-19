@@ -219,6 +219,18 @@ def get_patient_details(patient_id):
 def handler(event, context):
     # Version: 2026-01-12 - Add timeout protection and connection pooling
     # Version: 2026-01-13 - Offload long work to async worker for AppSync streaming
+    # Version: 2026-01-13 - Keep Lambda warm with provisioned concurrency + EventBridge warm-up
+
+    # Fast-path: detect warm-up request and return early (no processing needed)
+    if event.get("isWarmupRequest"):
+        logger.info("🔥 Warm-up request received - returning immediately")
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+            },
+            "body": json.dumps({"message": "Lambda warmed up"}),
+        }
 
     # Fast-path: fire-and-forget a background invocation so API Gateway can return immediately
     if not event.get("async_worker"):

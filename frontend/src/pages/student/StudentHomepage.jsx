@@ -105,17 +105,36 @@ export const StudentHomepage = ({ setGroup }) => {
         fetchGroups();
         handleClose();
       } else {
-        console.error("Failed to fetch groups:", response.statusText);
-        toast.error("Failed to Join Group", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
+        try {
+          const errorData = await response.json();
+          console.error("Failed to join group:", {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData.error,
+          });
+          toast.error(`Failed to Join Group: ${errorData.error}`, {
+            position: "top-center",
+            autoClose: 1000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+            progress: undefined,
+            theme: "colored",
+          });
+        } catch (e) {
+          console.error("Failed to fetch groups:", response.statusText);
+          toast.error("Failed to Join Group", {
+            position: "top-center",
+            autoClose: 1000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+            progress: undefined,
+            theme: "colored",
+          });
+        }
       }
     } catch (error) {
       console.error("Error fetching groups:", error);

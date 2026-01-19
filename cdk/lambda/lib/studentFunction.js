@@ -898,9 +898,16 @@ exports.handler = async (event) => {
                 "Student enrolled and patient records created successfully.",
             });
           } catch (err) {
+            console.error("Error during student enrollment:", {
+              message: err.message,
+              stack: err.stack,
+              student_email,
+              group_access_code,
+            });
             response.statusCode = 500;
-            console.error(err);
-            response.body = JSON.stringify({ error: "Internal server error" });
+            response.body = JSON.stringify({ 
+              error: "Internal server error during enrollment. Please check logs for details." 
+            });
           }
         } else {
           response.statusCode = 400;
