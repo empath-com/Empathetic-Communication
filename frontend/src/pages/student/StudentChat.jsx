@@ -1236,6 +1236,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   const getMessages = async () => {
     try {
+      if (!session?.session_id) {
+        console.warn("Cannot fetch messages: session or session_id is undefined");
+        return;
+      }
+
+      if (!import.meta.env.VITE_APPSYNC_ENDPOINT) {
+        console.error("VITE_APPSYNC_ENDPOINT is not configured");
+        return;
+      }
+
       // Use AppSync to fetch messages for this session
       const query = `
         query listMessagesBySession($sessionId: String!) {
