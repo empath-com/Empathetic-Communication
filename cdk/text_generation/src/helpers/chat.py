@@ -582,33 +582,15 @@ def get_response(
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
-    empathy_evaluation = None
-    empathy_feedback = ""
+    # Save the student message without triggering empathy evaluation
     is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
-    should_evaluate_non_streaming = len(query.strip()) > 0 and not is_greeting
-    
-    if should_evaluate_non_streaming:
-        try:
-            logger.info("🧠 NON-STREAMING: Starting empathy evaluation")
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0"
-            }
-            empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
-            save_message_to_db(session_id, True, query, empathy_evaluation)
-        except Exception as e:
-            logger.error(f"Empathy evaluation failed: {e}")
-            save_message_to_db(session_id, True, query, None)
-    else:
-        logger.info(f"🔍 NON-STREAMING: Skipping empathy evaluation - Query: '{query}'")
+    try:
         save_message_to_db(session_id, True, query, None)
+        logger.info("🧠 NON-STREAMING: Empathy evaluation disabled; message saved")
+    except Exception as e:
+        logger.error(f"Failed to save student message: {e}")
     
-    if empathy_evaluation:
-        empathy_feedback = build_empathy_feedback(empathy_evaluation)
-    else:
-        empathy_feedback = ""
+    empathy_feedback = ""
     
     completion_string = """
                 Once I, the pharmacist, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -692,8 +674,6 @@ def get_response(
         return {"llm_output": response, "session_name": session_name, "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion, empathy_feedback)
-    if empathy_evaluation:
-        result["empathy_evaluation"] = empathy_evaluation
     
     # Generate proper session name
     from datetime import datetime
@@ -730,30 +710,7 @@ def generate_streaming_response(
     
     logger.info(f"🚀 STREAMING FUNCTION STARTED with query: '{query}' - DEPLOYMENT TEST v2")
 
-    def empathy_async():
-        try:
-            logger.info(f"🧠 ASYNC EMPATHY THREAD STARTED for query: {query[:50]}...")
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0"
-            }
-            logger.info(f"🧠 CALLING evaluate_empathy function...")
-            evaluation = evaluate_empathy(query, patient_context, nova_client)
-            logger.info(f"🧠 ASYNC EMPATHY EVALUATION RESULT: {evaluation is not None}")
-            
-            save_message_to_db(session_id, True, query, evaluation)
-            
-            if evaluation:
-                logger.info("🧠 Publishing empathy data to AppSync")
-                empathy_feedback = build_empathy_feedback(evaluation)
-                publish_to_appsync(session_id, {"type": "empathy", "content": empathy_feedback})
-            else:
-                logger.warning("🧠 No empathy evaluation to publish")
-        except Exception as e:
-            logger.exception("Async empathy publish failed")
-            save_message_to_db(session_id, True, query, None)
+    # Empathy evaluation disabled for streaming; only save the user message
 
     try:
         logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")
@@ -761,14 +718,9 @@ def generate_streaming_response(
         should_evaluate = len(query.strip()) > 0 and not is_greeting
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
         
-        if should_evaluate:
-            logger.info("✅ EMPATHY EVALUATION WILL START")
-            empathy_thread = Thread(target=empathy_async)
-            empathy_thread.start()
-            logger.info("✅ EMPATHY THREAD STARTED")
-        else:
-            logger.info(f"❌ EMPATHY EVALUATION SKIPPED - Query: '{query}'")
-            save_message_to_db(session_id, True, query, None)
+        # Always skip empathy evaluation during streaming
+        logger.info(f"❌ STREAMING: Empathy evaluation disabled - Query: '{query}'")
+        save_message_to_db(session_id, True, query, None)
 
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 

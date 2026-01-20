@@ -8,7 +8,16 @@ from langchain_aws import BedrockEmbeddings
 from botocore.exceptions import ConnectTimeoutError, ReadTimeoutError
 
 from helpers.vectorstore import get_vectorstore_retriever
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name
+from helpers.chat import (
+    get_bedrock_llm,
+    get_initial_student_query,
+    get_student_query,
+    create_dynamodb_history_table,
+    get_response,
+    update_session_name,
+    evaluate_empathy,
+    build_empathy_feedback,
+)
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -152,6 +161,25 @@ def close_db_connection(conn):
             pass
         return_db_connection(conn)
 
+def get_last_student_message(session_id: str):
+    """Fetch the latest student message for a given session."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT message_content FROM "messages" WHERE session_id = %s AND student_sent = TRUE ORDER BY time_sent DESC LIMIT 1',
+            (session_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error fetching last student message: {e}")
+        return None
+    finally:
+        close_db_connection(conn)
+
 def get_system_prompt(simulation_group_id):
     connection = None
     try:
@@ -231,6 +259,130 @@ def handler(event, context):
             },
             "body": json.dumps({"message": "Lambda warmed up"}),
         }
+
+    # Route empathy evaluation requests to a dedicated handler
+    try:
+        request_path = event.get("path") or event.get("requestContext", {}).get("resourcePath") or ""
+    except Exception:
+        request_path = ""
+
+    if request_path.endswith("/student/empathy_evaluation"):
+        logger.info("🧠 Empathy evaluation endpoint called")
+        try:
+            initialize_constants()
+            query_params = event.get("queryStringParameters", {})
+            session_id = query_params.get("session_id", "")
+            patient_id = query_params.get("patient_id", "")
+            simulation_group_id = query_params.get("simulation_group_id", "")
+
+            body = {} if event.get("body") is None else json.loads(event.get("body"))
+            explicit_message = body.get("message_content") if isinstance(body, dict) else None
+
+            if not session_id or not patient_id or not simulation_group_id:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id"),
+                }
+
+            patient_name, patient_age, patient_prompt, _ = get_patient_details(patient_id)
+            if patient_name is None:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps("Error fetching patient details"),
+                }
+
+            message_to_evaluate = explicit_message or get_last_student_message(session_id)
+            if not message_to_evaluate:
+                return {
+                    "statusCode": 404,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({"error": "No student message found to evaluate"}),
+                }
+
+            deployment_region = os.environ.get("AWS_REGION", "us-east-1")
+            nova_client = {
+                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
+                "model_id": "amazon.nova-pro-v1:0",
+            }
+
+            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            evaluation = evaluate_empathy(message_to_evaluate, patient_context, nova_client)
+
+            # Persist evaluation with the message
+            from helpers.chat import save_message_to_db
+            try:
+                save_message_to_db(session_id, True, message_to_evaluate, evaluation)
+            except Exception as e:
+                logger.warning(f"Failed to save evaluation to DB: {e}")
+
+            summary_payload = {}
+            if evaluation:
+                feedback = evaluation.get("feedback", {}) if isinstance(evaluation.get("feedback"), dict) else {}
+                judge_reasoning = evaluation.get("judge_reasoning", {}) if isinstance(evaluation.get("judge_reasoning"), dict) else {}
+                summary_payload = {
+                    "overall_score": evaluation.get("empathy_score", 0),
+                    "overall_level": "",
+                    "total_interactions": 1,
+                    "empathy_interactions": 1,
+                    "avg_perspective_taking": evaluation.get("perspective_taking", 0),
+                    "avg_emotional_resonance": evaluation.get("emotional_resonance", 0),
+                    "avg_acknowledgment": evaluation.get("acknowledgment", 0),
+                    "avg_language_communication": evaluation.get("language_communication", 0),
+                    "avg_cognitive_empathy": evaluation.get("cognitive_empathy", 0),
+                    "avg_affective_empathy": evaluation.get("affective_empathy", 0),
+                    "realism_assessment": "Your response is realistic" if evaluation.get("realism_flag") != "unrealistic" else "Your response is unrealistic",
+                    "realism_explanation": judge_reasoning.get("realism_justification", ""),
+                    "coach_assessment": judge_reasoning.get("overall_assessment", ""),
+                    "strengths": feedback.get("strengths", []) or [],
+                    "areas_for_improvement": feedback.get("areas_for_improvement", []) or [],
+                    "recommendations": feedback.get("improvement_suggestions", []) or [],
+                    "recommended_approach": feedback.get("alternative_phrasing", "") or "",
+                }
+
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({
+                    "empathy_evaluation": evaluation,
+                    "summary": summary_payload,
+                    "empathy_feedback_markdown": build_empathy_feedback(evaluation) if evaluation else "",
+                }),
+            }
+        except Exception as e:
+            logger.error(f"❌ Empathy evaluation endpoint error: {e}")
+            logger.exception("Full traceback:")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps("Internal server error"),
+            }
 
     # Fast-path: fire-and-forget a background invocation for non-streaming requests
     # For streaming requests, process immediately in the first invocation

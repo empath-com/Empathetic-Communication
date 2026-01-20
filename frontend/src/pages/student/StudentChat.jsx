@@ -376,11 +376,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         playAudio(data.data);
       };
 
-      const handleEmpathyFeedback = (data) => {
-        if (data.content) {
-          setRealtimeEmpathy((prev) => [...prev, { content: data.content, timestamp: Date.now() }]);
-        }
-      };
 
       const handleDiagnosisComplete = (data) => {
         alert("Session completed successfully!");
@@ -388,12 +383,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       // Clean up existing listeners
       socket.off("audio-chunk");
-      socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
 
       // Add optimized listeners
       socket.on("audio-chunk", handleAudio);
-      socket.on("empathy-feedback", handleEmpathyFeedback);
+      // Empathy feedback disabled: only fetch on demand via HTTP endpoint
       socket.on("diagnosis-complete", handleDiagnosisComplete);
     };
     setupSocketListeners();
@@ -516,41 +510,29 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     setIsEmpathyLoading(true);
     try {
       const authSession = await fetchAuthSession();
-      const { email } = await fetchUserAttributes();
       const token = authSession.tokens.idToken;
 
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/empathy_summary?session_id=${encodeURIComponent(
-          session.session_id
-        )}&email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const url = `${import.meta.env.VITE_API_ENDPOINT}student/empathy_evaluation?simulation_group_id=${encodeURIComponent(group.simulation_group_id)}&session_id=${encodeURIComponent(session.session_id)}&patient_id=${encodeURIComponent(patient.patient_id)}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({})
+      });
 
       if (response.ok) {
         const data = await response.json();
-        console.log("📊 Empathy API response:", data);
-        console.log("📊 Strengths from API:", data.strengths);
-        console.log("📊 Areas from API:", data.areas_for_improvement);
-        console.log("📊 Recommendations from API:", data.recommendations);
-        setEmpathySummary(data);
+        console.log("📊 Empathy evaluation response:", data);
+        const summary = data.summary || null;
+        setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);
       } else {
-        console.error("Failed to fetch empathy summary:", response.statusText);
+        console.error("Failed to evaluate empathy:", response.statusText);
       }
     } catch (error) {
-      console.error("Error fetching empathy summary:", error);
+      console.error("Error evaluating empathy:", error);
     } finally {
       setIsEmpathyLoading(false);
     }

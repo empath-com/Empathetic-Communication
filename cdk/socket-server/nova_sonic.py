@@ -368,31 +368,8 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
             asyncio.create_task(self._save_user_message_async(self._current_user_input))
             
-            # CRITICAL: Direct empathy evaluation for voice input
-            print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
-            patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            
-            # CRITICAL FIX: Capture the user input BEFORE creating async task to prevent race condition
-            captured_user_input = self._current_user_input
-            print(f"🔍 CRITICAL FIX: Captured user input: '{captured_user_input}'", flush=True)
-            
-            # Create empathy evaluation task with proper error handling and resource limiting
-            async def safe_empathy_eval():
-                try:
-                    print(f"🧠 VOICE EMPATHY: Starting evaluation task", flush=True)
-                    # Use the queue to limit concurrent evaluations
-                    result = await queue_empathy_evaluation(
-                        self._evaluate_empathy(captured_user_input, patient_context)
-                    )
-                    if result:
-                        print(f"🧠 VOICE EMPATHY: Evaluation completed successfully", flush=True)
-                    else:
-                        print(f"🧠 VOICE EMPATHY: Evaluation returned None", flush=True)
-                except Exception as e:
-                    print(f"🧠 VOICE EMPATHY: Evaluation failed with error: {e}", flush=True)
-                    logger.error(f"Voice empathy evaluation error: {e}")
-            
-            asyncio.create_task(safe_empathy_eval())
+            # Empathy evaluation disabled on audio end; message is saved only
+            print(f"🧠 AUDIO END: Empathy evaluation disabled; not evaluating automatically", flush=True)
             
             self._current_user_input = ""  # Reset for next input
         else:
@@ -532,16 +509,8 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     
                     logger.info(f"🧠 USER MESSAGE - Checking empathy: {text[:30]}...")
                     
-                    # Use the resource-limited queue for empathy evaluation
-                    patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-                    
-                    async def queue_empathy_task():
-                        result = await queue_empathy_evaluation(
-                            self._evaluate_empathy(text, patient_context)
-                        )
-                        return result
-                    
-                    asyncio.create_task(queue_empathy_task())
+                    # Empathy evaluation disabled on every user message
+                    logger.info("🧠 USER MESSAGE - Empathy evaluation disabled")
                     
                     # Check for diagnosis if LLM completion is enabled
                     if self.llm_completion:
