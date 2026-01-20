@@ -334,6 +334,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   const fetchVoiceID = async () => {
     try {
+      if (!patient?.patient_id) {
+        console.warn("Patient ID not available, defaulting to tiffany");
+        return "tiffany";
+      }
+      
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
