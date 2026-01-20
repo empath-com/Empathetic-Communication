@@ -169,35 +169,52 @@ export class VpcStack extends Stack {
       }
 
       // Add interface endpoints for private subnets
+      // Note: Using privateSubnetIds directly since we're working with an existing VPC
+      const subnetSelection = { subnets: this.vpc.privateSubnets };
+
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
 
       this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
 
       this.vpc.addInterfaceEndpoint("RDS Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
 
       this.vpc.addInterfaceEndpoint("Glue Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.GLUE,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
       
       // Add API Gateway VPC endpoint
       this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        subnets: subnetSelection,
         privateDnsEnabled: true,
+      });
+
+      // Add Cognito Identity Provider VPC endpoint (required for JWT verification)
+      // Using custom service name as COGNITO_IDP is not available in CDK
+      this.vpc.addInterfaceEndpoint("Cognito IDP Endpoint", {
+        service: new ec2.InterfaceVpcEndpointService(`com.amazonaws.${this.region}.cognito-idp`, 443),
+        subnets: subnetSelection,
+        privateDnsEnabled: true, // Enable private DNS for proper resolution
+      });
+
+      // Add DynamoDB VPC endpoint (required for chat history)
+      this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
+        service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+        subnets: [subnetSelection],
       });
 
       this.vpc.addFlowLog(`${id}-vpcFlowLog`);

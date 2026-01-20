@@ -232,8 +232,12 @@ def handler(event, context):
             "body": json.dumps({"message": "Lambda warmed up"}),
         }
 
-    # Fast-path: fire-and-forget a background invocation so API Gateway can return immediately
-    if not event.get("async_worker"):
+    # Fast-path: fire-and-forget a background invocation for non-streaming requests
+    # For streaming requests, process immediately in the first invocation
+    query_params = event.get("queryStringParameters", {})
+    stream_requested = query_params.get("stream", "false").lower() == "true"
+    
+    if not event.get("async_worker") and not stream_requested:
         try:
             lambda_client = boto3.client("lambda")
             async_payload = dict(event)
@@ -265,6 +269,9 @@ def handler(event, context):
                 },
                 "body": json.dumps("Failed to start async processing"),
             }
+    
+    # For streaming requests, continue processing in first invocation
+    logger.info(f"🌊 Streaming request detected, processing synchronously in first invocation")
 
     # 🔴 CRITICAL: Wrap entire handler in try-finally to return connection to pool
     connection_obj = None

@@ -1249,25 +1249,39 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   const getMessages = async () => {
     try {
-      const authSession = await fetchAuthSession();
-      const { email } = await fetchUserAttributes();
-      const token = authSession.tokens.idToken;
+      // Use AppSync to fetch messages for this session
+      const query = `
+        query listMessagesBySession($sessionId: String!) {
+          listMessagesBySession(sessionId: $sessionId) {
+            message_id
+            session_id
+            message_content
+            student_sent
+            time_sent
+          }
+        }
+      `;
+
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/get_messages?session_id=${encodeURIComponent(
-          session.session_id
-        )}`,
+        import.meta.env.VITE_APPSYNC_ENDPOINT,
         {
-          method: "GET",
+          method: "POST",
           headers: {
-            Authorization: token,
             "Content-Type": "application/json",
+            Authorization: (await fetchAuthSession()).tokens.idToken,
           },
+          body: JSON.stringify({
+            query,
+            variables: {
+              sessionId: session.session_id,
+            },
+          }),
         }
       );
+
       if (response.ok) {
-        const data = await response.json();
+        const result = await response.json();
+        const data = result.data?.listMessagesBySession || [];
 
         // Enhanced duplicate detection and removal
         const uniqueMessages = [];
