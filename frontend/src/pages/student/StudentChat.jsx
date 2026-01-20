@@ -1241,8 +1241,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         return;
       }
 
-      if (!import.meta.env.VITE_APPSYNC_ENDPOINT) {
-        console.error("VITE_APPSYNC_ENDPOINT is not configured");
+      if (!import.meta.env.VITE_APPSYNC_GRAPHQL_URL) {
+        console.error("VITE_APPSYNC_GRAPHQL_URL is not configured");
         return;
       }
 
@@ -1260,7 +1260,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       `;
 
       const response = await fetch(
-        import.meta.env.VITE_APPSYNC_ENDPOINT,
+        import.meta.env.VITE_APPSYNC_GRAPHQL_URL,
         {
           method: "POST",
           headers: {
