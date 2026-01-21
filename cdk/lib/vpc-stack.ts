@@ -172,28 +172,50 @@ export class VpcStack extends Stack {
       // Note: Using privateSubnetIds directly since we're working with an existing VPC
       const subnetSelection = { subnets: this.vpc.privateSubnets };
 
+      // Create a security group for VPC endpoints
+      const endpointSecurityGroup = new ec2.SecurityGroup(
+        this,
+        `${id}-EndpointSecurityGroup`,
+        {
+          vpc: this.vpc,
+          description: "Security group for VPC endpoints",
+          allowAllOutbound: false,
+        }
+      );
+
+      // Allow HTTPS traffic (port 443) from the VPC CIDR
+      endpointSecurityGroup.addIngressRule(
+        ec2.Peer.ipv4(this.vpcCidrString),
+        ec2.Port.tcp(443),
+        "Allow HTTPS from VPC"
+      );
+
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
         subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
+        securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
         subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
+        securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("RDS Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.RDS,
         subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
+        securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("Glue Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.GLUE,
         subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
+        securityGroups: [endpointSecurityGroup],
       });
       
       // Add API Gateway VPC endpoint
@@ -201,6 +223,7 @@ export class VpcStack extends Stack {
         service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
         subnets: subnetSelection,
         privateDnsEnabled: true,
+        securityGroups: [endpointSecurityGroup],
       });
 
       // Add Cognito Identity Provider VPC endpoint (required for JWT verification)
@@ -209,6 +232,7 @@ export class VpcStack extends Stack {
         service: new ec2.InterfaceVpcEndpointService(`com.amazonaws.${this.region}.cognito-idp`, 443),
         subnets: subnetSelection,
         privateDnsEnabled: true, // Enable private DNS for proper resolution
+        securityGroups: [endpointSecurityGroup],
       });
 
       // Add DynamoDB VPC endpoint (required for chat history)

@@ -1126,8 +1126,8 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "index.handler",
         code: Code.fromInline(`
           const postgres = require('postgres');
-          const AWS = require('aws-sdk');
-          const secretsmanager = new AWS.SecretsManager();
+          const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+          const smClient = new SecretsManagerClient({});
 
           let pool;
 
@@ -1135,9 +1135,9 @@ export class ApiServiceStack extends cdk.Stack {
             if (pool) return pool;
             
             try {
-              const secret = await secretsmanager.getSecretValue({
+              const secret = await smClient.send(new GetSecretValueCommand({
                 SecretId: '${db.secretPathUser?.secretName}',
-              }).promise();
+              }));
               
               const { username, password } = JSON.parse(secret.SecretString);
               
@@ -1181,6 +1181,8 @@ export class ApiServiceStack extends cdk.Stack {
         },
         vpc: vpcStack.vpc,
         vpcSubnets: { subnets: vpcStack.vpc.privateSubnets },
+        layers: [postgres], // Add the postgres layer
+        role: lambdaRole,
       }
     );
 
