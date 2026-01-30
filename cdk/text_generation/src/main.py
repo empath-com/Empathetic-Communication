@@ -18,6 +18,12 @@ from helpers.chat import (
     evaluate_empathy,
     build_empathy_feedback,
 )
+from helpers.resilience import (
+    retry_with_backoff,
+    bedrock_circuit_breaker,
+    db_circuit_breaker,
+    CircuitBreakerOpenError,
+)
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -133,15 +139,24 @@ def initialize_constants():
     create_dynamodb_history_table(TABLE_NAME)
 
 def get_db_connection():
-    """Get a connection from the pool with context manager support"""
+    """Get a connection from the pool with context manager support and retry logic"""
+    @retry_with_backoff(max_retries=2, base_delay=0.5, max_delay=5.0)
+    def _get_connection():
+        try:
+            pool = get_connection_pool()
+            conn = pool.getconn()
+            logger.info("🔌 TEXT_GEN: Got connection from pool")
+            return conn
+        except Exception as e:
+            logger.error(f"❌ TEXT_GEN: Failed to get connection from pool: {e}")
+            raise
+    
     try:
-        pool = get_connection_pool()
-        conn = pool.getconn()
-        logger.info("🔌 TEXT_GEN: Got connection from pool")
-        return conn
-    except Exception as e:
-        logger.error(f"❌ TEXT_GEN: Failed to get connection from pool: {e}")
+        return db_circuit_breaker.call(_get_connection)
+    except CircuitBreakerOpenError as e:
+        logger.error(f"🔴 TEXT_GEN: Circuit breaker open - database unavailable: {e}")
         raise
+
 
 def return_db_connection(conn):
     """Return connection to the pool"""
@@ -247,18 +262,7 @@ def get_patient_details(patient_id):
 def handler(event, context):
     # Version: 2026-01-12 - Add timeout protection and connection pooling
     # Version: 2026-01-13 - Offload long work to async worker for AppSync streaming
-    # Version: 2026-01-13 - Keep Lambda warm with provisioned concurrency + EventBridge warm-up
-
-    # Fast-path: detect warm-up request and return early (no processing needed)
-    if event.get("isWarmupRequest"):
-        logger.info("🔥 Warm-up request received - returning immediately")
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-            },
-            "body": json.dumps({"message": "Lambda warmed up"}),
-        }
+    # Version: 2026-01-21 - Remove warm-up path; run fully on-demand
 
     # Route empathy evaluation requests to a dedicated handler
     try:
@@ -558,7 +562,28 @@ def handler(event, context):
         
         try:
             logger.info("Creating Bedrock LLM instance.")
-            llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=stream)
+            
+            @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=10.0)
+            def _create_llm():
+                return bedrock_circuit_breaker.call(
+                    get_bedrock_llm,
+                    bedrock_llm_id=BEDROCK_LLM_ID,
+                    streaming=stream
+                )
+            
+            llm = _create_llm()
+        except CircuitBreakerOpenError as e:
+            logger.error(f"🔴 TEXT_GEN: Bedrock circuit breaker open - service unavailable: {e}")
+            return {
+                'statusCode': 503,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Bedrock service temporarily unavailable - please try again later')
+            }
         except (ConnectTimeoutError, ReadTimeoutError) as e:
             logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout: {e}")
             return {
@@ -631,21 +656,38 @@ def handler(event, context):
 
         try:
             logger.info("Generating response from the LLM.")
-            
             logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
-            response = get_response(
-                query=student_query,
-                patient_name=patient_name,
-                llm=llm,
-                history_aware_retriever=history_aware_retriever,
-                table_name=TABLE_NAME,
-                session_id=session_id,
-                system_prompt=system_prompt,
-                patient_age=patient_age,
-                patient_prompt=patient_prompt,
-                llm_completion=llm_completion,
-                stream=stream
-            )
+            
+            @retry_with_backoff(max_retries=1, base_delay=2.0, max_delay=5.0)
+            def _get_response():
+                return bedrock_circuit_breaker.call(
+                    get_response,
+                    query=student_query,
+                    patient_name=patient_name,
+                    llm=llm,
+                    history_aware_retriever=history_aware_retriever,
+                    table_name=TABLE_NAME,
+                    session_id=session_id,
+                    system_prompt=system_prompt,
+                    patient_age=patient_age,
+                    patient_prompt=patient_prompt,
+                    llm_completion=llm_completion,
+                    stream=stream
+                )
+            
+            response = _get_response()
+        except CircuitBreakerOpenError as e:
+            logger.error(f"🔴 TEXT_GEN: Circuit breaker open during response generation: {e}")
+            return {
+                'statusCode': 503,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('LLM service temporarily unavailable - please try again later')
+            }
         except (ConnectTimeoutError, ReadTimeoutError) as e:
             logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout during response generation: {e}")
             return {
@@ -737,181 +779,3 @@ def handler(event, context):
         # 🔴 CRITICAL: Always return connection to the pool, even if error
         if connection_obj:
             close_db_connection(connection_obj)
-
-    query_params = event.get("queryStringParameters", {})
-    simulation_group_id = query_params.get("simulation_group_id", "")
-    session_id = query_params.get("session_id", "")
-    patient_id = query_params.get("patient_id", "")
-    session_name = query_params.get("session_name", "New Chat")
-
-    if not simulation_group_id or not session_id or not patient_id:
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id")
-        }
-
-    system_prompt = get_system_prompt(simulation_group_id)
-    if system_prompt is None:
-        logger.error(f"Error fetching system prompt for simulation_group_id: {simulation_group_id}")
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error fetching system prompt')
-        }
-
-    patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(
-        patient_id)
-    if patient_name is None or patient_age is None or patient_prompt is None or llm_completion is None:
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error fetching patient details')
-        }
-
-    body = {} if event.get("body") is None else json.loads(event.get("body"))
-    question = body.get("message_content", "")
-    
-    logger.info(f"🔍 RAW BODY: {event.get('body')}")
-    logger.info(f"🔍 PARSED BODY: {body}")
-    logger.info(f"🔍 QUESTION: '{question}'")
-
-    if not question:
-        logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
-        student_query = get_initial_student_query(patient_name)
-    else:
-        logger.info(f"Processing student question: {question}")
-        student_query = get_student_query(question)
-        
-    logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
-    
-
-
-    # Check if streaming is requested
-    query_params = event.get("queryStringParameters", {})
-    stream = query_params.get("stream", "false").lower() == "true"
-    
-    try:
-        logger.info("Creating Bedrock LLM instance.")
-        llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=stream)
-    except Exception as e:
-        logger.error(f"Error getting LLM from Bedrock: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error getting LLM from Bedrock')
-        }
-
-    try:
-        logger.info("Retrieving vectorstore config.")
-        db_secret = get_secret(DB_SECRET_NAME)
-        vectorstore_config_dict = {
-            'collection_name': patient_id,
-            'dbname': db_secret["dbname"],
-            'user': db_secret["username"],
-            'password': db_secret["password"],
-            'host': RDS_PROXY_ENDPOINT,
-            'port': db_secret["port"]
-        }
-    except Exception as e:
-        logger.error(f"Error retrieving vectorstore config: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error retrieving vectorstore config')
-        }
-
-    try:
-        logger.info("Creating history-aware retriever.")
-
-        history_aware_retriever = get_vectorstore_retriever(
-            llm=llm,
-            vectorstore_config_dict=vectorstore_config_dict,
-            embeddings=embeddings
-        )
-    except Exception as e:
-        logger.error(f"Error creating history-aware retriever: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error creating history-aware retriever')
-        }
-
-    try:
-        logger.info("Generating response from the LLM.")
-        
-        logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
-        response = get_response(
-            query=student_query,
-            patient_name=patient_name,
-            llm=llm,
-            history_aware_retriever=history_aware_retriever,
-            table_name=TABLE_NAME,
-            session_id=session_id,
-            system_prompt=system_prompt,
-            patient_age=patient_age,
-            patient_prompt=patient_prompt,
-            llm_completion=llm_completion,
-            stream=stream
-        )
-    except Exception as e:
-        logger.error(f"Error getting response: {e}")
-        logger.exception("Full error details:")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps(f'Error getting response: {str(e)}')
-        }
-
-    try:
-        logger.info("Updating session name if this is the first exchange between the LLM and student")
-        potential_session_name = update_session_name(
-            TABLE_NAME, session_id, BEDROCK_LLM_ID, patient_name)
-        if potential_session_name:
-            logger.info("This is the first exchange between the LLM and student. Updating session name.")
-            session_name = potential_session_name
-        else:
-            logger.info("Not the first exchange between the LLM and student. Session name remains the same.")
-    except Exception as e:
-        logger.error(f"Error updating session name: {e}")
-        session_name = "New Chat"
-    
-    finally:
-        # 🔴 CRITICAL: Always return connection to the pool
-        if connection_obj:
-            return_db_connection(connection_obj)

@@ -1225,7 +1225,6 @@ export class ApiServiceStack extends cdk.Stack {
         vpc: vpcStack.vpc, // Pass the VPC
         architecture: lambda.Architecture.X86_64,
         functionName: `${id}-TextGenLambdaDockerFunction`,
-        reservedConcurrentExecutions: 20, // 🔴 CRITICAL: Limit concurrency to prevent DB connection exhaustion
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
@@ -1240,14 +1239,6 @@ export class ApiServiceStack extends cdk.Stack {
         },
       }
     );
-
-    // 🔥 Keep Lambda warm: publish version, then alias with provisioned concurrency
-    const textGenVersion = textGenLambdaDockerFunc.currentVersion;
-    const textGenAlias = new lambda.Alias(this, `${id}-TextGenLambdaLive`, {
-      aliasName: "live",
-      version: textGenVersion,
-      provisionedConcurrentExecutions: 2, // Keep 2 instances warm at all times
-    });
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnTextGenDockerFunc = textGenLambdaDockerFunc.node
@@ -1351,30 +1342,6 @@ export class ApiServiceStack extends cdk.Stack {
           this.appSyncApi.arn + "/*",
           this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream",
         ],
-      })
-    );
-
-    // 🔥 Add EventBridge rule to warm up TextGen Lambda every 5 minutes
-    const textGenWarmupRule = new events.Rule(
-      this,
-      `${id}-TextGenWarmupRule`,
-      {
-        schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
-        description: "Periodically invoke TextGen Lambda to keep it warm",
-      }
-    );
-
-    textGenWarmupRule.addTarget(
-      new targets.LambdaFunction(textGenAlias, {
-        event: events.RuleTargetInput.fromObject({
-          // Warm-up payload - Lambda will detect and skip actual processing
-          isWarmupRequest: true,
-          queryStringParameters: {
-            simulation_group_id: "warmup",
-            session_id: "warmup",
-            patient_id: "warmup",
-          },
-        }),
       })
     );
 

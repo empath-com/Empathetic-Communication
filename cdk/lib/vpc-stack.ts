@@ -179,7 +179,8 @@ export class VpcStack extends Stack {
         {
           vpc: this.vpc,
           description: "Security group for VPC endpoints",
-          allowAllOutbound: false,
+          // Allow egress so interface endpoints can respond; inbound is still scoped below
+          allowAllOutbound: true,
         }
       );
 
@@ -188,6 +189,13 @@ export class VpcStack extends Stack {
         ec2.Peer.ipv4(this.vpcCidrString),
         ec2.Port.tcp(443),
         "Allow HTTPS from VPC"
+      );
+
+      // Explicit egress for HTTPS keeps traffic flowing even if defaults change
+      endpointSecurityGroup.addEgressRule(
+        ec2.Peer.ipv4(this.vpcCidrString),
+        ec2.Port.tcp(443),
+        "Allow HTTPS egress to VPC"
       );
 
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
@@ -238,6 +246,12 @@ export class VpcStack extends Stack {
       // Add DynamoDB VPC endpoint (required for chat history)
       this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
         service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+        subnets: [subnetSelection],
+      });
+
+      // Add S3 gateway endpoint for private-subnet S3 access without NAT
+      this.vpc.addGatewayEndpoint("S3 Endpoint", {
+        service: ec2.GatewayVpcEndpointAwsService.S3,
         subnets: [subnetSelection],
       });
 
