@@ -227,9 +227,7 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
         existing_file = cur.fetchone()
 
         timestamp = datetime.now(timezone.utc)
-        logger.info(f"DEBUG: file_category = '{file_category}'")
         ingestion_status = "processing" if file_category == "documents" else "not processing"
-        logger.info(f"DEBUG: ingestion_status = '{ingestion_status}'")
 
         if existing_file:
             # Update the existing record
