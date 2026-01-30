@@ -11,7 +11,7 @@ exports.handler = async (event) => {
     headers: {
       "Access-Control-Allow-Headers":
         "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
       "Access-Control-Allow-Methods": "*",
     },
     body: "",
@@ -23,6 +23,39 @@ exports.handler = async (event) => {
     sqlConnectionTableCreator = global.sqlConnectionTableCreator;
   }
 
+  // DEBUG: List all tables in the database
+  try {
+    const allTables = await sqlConnectionTableCreator`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `;
+    console.log('=== ALL TABLES IN DATABASE ===');
+    allTables.forEach(t => console.log(`  - ${t.table_name}`));
+
+    // DEBUG: List permissions for each table
+    const permissions = await sqlConnectionTableCreator`
+      SELECT 
+        table_name,
+        grantee,
+        privilege_type
+      FROM information_schema.table_privileges
+      WHERE table_schema = 'public'
+      ORDER BY table_name, grantee, privilege_type;
+    `;
+    console.log('=== TABLE PERMISSIONS ===');
+    permissions.forEach(p => console.log(`  ${p.table_name} - ${p.grantee}: ${p.privilege_type}`));
+
+    // DEBUG: Current user and database
+    const userInfo = await sqlConnectionTableCreator`SELECT current_user, current_database()`;
+    console.log('=== CURRENT CONNECTION ===');
+    console.log(`  User: ${userInfo[0].current_user}`);
+    console.log(`  Database: ${userInfo[0].current_database}`);
+  } catch (err) {
+    console.error('Error listing tables/permissions:', err);
+  }
+
   // Function to format student full names (lowercase and spaces replaced with "_")
   const formatNames = (name) => {
     return name.toLowerCase().replace(/\s+/g, "_");
@@ -32,6 +65,137 @@ exports.handler = async (event) => {
   try {
     const pathData = event.httpMethod + " " + event.resource;
     switch (pathData) {
+      case "GET /admin/active_students_count":
+        try {
+          console.log('[active_students_count] Request received');
+          const qs = event.queryStringParameters || {};
+          const days = qs.days ? parseInt(qs.days, 10) : null; // optional days filter
+          const groupId = qs.simulation_group_id || null; // optional group filter
+          console.log(`[active_students_count] Params - days: ${days}, groupId: ${groupId}`);
+
+          // Build base query with optional JOIN when scoping to a group
+          if (groupId) {
+            const result = await sqlConnectionTableCreator`
+              SELECT COUNT(DISTINCT u.user_id)::int AS active_students
+              FROM "users" u
+              JOIN "enrolments" e ON e.user_id = u.user_id
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                ${days ? sqlConnectionTableCreator`AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``}
+                AND e.simulation_group_id = ${groupId};
+            `;
+            response.body = JSON.stringify({ active_students: result[0].active_students });
+          } else {
+            const result = await sqlConnectionTableCreator`
+              SELECT COUNT(*)::int AS active_students
+              FROM "users" u
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                ${days ? sqlConnectionTableCreator`AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``};
+            `;
+            response.body = JSON.stringify({ active_students: result[0].active_students });
+          }
+          console.log('[active_students_count] Success');
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[active_students_count] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
+        }
+        break;
+      case "GET /admin/completed_exercises_count":
+        try {
+          console.log('[completed_exercises_count] Request received');
+          const qs = event.queryStringParameters || {};
+          const days = qs.days ? parseInt(qs.days, 10) : null;
+          const groupId = qs.simulation_group_id || null;
+          console.log(`[completed_exercises_count] Params - days: ${days}, groupId: ${groupId}`);
+
+          const result = await sqlConnectionTableCreator`
+            SELECT COUNT(DISTINCT e.user_id)::int AS completed_students
+            FROM "student_interactions" si
+            JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+            WHERE si.is_completed = TRUE
+              ${days ? sqlConnectionTableCreator`AND si.last_accessed IS NOT NULL AND si.last_accessed >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})` : sqlConnectionTableCreator``}
+              ${groupId ? sqlConnectionTableCreator`AND e.simulation_group_id = ${groupId}` : sqlConnectionTableCreator``};
+          `;
+
+          response.body = JSON.stringify({ completed_students: result[0].completed_students });
+          console.log('[completed_exercises_count] Success');
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[completed_exercises_count] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
+        }
+        break;
+      case "GET /admin/active_students_trend":
+        try {
+          console.log('[active_students_trend] Request received');
+          const qs = event.queryStringParameters || {};
+          const days = parseInt(qs.days || "30", 10);
+          const groupId = qs.simulation_group_id || null;
+          console.log(`[active_students_trend] Params - days: ${days}, groupId: ${groupId}`);
+
+          if (groupId) {
+            const trend = await sqlConnectionTableCreator`
+              SELECT u.last_sign_in::date AS day, COUNT(DISTINCT u.user_id)::int AS count
+              FROM "users" u
+              JOIN "enrolments" e ON e.user_id = u.user_id
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+                AND e.simulation_group_id = ${groupId}
+              GROUP BY day
+              ORDER BY day;
+            `;
+            response.body = JSON.stringify(trend);
+          } else {
+            const trend = await sqlConnectionTableCreator`
+              SELECT u.last_sign_in::date AS day, COUNT(*)::int AS count
+              FROM "users" u
+              WHERE u.roles @> ARRAY['student']::varchar[]
+                AND u.last_sign_in IS NOT NULL
+                AND u.last_sign_in >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+              GROUP BY day
+              ORDER BY day;
+            `;
+            response.body = JSON.stringify(trend);
+          }
+
+          response.body = JSON.stringify(trend);
+          console.log('[active_students_trend] Success');
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[active_students_trend] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
+        }
+        break;
+      case "GET /admin/completed_exercises_trend":
+        try {
+          console.log('[completed_exercises_trend] Request received');
+          const qs = event.queryStringParameters || {};
+          const days = parseInt(qs.days || "30", 10);
+          const groupId = qs.simulation_group_id || null;
+          console.log(`[completed_exercises_trend] Params - days: ${days}, groupId: ${groupId}`);
+
+          const trend = await sqlConnectionTableCreator`
+            SELECT si.last_accessed::date AS day, COUNT(DISTINCT e.user_id)::int AS count
+            FROM "student_interactions" si
+            JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+            WHERE si.is_completed = TRUE
+              AND si.last_accessed IS NOT NULL
+              AND si.last_accessed >= CURRENT_DATE - (INTERVAL '1 day' * ${days - 1})
+              ${groupId ? sqlConnectionTableCreator`AND e.simulation_group_id = ${groupId}` : sqlConnectionTableCreator``}
+            GROUP BY day
+            ORDER BY day;
+          `;
+          response.body = JSON.stringify(trend);
+          console.log('[completed_exercises_trend] Success');
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[completed_exercises_trend] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error", details: err.message });
+        }
+        break;
       case "GET /admin/instructors":
         if (
           event.queryStringParameters != null &&
@@ -755,6 +919,18 @@ exports.handler = async (event) => {
               break;
             }
 
+            // Debug: Check current user and permissions
+            const userCheck = await sqlConnectionTableCreator`SELECT current_user, current_database()`;
+            console.log('Current DB user:', userCheck);
+
+            const permCheck = await sqlConnectionTableCreator`
+              SELECT grantee, privilege_type 
+              FROM information_schema.table_privileges 
+              WHERE table_name = 'empathy_prompt_history' 
+              AND grantee = current_user;
+            `;
+            console.log('Permissions on empathy_prompt_history:', permCheck);
+
             // Insert new prompt into history
             await sqlConnectionTableCreator`
               INSERT INTO "empathy_prompt_history" (prompt_content)
@@ -839,13 +1015,17 @@ exports.handler = async (event) => {
         }
         break;
       default:
-        throw new Error(`Unsupported route: "${pathData}"`);
+        console.error(`Unsupported route: "${pathData}"`);
+        response.statusCode = 404;
+        response.body = JSON.stringify({ error: `Unsupported route: "${pathData}"` });
     }
   } catch (error) {
+    console.error('[Main catch block] Error:', error);
     response.statusCode = 400;
-    console.log(error);
-    response.body = JSON.stringify(error.message);
+    response.body = JSON.stringify({ error: error.message });
   }
-  console.log(response);
+  console.log('[Response]', response);
   return response;
 };
+
+

@@ -14,7 +14,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from threading import Thread
 
 class LLM_evaluation(BaseModel):
@@ -398,8 +398,20 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         if json_start != -1 and json_end > json_start:
             json_text = response_text[json_start:json_end]
             logger.info(f"📝 EXTRACTED JSON LENGTH: {len(json_text)} characters")
-            evaluation = json.loads(json_text)
+            
+            try:
+                evaluation = json.loads(json_text)
+            except json.JSONDecodeError as parse_error:
+                logger.error(f"❌ FAILED TO PARSE EXTRACTED JSON: {parse_error}")
+                logger.error(f"❌ EXTRACTED TEXT: {json_text[:200]}")
+                return None
+                
             logger.info(f"✅ JSON PARSING SUCCESSFUL - Keys: {list(evaluation.keys())}")
+            
+            # Validate that it's a dict and not a string
+            if not isinstance(evaluation, dict):
+                logger.error(f"❌ EVALUATION IS NOT A DICT: {type(evaluation)}")
+                return None
             
             # Convert string scores to integers and validate
             required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
@@ -426,15 +438,17 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
             return evaluation
         else:
-            logger.error(f"❌ NO JSON FOUND IN RESPONSE: {response_text}")
-            raise json.JSONDecodeError("No JSON found", response_text, 0)
+            logger.error(f"❌ NO JSON FOUND IN RESPONSE: {response_text[:200]}")
+            return None
                 
     except json.JSONDecodeError as e:
         logger.error(f"❌ JSON DECODE ERROR: {e}")
+        logger.error(f"❌ RESPONSE TEXT: {response_text[:200] if 'response_text' in locals() else 'N/A'}")
         return None
         
     except Exception as e:
         logger.error(f"❌ EMPATHY EVALUATION ERROR: {e}")
+        logger.exception("Full traceback:")
         return None
 
 def get_empathy_level_name(score: int) -> str:
@@ -569,7 +583,13 @@ def get_response(
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
     # we want to save student message without blocking (empathy will be evaluated async during streaming)
-    save_message_to_db(session_id, True, query, None)
+    is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
+    try:
+        save_message_to_db(session_id, True, query, None)
+        logger.info("🧠 NON-STREAMING: Empathy evaluation disabled; message saved")
+    except Exception as e:
+        logger.error(f"Failed to save student message: {e}")
+    
     empathy_feedback = ""
     
     completion_string = """
@@ -733,14 +753,9 @@ def generate_streaming_response(
         should_evaluate = len(query.strip()) > 0 and not is_greeting
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
         
-        if should_evaluate:
-            logger.info("✅ EMPATHY EVALUATION WILL START")
-            empathy_thread = Thread(target=empathy_async)
-            empathy_thread.start()
-            logger.info("✅ EMPATHY THREAD STARTED")
-        else:
-            logger.info(f"❌ EMPATHY EVALUATION SKIPPED - Query: '{query}'")
-            save_message_to_db(session_id, True, query, None)
+        # Always skip empathy evaluation during streaming
+        logger.info(f"❌ STREAMING: Empathy evaluation disabled - Query: '{query}'")
+        save_message_to_db(session_id, True, query, None)
 
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 

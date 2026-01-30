@@ -131,7 +131,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             "body": json.dumps({"presignedurl": presigned_url}),
@@ -143,3 +143,4 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'body': json.dumps('Internal server error')
         }
+

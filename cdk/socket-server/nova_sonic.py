@@ -31,6 +31,33 @@ OUTPUT_SAMPLE_RATE = 24000
 CHANNELS = 1
 CHUNK_SIZE = 1024
 
+# ─── Empathy Evaluation Queue (Prevent Resource Exhaustion) ──────────────────
+# Global queue to limit concurrent empathy evaluations to 2
+empathy_evaluation_queue = None
+empathy_semaphore = None
+
+async def get_empathy_semaphore():
+    """Get or create the empathy evaluation semaphore to limit concurrency"""
+    global empathy_semaphore
+    if empathy_semaphore is None:
+        empathy_semaphore = asyncio.Semaphore(2)  # Max 2 concurrent empathy evaluations
+    return empathy_semaphore
+
+async def queue_empathy_evaluation(evaluation_coro):
+    """Queue empathy evaluation with concurrency limiting"""
+    semaphore = await get_empathy_semaphore()
+    async with semaphore:
+        try:
+            return await asyncio.wait_for(evaluation_coro, timeout=5.0)
+        except asyncio.TimeoutError:
+            print(f"⏱️ EMPATHY TIMEOUT: Evaluation exceeded 5 seconds, skipping", flush=True)
+            logger.warning("Empathy evaluation timeout - took too long")
+            return None
+        except Exception as e:
+            print(f"❌ EMPATHY QUEUE ERROR: {e}", flush=True)
+            logger.error(f"Empathy evaluation queue error: {e}")
+            return None
+
 
 class NovaSonic:
 
@@ -67,6 +94,8 @@ class NovaSonic:
         self._current_user_input = ""
         # Adding evaluation sequence tracking to prevent stale overwrites
         self._empathy_eval_sequence = 0
+        # Empathy evaluation tracking
+        self.empathy_evaluation_in_progress = False
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -824,24 +853,71 @@ Provide structured evaluation with detailed justifications for each score.
                 }
             }
             
+            # ⏱️ TIMEOUT PROTECTION: Prevent Bedrock API from blocking text generation
             try:
-                response = bedrock_client.invoke_model(
-                    modelId="amazon.nova-pro-v1:0",
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(body)
+                # Wrap the blocking bedrock call in a timeout (5 seconds max)
+                loop = asyncio.get_running_loop()
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: bedrock_client.invoke_model(
+                            modelId="amazon.nova-pro-v1:0",
+                            contentType="application/json",
+                            accept="application/json",
+                            body=json.dumps(body)
+                        )
+                    ),
+                    timeout=5.0
                 )
                 logger.info("✅ VOICE: BEDROCK MODEL CALL SUCCESSFUL")
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ VOICE: Bedrock API call exceeded 5 second timeout - trying fallback region")
+                try:
+                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    loop = asyncio.get_running_loop()
+                    response = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda: fallback_client.invoke_model(
+                                modelId="amazon.nova-pro-v1:0",
+                                contentType="application/json",
+                                accept="application/json",
+                                body=json.dumps(body)
+                            )
+                        ),
+                        timeout=5.0
+                    )
+                    logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
+                except asyncio.TimeoutError:
+                    logger.error(f"⏱️ VOICE: Bedrock API still timing out - aborting empathy evaluation to free resources")
+                    return None
+                except Exception as model_error:
+                    logger.warning(f"VOICE: Nova Pro fallback failed: {model_error}")
+                    return None
             except Exception as model_error:
-                logger.warning(f"VOICE: Nova Pro failed in deployment region, trying us-east-1: {model_error}")
-                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                response = fallback_client.invoke_model(
-                    modelId="amazon.nova-pro-v1:0",
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(body)
-                )
-                logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
+                logger.warning(f"VOICE: Nova Pro failed in deployment region, trying fallback: {model_error}")
+                try:
+                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    loop = asyncio.get_running_loop()
+                    response = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda: fallback_client.invoke_model(
+                                modelId="amazon.nova-pro-v1:0",
+                                contentType="application/json",
+                                accept="application/json",
+                                body=json.dumps(body)
+                            )
+                        ),
+                        timeout=5.0
+                    )
+                    logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
+                except asyncio.TimeoutError:
+                    logger.error(f"⏱️ VOICE: Bedrock API fallback also timing out - aborting")
+                    return None
+                except Exception as fallback_error:
+                    logger.error(f"VOICE: Bedrock fallback also failed: {fallback_error}")
+                    return None
             
             result = json.loads(response["body"].read())
             response_text = result["output"]["message"]["content"][0]["text"]

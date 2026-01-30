@@ -12,6 +12,7 @@ import {
 import ContactPageIcon from "@mui/icons-material/ContactPage";
 import GroupsIcon from "@mui/icons-material/Groups";
 import SettingsIcon from "@mui/icons-material/Settings";
+import QueryStatsIcon from "@mui/icons-material/QueryStats";
 
 const AdminSidebar = ({
   setSelectedComponent,
@@ -83,6 +84,11 @@ const AdminSidebar = ({
                 route: "AdminSimulationGroups",
               },
               {
+                text: "Statistics",
+                icon: <QueryStatsIcon />,
+                route: "AdminStatistics",
+              },
+              {
                 text: "AI Settings",
                 icon: <SettingsIcon />,
                 route: "AISettings",
@@ -140,7 +146,7 @@ const AdminSidebar = ({
                     />
                   )}
                 </ListItem>
-                {index < 2 && (
+                {index < 3 && (
                   <Divider
                     sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }}
                   />

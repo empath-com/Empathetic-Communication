@@ -7,6 +7,12 @@ exports.up = (pgm) => {
     )
   `);
 
+  // Grant permissions to app users
+  pgm.sql(`
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO readwrite;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO tablecreator;
+  `);
+
   // Insert default empathy prompt
   pgm.sql(`
     INSERT INTO "empathy_prompt_history" (prompt_content) VALUES (
@@ -20,19 +26,19 @@ Student Response: {user_text}
 As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
 1. A score (1-5 scale)
 2. Clear justification for the score
-3. Specific evidence from the student''s response
+3. Specific evidence from the student's response
 4. Actionable improvement recommendations
 
-IMPORTANT: In your overall_assessment, address the student directly using ''you'' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
+IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
 
 **SCORING CRITERIA:**
 
 **Perspective-Taking (1-5):**
-• 5-Extending: Exceptional understanding with profound insights into patient''s viewpoint
-• 4-Proficient: Clear understanding of patient''s perspective with thoughtful insights
-• 3-Competent: Shows awareness of patient''s perspective with minor gaps
-• 2-Advanced Beginner: Limited attempt to understand patient''s perspective
-• 1-Novice: Little or no effort to consider patient''s viewpoint
+• 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
+• 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
+• 3-Competent: Shows awareness of patient's perspective with minor gaps
+• 2-Advanced Beginner: Limited attempt to understand patient's perspective
+• 1-Novice: Little or no effort to consider patient's viewpoint
 
 **Emotional Resonance/Compassionate Care (1-5):**
 • 5-Extending: Exceptional warmth, deeply attuned to emotional needs
@@ -41,12 +47,12 @@ IMPORTANT: In your overall_assessment, address the student directly using ''you'
 • 2-Advanced Beginner: Some emotional awareness but lacks warmth
 • 1-Novice: Emotionally flat or dismissive response
 
-**Acknowledgment of Patient''s Experience (1-5):**
-• 5-Extending: Deeply validates and honors patient''s experience
+**Acknowledgment of Patient's Experience (1-5):**
+• 5-Extending: Deeply validates and honors patient's experience
 • 4-Proficient: Clearly validates feelings in patient-centered way
 • 3-Competent: Attempts validation with minor omissions
 • 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
-• 1-Novice: Ignores or invalidates patient''s feelings
+• 1-Novice: Ignores or invalidates patient's feelings
 
 **Language & Communication (1-5):**
 • 5-Extending: Masterful therapeutic communication, perfectly tailored
@@ -56,11 +62,11 @@ IMPORTANT: In your overall_assessment, address the student directly using ''you'
 • 1-Novice: Overly technical, dismissive, or insensitive language
 
 **Cognitive Empathy (Understanding) (1-5):**
-Focus: Understanding patient''s thoughts, perspective-taking, explaining information clearly
-Evaluate: How well does the response demonstrate understanding of patient''s viewpoint?
+Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
+Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
 
 **Affective Empathy (Feeling) (1-5):**
-Focus: Recognizing and responding to patient''s emotions, providing emotional support
+Focus: Recognizing and responding to patient's emotions, providing emotional support
 Evaluate: How well does the response show emotional attunement and comfort?
 
 **Realism Assessment:**
@@ -87,7 +93,7 @@ Provide structured evaluation with detailed justifications for each score.
         "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
         "affective_empathy_justification": "Detailed explanation for affective empathy score",
         "realism_justification": "Detailed explanation for realism assessment",
-        "overall_assessment": "Supportive summary addressing the student directly using ''you'' language with encouraging tone"
+        "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
     },
     "feedback": {
         "strengths": ["Specific strengths with evidence from response"],
@@ -105,3 +111,4 @@ Provide structured evaluation with detailed justifications for each score.
 exports.down = (pgm) => {
   pgm.dropTable("empathy_prompt_history", { ifExists: true, cascade: true });
 };
+

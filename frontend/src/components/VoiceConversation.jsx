@@ -27,8 +27,13 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
   }, [open]);
 
   const connectToVoiceService = async () => {
-    // Use Socket.IO
-    const socketUrl = import.meta.env.VITE_VOICE_SOCKETIO_URL || 'http://localhost:3001';
+    // Use Socket.IO with WSS (secure) or WS fallback
+    let socketUrl = import.meta.env.VITE_VOICE_SOCKETIO_URL;
+    if (!socketUrl) {
+      // Construct WSS URL from environment or use localhost fallback
+      const socketHost = import.meta.env.VITE_SOCKET_HOST || 'localhost:3001';
+      socketUrl = `wss://${socketHost}`;
+    }
     console.log('Connecting to Socket.IO voice service:', socketUrl);
     
     try {

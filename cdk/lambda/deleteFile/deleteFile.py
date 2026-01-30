@@ -100,7 +100,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameters: simulation_group_id, patient_id, file_name, file_type, or folder_type')
@@ -132,7 +132,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps('Unsupported file type')
@@ -161,7 +161,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Error deleting file {file_name}.{file_type} from the database")
@@ -172,7 +172,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('File deleted successfully')
@@ -185,8 +185,9 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Internal server error')
         }
+

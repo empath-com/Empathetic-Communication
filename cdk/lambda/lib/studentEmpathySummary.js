@@ -396,3 +396,5 @@ const studentEmpathySummary = async (event, sqlConnection) => {
 };
 
 module.exports = studentEmpathySummary;
+
+

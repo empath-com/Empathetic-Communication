@@ -67,8 +67,8 @@ async function fixMigrationTracking(db) {
       '1704110940000_create_feedback',
       '1704111000000_create_system_prompt_history',
       '1704111060000_add_vector_extension',
-      '1704111120000_add_voice_toggles',
-      '1704111180000_create_empathy_prompt_history'
+      '1704111120000_add_voice_toggles'
+      // Note: 1704111180000_create_empathy_prompt_history removed - needs to run fresh
     ];
     
     for (const migration of basicMigrations) {
@@ -107,6 +107,55 @@ async function runMigrations(db) {
 
 async function ensureBaselineOrMigrate(db) {
   await runMigrations(db);
+}
+
+async function ensureEmpathyPromptHistoryTable(db) {
+  const client = new Client({
+    user: db.username,
+    password: db.password,
+    host: db.host,
+    database: db.dbname,
+    port: db.port || 5432,
+  });
+  await client.connect();
+
+  try {
+    console.log('Ensuring empathy_prompt_history table exists...');
+    
+    // Create table if it doesn't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "empathy_prompt_history" (
+        "history_id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        "prompt_content" text NOT NULL,
+        "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('✓ empathy_prompt_history table created/verified');
+
+    // Grant permissions to roles
+    await client.query(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO readwrite;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO tablecreator;
+    `);
+    console.log('✓ Permissions granted on empathy_prompt_history');
+
+    // Check if default prompt exists
+    const result = await client.query(`SELECT COUNT(*) FROM "empathy_prompt_history"`);
+    if (result.rows[0].count == 0) {
+      console.log('Inserting default empathy prompt...');
+      await client.query(`
+        INSERT INTO "empathy_prompt_history" (prompt_content) VALUES (
+          $$You are an LLM-as-a-Judge for healthcare empathy evaluation.$$
+        );
+      `);
+      console.log('✓ Default empathy prompt inserted');
+    }
+  } catch (err) {
+    console.error('Error ensuring empathy_prompt_history table:', err);
+    throw err;
+  } finally {
+    await client.end();
+  }
 }
 
 async function createAppUsers(
@@ -156,26 +205,29 @@ async function createAppUsers(
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tablecreator;
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO readwrite;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tablecreator;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO tablecreator;
 
     GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO readwrite;
     GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO tablecreator;
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO readwrite;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO tablecreator;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tablecreator;
 
     DO $$
+    DECLARE
+      rw_pass TEXT := '${rwPass}';
+      tc_pass TEXT := '${tcPass}';
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RW_NAME}') THEN
-        EXECUTE format('CREATE USER ${RW_NAME} WITH PASSWORD %L', '${rwPass}');
+        EXECUTE format('CREATE USER %I WITH PASSWORD %L', '${RW_NAME}', rw_pass);
       ELSE
-        EXECUTE format('ALTER USER ${RW_NAME} WITH PASSWORD %L', '${rwPass}');
+        EXECUTE format('ALTER USER %I WITH PASSWORD %L', '${RW_NAME}', rw_pass);
       END IF;
 
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${TC_NAME}') THEN
-        EXECUTE format('CREATE USER ${TC_NAME} WITH PASSWORD %L', '${tcPass}');
+        EXECUTE format('CREATE USER %I WITH PASSWORD %L', '${TC_NAME}', tc_pass);
       ELSE
-        EXECUTE format('ALTER USER ${TC_NAME} WITH PASSWORD %L', '${tcPass}');
+        EXECUTE format('ALTER USER %I WITH PASSWORD %L', '${TC_NAME}', tc_pass);
       END IF;
     END$$;
 
@@ -218,6 +270,10 @@ exports.handler = async function () {
   // Then run any new migrations
   await ensureBaselineOrMigrate(adminDb);
   
+  // Ensure empathy_prompt_history table exists with proper permissions
+  await ensureEmpathyPromptHistoryTable(adminDb);
+  
   await createAppUsers(adminDb, DB_SECRET_NAME, DB_USER_SECRET_NAME, DB_PROXY);
   return { status: "ok" };
 };
+

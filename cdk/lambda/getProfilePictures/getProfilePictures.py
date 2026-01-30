@@ -113,7 +113,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("Missing required parameter: simulation_group_id"),
@@ -128,7 +128,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("No patient IDs found"),
@@ -146,8 +146,9 @@ def lambda_handler(event, context):
         "headers": {
             "Content-Type": "application/json",
             "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
             "Access-Control-Allow-Methods": "*",
         },
         'body': json.dumps(profile_pics)
     }
+

@@ -44,13 +44,15 @@ class VoiceConnectionManager:
         self._health_check_interval = 300  # 5 minutes
         
         # Optimized settings for voice workloads with RDS Proxy
-        self.min_connections = 2          # Higher minimum for voice
-        self.max_connections = 10         # Increased from 5 to handle voice bursts
+        # Increased pool size to prevent text generation blocking on voice empathy
+        self.min_connections = 3          # Minimum connections for stability
+        self.max_connections = 20         # Increased from 10 to handle concurrent voice + text pipelines
         self.connection_timeout = 30      # Prevent hanging
         self.idle_timeout = 300          # 5 min cleanup
         
         logger.info("🔗 VOICE_DB_MANAGER: Initializing voice connection manager")
         logger.info(f"🔗 VOICE_POOL_CONFIG: min={self.min_connections}, max={self.max_connections}, timeout={self.connection_timeout}s")
+        logger.info(f"🚀 OPTIMIZED FOR: Text + Voice concurrent pipelines")
         
     def _get_db_config(self) -> Dict[str, Any]:
         """Get database configuration from environment and secrets"""

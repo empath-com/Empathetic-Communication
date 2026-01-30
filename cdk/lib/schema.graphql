@@ -3,6 +3,14 @@ type TextStreamData {
   data: AWSJSON!
 }
 
+type Message {
+  message_id: String!
+  session_id: String!
+  message_content: String!
+  student_sent: Boolean!
+  time_sent: String!
+}
+
 type Mutation {
   publishTextStream(sessionId: String!, data: AWSJSON!): TextStreamData @aws_iam @aws_cognito_user_pools
 }
@@ -14,4 +22,5 @@ type Subscription {
 
 type Query {
   getTextStream: String
+  listMessagesBySession(sessionId: String!): [Message] @aws_cognito_user_pools
 }

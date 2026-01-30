@@ -15,3 +15,4 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.dropTable("simulation_groups");
 };
+

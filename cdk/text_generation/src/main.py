@@ -3,15 +3,34 @@ import json
 import boto3
 import logging
 import psycopg2
+import time
 from langchain_aws import BedrockEmbeddings
+from botocore.exceptions import ConnectTimeoutError, ReadTimeoutError
 
 from helpers.vectorstore import get_vectorstore_retriever
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name
+from helpers.chat import (
+    get_bedrock_llm,
+    get_initial_student_query,
+    get_student_query,
+    create_dynamodb_history_table,
+    get_response,
+    update_session_name,
+    evaluate_empathy,
+    build_empathy_feedback,
+)
+from helpers.resilience import (
+    retry_with_backoff,
+    bedrock_circuit_breaker,
+    db_circuit_breaker,
+    CircuitBreakerOpenError,
+)
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Version: 2026-01-12 - Add text generation timeout protection
 
 # Environment variables
 DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
@@ -21,11 +40,19 @@ BEDROCK_LLM_PARAM = os.environ["BEDROCK_LLM_PARAM"]
 EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 TABLE_NAME_PARAM = os.environ["TABLE_NAME_PARAM"]
 APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
+BEDROCK_TIMEOUT_SECONDS = int(os.environ.get("BEDROCK_TIMEOUT_SECONDS", "15"))  # 🔴 CRITICAL: Timeout for Bedrock API
 
-# AWS Clients
-secrets_manager_client = boto3.client("secretsmanager")
-ssm_client = boto3.client("ssm", region_name=REGION)
-bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
+# AWS Clients with timeout configuration
+# 🔴 CRITICAL: Add connection timeout to prevent hanging on slow Bedrock responses
+config = boto3.session.Config(
+    connect_timeout=5,
+    read_timeout=BEDROCK_TIMEOUT_SECONDS,
+    retries={'max_attempts': 1}  # No retries to fail fast
+)
+
+secrets_manager_client = boto3.client("secretsmanager", config=config)
+ssm_client = boto3.client("ssm", region_name=REGION, config=config)
+bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION, config=config)
 
 # Cached resources
 connection = None
@@ -37,17 +64,50 @@ TABLE_NAME = None
 # Cached embeddings instance
 embeddings = None
 
-def get_secret(secret_name, expect_json=True):
+# ─── Text Generation Connection Pool (Prevent Exhaustion) ──────────────────────
+# 🔴 CRITICAL: Use connection pool to prevent creating new connection per request
+db_connection_pool = None
+
+def get_secret(secret_name):
+    """Retrieve a secret from AWS Secrets Manager"""
     global db_secret
     if db_secret is None:
         try:
             response = secrets_manager_client.get_secret_value(SecretId=secret_name)["SecretString"]
-            db_secret = json.loads(response) if expect_json else response
+            db_secret = json.loads(response)
         except json.JSONDecodeError as e:
             raise ValueError(f"Secret {secret_name} is not properly formatted as JSON.")
         except Exception as e:
             raise
     return db_secret
+
+def get_connection_pool():
+    """Get or create a connection pool for text generation"""
+    global db_connection_pool
+    if db_connection_pool is None:
+        try:
+            secret = get_secret(DB_SECRET_NAME)
+            connection_params = {
+                'dbname': secret["dbname"],
+                'user': secret["username"],
+                'password': secret["password"],
+                'host': RDS_PROXY_ENDPOINT,
+                'port': secret["port"],
+                'connect_timeout': 5,
+            }
+            
+            # Create a larger pool for text generation (10-50 connections)
+            db_connection_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=5,
+                maxconn=50,  # Increased from 10 to handle concurrent text generation
+                **connection_params
+            )
+            logger.info(f"✅ TEXT_GEN: Connection pool created with min=5, max=50")
+        except Exception as e:
+            logger.error(f"❌ TEXT_GEN: Failed to create connection pool: {e}")
+            raise
+    
+    return db_connection_pool
 
 
 def get_parameter(param_name, cached_var):
@@ -78,39 +138,67 @@ def initialize_constants():
     
     create_dynamodb_history_table(TABLE_NAME)
 
-def connect_to_db():
-    global connection
-    if connection is None or connection.closed:
+def get_db_connection():
+    """Get a connection from the pool with context manager support and retry logic"""
+    @retry_with_backoff(max_retries=2, base_delay=0.5, max_delay=5.0)
+    def _get_connection():
         try:
-            secret = get_secret(DB_SECRET_NAME)
-            connection_params = {
-                'dbname': secret["dbname"],
-                'user': secret["username"],
-                'password': secret["password"],
-                'host': RDS_PROXY_ENDPOINT,
-                'port': secret["port"]
-            }
-            connection_string = " ".join([f"{key}={value}" for key, value in connection_params.items()])
-            connection = psycopg2.connect(connection_string)
-            logger.info("Connected to the database!")
+            pool = get_connection_pool()
+            conn = pool.getconn()
+            logger.info("🔌 TEXT_GEN: Got connection from pool")
+            return conn
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            if connection:
-                connection.rollback()
-                connection.close()
+            logger.error(f"❌ TEXT_GEN: Failed to get connection from pool: {e}")
             raise
-    return connection
-
-def get_system_prompt(simulation_group_id):
-    connection = connect_to_db()
-    if connection is None:
-        logger.error("No database connection available.")
-        return {
-            "statusCode": 500,
-            "body": json.dumps("Database connection failed.")
-        }
     
     try:
+        return db_circuit_breaker.call(_get_connection)
+    except CircuitBreakerOpenError as e:
+        logger.error(f"🔴 TEXT_GEN: Circuit breaker open - database unavailable: {e}")
+        raise
+
+
+def return_db_connection(conn):
+    """Return connection to the pool"""
+    if conn and db_connection_pool:
+        try:
+            db_connection_pool.putconn(conn)
+            logger.info("🔌 TEXT_GEN: Returned connection to pool")
+        except Exception as e:
+            logger.warning(f"⚠️ TEXT_GEN: Failed to return connection to pool: {e}")
+
+def close_db_connection(conn):
+    """Close and return connection to pool, even if in error state"""
+    if conn:
+        try:
+            conn.rollback()  # Rollback any pending transaction
+        except:
+            pass
+        return_db_connection(conn)
+
+def get_last_student_message(session_id: str):
+    """Fetch the latest student message for a given session."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT message_content FROM "messages" WHERE session_id = %s AND student_sent = TRUE ORDER BY time_sent DESC LIMIT 1',
+            (session_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error fetching last student message: {e}")
+        return None
+    finally:
+        close_db_connection(conn)
+
+def get_system_prompt(simulation_group_id):
+    connection = None
+    try:
+        connection = get_db_connection()
         cur = connection.cursor()
         
         cur.execute("""
@@ -134,22 +222,15 @@ def get_system_prompt(simulation_group_id):
 
     except Exception as e:
         logger.error(f"Error fetching system prompt: {e}")
-        if cur:
-            cur.close()
-        connection.rollback()
         return None
+    finally:
+        close_db_connection(connection)
 
 
 def get_patient_details(patient_id):
-    connection = connect_to_db()
-    if connection is None:
-        logger.error("No database connection available.")
-        return {
-            "statusCode": 500,
-            "body": json.dumps("Database connection failed.")
-        }
-    
+    connection = None
     try:
+        connection = get_db_connection()
         cur = connection.cursor()
         logger.info("Connected to RDS instance!")
         cur.execute("""
@@ -171,250 +252,530 @@ def get_patient_details(patient_id):
 
     except Exception as e:
         logger.error(f"Error fetching patient details: {e}")
-        if cur:
-            cur.close()
-        connection.rollback()
-        return None, None, None
+        return None, None, None, None
+    finally:
+        close_db_connection(connection)
 
 
 
 
 def handler(event, context):
-    # Version: 2024-01-15-empathy-fix-v2 - Force new deployment
-    logger.info("🚀 STREAMING FUNCTION STARTED - Text Generation Lambda function is called!")
-    logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
-    logger.info(f"📝 Event headers: {event.get('headers', {})}")
-    logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
-    initialize_constants()
-    
-    # Extract the user's Cognito token from the API Gateway event
-    auth_token = None
-    if 'headers' in event:
-        headers = event['headers']
-        auth_token = headers.get('Authorization') or headers.get('authorization')
-        logger.info(f"🔍 Found headers: {list(headers.keys())}")
-    
-    if auth_token:
-        logger.info(f"🎫 Raw auth token: {auth_token[:30]}...")
-        # Extract JWT token from Bearer format if present
-        if auth_token.startswith('Bearer '):
-            jwt_token = auth_token[7:]  # Remove 'Bearer ' prefix
-        else:
-            jwt_token = auth_token
-        
-        # Store the JWT token for AppSync authentication
-        from helpers.chat import get_cognito_token
-        get_cognito_token.current_token = f"Bearer {jwt_token}"
-        logger.info(f"✅ Cognito JWT token extracted and stored: Bearer {jwt_token[:20]}...")
-    else:
-        logger.warning(f"❌ No Authorization header found. Available headers: {list(headers.keys()) if 'headers' in locals() else 'No headers'}")
+    # Version: 2026-01-12 - Add timeout protection and connection pooling
+    # Version: 2026-01-13 - Offload long work to async worker for AppSync streaming
+    # Version: 2026-01-21 - Remove warm-up path; run fully on-demand
 
+    # Route empathy evaluation requests to a dedicated handler
+    try:
+        request_path = event.get("path") or event.get("requestContext", {}).get("resourcePath") or ""
+    except Exception:
+        request_path = ""
+
+    if request_path.endswith("/student/empathy_evaluation"):
+        logger.info("🧠 Empathy evaluation endpoint called")
+        try:
+            initialize_constants()
+            query_params = event.get("queryStringParameters", {})
+            session_id = query_params.get("session_id", "")
+            patient_id = query_params.get("patient_id", "")
+            simulation_group_id = query_params.get("simulation_group_id", "")
+
+            body = {} if event.get("body") is None else json.loads(event.get("body"))
+            explicit_message = body.get("message_content") if isinstance(body, dict) else None
+
+            if not session_id or not patient_id or not simulation_group_id:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id"),
+                }
+
+            patient_name, patient_age, patient_prompt, _ = get_patient_details(patient_id)
+            if patient_name is None:
+                return {
+                    "statusCode": 400,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps("Error fetching patient details"),
+                }
+
+            message_to_evaluate = explicit_message or get_last_student_message(session_id)
+            if not message_to_evaluate:
+                return {
+                    "statusCode": 404,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({"error": "No student message found to evaluate"}),
+                }
+
+            deployment_region = os.environ.get("AWS_REGION", "us-east-1")
+            nova_client = {
+                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
+                "model_id": "amazon.nova-pro-v1:0",
+            }
+
+            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            evaluation = evaluate_empathy(message_to_evaluate, patient_context, nova_client)
+
+            # Persist evaluation with the message
+            from helpers.chat import save_message_to_db
+            try:
+                save_message_to_db(session_id, True, message_to_evaluate, evaluation)
+            except Exception as e:
+                logger.warning(f"Failed to save evaluation to DB: {e}")
+
+            summary_payload = {}
+            if evaluation:
+                feedback = evaluation.get("feedback", {}) if isinstance(evaluation.get("feedback"), dict) else {}
+                judge_reasoning = evaluation.get("judge_reasoning", {}) if isinstance(evaluation.get("judge_reasoning"), dict) else {}
+                summary_payload = {
+                    "overall_score": evaluation.get("empathy_score", 0),
+                    "overall_level": "",
+                    "total_interactions": 1,
+                    "empathy_interactions": 1,
+                    "avg_perspective_taking": evaluation.get("perspective_taking", 0),
+                    "avg_emotional_resonance": evaluation.get("emotional_resonance", 0),
+                    "avg_acknowledgment": evaluation.get("acknowledgment", 0),
+                    "avg_language_communication": evaluation.get("language_communication", 0),
+                    "avg_cognitive_empathy": evaluation.get("cognitive_empathy", 0),
+                    "avg_affective_empathy": evaluation.get("affective_empathy", 0),
+                    "realism_assessment": "Your response is realistic" if evaluation.get("realism_flag") != "unrealistic" else "Your response is unrealistic",
+                    "realism_explanation": judge_reasoning.get("realism_justification", ""),
+                    "coach_assessment": judge_reasoning.get("overall_assessment", ""),
+                    "strengths": feedback.get("strengths", []) or [],
+                    "areas_for_improvement": feedback.get("areas_for_improvement", []) or [],
+                    "recommendations": feedback.get("improvement_suggestions", []) or [],
+                    "recommended_approach": feedback.get("alternative_phrasing", "") or "",
+                }
+
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({
+                    "empathy_evaluation": evaluation,
+                    "summary": summary_payload,
+                    "empathy_feedback_markdown": build_empathy_feedback(evaluation) if evaluation else "",
+                }),
+            }
+        except Exception as e:
+            logger.error(f"❌ Empathy evaluation endpoint error: {e}")
+            logger.exception("Full traceback:")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps("Internal server error"),
+            }
+
+    # Fast-path: fire-and-forget a background invocation for non-streaming requests
+    # For streaming requests, process immediately in the first invocation
     query_params = event.get("queryStringParameters", {})
-    simulation_group_id = query_params.get("simulation_group_id", "")
-    session_id = query_params.get("session_id", "")
-    patient_id = query_params.get("patient_id", "")
-    session_name = query_params.get("session_name", "New Chat")
-
-    if not simulation_group_id or not session_id or not patient_id:
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id")
-        }
-
-    system_prompt = get_system_prompt(simulation_group_id)
-    if system_prompt is None:
-        logger.error(f"Error fetching system prompt for simulation_group_id: {simulation_group_id}")
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error fetching system prompt')
-        }
-
-    patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(
-        patient_id)
-    if patient_name is None or patient_age is None or patient_prompt is None or llm_completion is None:
-        return {
-            'statusCode': 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error fetching patient details')
-        }
-
-    body = {} if event.get("body") is None else json.loads(event.get("body"))
-    question = body.get("message_content", "")
+    stream_requested = query_params.get("stream", "false").lower() == "true"
     
-    logger.info(f"🔍 RAW BODY: {event.get('body')}")
-    logger.info(f"🔍 PARSED BODY: {body}")
-    logger.info(f"🔍 QUESTION: '{question}'")
+    if not event.get("async_worker") and not stream_requested:
+        try:
+            lambda_client = boto3.client("lambda")
+            async_payload = dict(event)
+            async_payload["async_worker"] = True
+            lambda_client.invoke(
+                FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"],
+                InvocationType="Event",  # async
+                Payload=json.dumps(async_payload),
+            )
+            return {
+                "statusCode": 202,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({"message": "Processing asynchronously; stream over AppSync"}),
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to trigger async worker: {e}")
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps("Failed to start async processing"),
+            }
+    
+    # For streaming requests, continue processing in first invocation
+    logger.info(f"🌊 Streaming request detected, processing synchronously in first invocation")
 
-    if not question:
-        logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
-        student_query = get_initial_student_query(patient_name)
-    else:
-        logger.info(f"Processing student question: {question}")
-        student_query = get_student_query(question)
+    # 🔴 CRITICAL: Wrap entire handler in try-finally to return connection to pool
+    connection_obj = None
+    
+    try:
+        start_time = time.time()
+        logger.info("🚀 STREAMING FUNCTION STARTED - Text Generation Lambda function is called!")
+        logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
+        logger.info(f"📝 Event headers: {event.get('headers', {})}")
+        logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
+        initialize_constants()
         
-    logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
-    
-
-
-    # Check if streaming is requested
-    query_params = event.get("queryStringParameters", {})
-    stream = query_params.get("stream", "false").lower() == "true"
-    
-    try:
-        logger.info("Creating Bedrock LLM instance.")
-        llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=stream)
-    except Exception as e:
-        logger.error(f"Error getting LLM from Bedrock: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error getting LLM from Bedrock')
-        }
-
-    try:
-        logger.info("Retrieving vectorstore config.")
-        db_secret = get_secret(DB_SECRET_NAME)
-        vectorstore_config_dict = {
-            'collection_name': patient_id,
-            'dbname': db_secret["dbname"],
-            'user': db_secret["username"],
-            'password': db_secret["password"],
-            'host': RDS_PROXY_ENDPOINT,
-            'port': db_secret["port"]
-        }
-    except Exception as e:
-        logger.error(f"Error retrieving vectorstore config: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error retrieving vectorstore config')
-        }
-
-    try:
-        logger.info("Creating history-aware retriever.")
-
-        history_aware_retriever = get_vectorstore_retriever(
-            llm=llm,
-            vectorstore_config_dict=vectorstore_config_dict,
-            embeddings=embeddings
-        )
-    except Exception as e:
-        logger.error(f"Error creating history-aware retriever: {e}")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps('Error creating history-aware retriever')
-        }
-
-    try:
-        logger.info("Generating response from the LLM.")
+        # 🔴 CRITICAL: Get connection from pool at start
+        connection_obj = get_db_connection()
+        if connection_obj is None:
+            logger.error("❌ TEXT_GEN: Failed to get database connection")
+            return {
+                'statusCode': 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Database connection failed')
+            }
         
-        logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
-        response = get_response(
-            query=student_query,
-            patient_name=patient_name,
-            llm=llm,
-            history_aware_retriever=history_aware_retriever,
-            table_name=TABLE_NAME,
-            session_id=session_id,
-            system_prompt=system_prompt,
-            patient_age=patient_age,
-            patient_prompt=patient_prompt,
-            llm_completion=llm_completion,
-            stream=stream
-        )
-    except Exception as e:
-        logger.error(f"Error getting response: {e}")
-        logger.exception("Full error details:")
-        return {
-            'statusCode': 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            'body': json.dumps(f'Error getting response: {str(e)}')
-        }
-
-    try:
-        logger.info("Updating session name if this is the first exchange between the LLM and student")
-        potential_session_name = update_session_name(
-            TABLE_NAME, session_id, BEDROCK_LLM_ID, patient_name)
-        if potential_session_name:
-            logger.info("This is the first exchange between the LLM and student. Updating session name.")
-            session_name = potential_session_name
+        # Extract the user's Cognito token from the API Gateway event
+        auth_token = None
+        if 'headers' in event:
+            headers = event['headers']
+            auth_token = headers.get('Authorization') or headers.get('authorization')
+            logger.info(f"🔍 Found headers: {list(headers.keys())}")
+        
+        if auth_token:
+            logger.info(f"🎫 Raw auth token: {auth_token[:30]}...")
+            # Extract JWT token from Bearer format if present
+            if auth_token.startswith('Bearer '):
+                jwt_token = auth_token[7:]  # Remove 'Bearer ' prefix
+            else:
+                jwt_token = auth_token
+            
+            # Store the JWT token for AppSync authentication
+            from helpers.chat import get_cognito_token
+            get_cognito_token.current_token = f"Bearer {jwt_token}"
+            logger.info(f"✅ Cognito JWT token extracted and stored: Bearer {jwt_token[:20]}...")
         else:
-            logger.info("Not the first exchange between the LLM and student. Session name remains the same.")
+            logger.warning(f"❌ No Authorization header found. Available headers: {list(headers.keys()) if 'headers' in locals() else 'No headers'}")
+
+        query_params = event.get("queryStringParameters", {})
+        simulation_group_id = query_params.get("simulation_group_id", "")
+        session_id = query_params.get("session_id", "")
+        patient_id = query_params.get("patient_id", "")
+        session_name = query_params.get("session_name", "New Chat")
+
+        if not simulation_group_id or not session_id or not patient_id:
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id")
+            }
+
+        system_prompt = get_system_prompt(simulation_group_id)
+        if system_prompt is None:
+            logger.error(f"Error fetching system prompt for simulation_group_id: {simulation_group_id}")
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error fetching system prompt')
+            }
+
+        patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(
+            patient_id)
+        if patient_name is None or patient_age is None or patient_prompt is None or llm_completion is None:
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error fetching patient details')
+            }
+
+        body = {} if event.get("body") is None else json.loads(event.get("body"))
+        question = body.get("message_content", "")
+        
+        logger.info(f"🔍 RAW BODY: {event.get('body')}")
+        logger.info(f"🔍 PARSED BODY: {body}")
+        logger.info(f"🔍 QUESTION: '{question}'")
+
+        if not question:
+            logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
+            student_query = get_initial_student_query(patient_name)
+        else:
+            logger.info(f"Processing student question: {question}")
+            student_query = get_student_query(question)
+            
+        logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
+        
+
+        # Check if streaming is requested
+        query_params = event.get("queryStringParameters", {})
+        stream = query_params.get("stream", "false").lower() == "true"
+        
+        # ⏱️ CRITICAL: Check remaining time - abort if <10 seconds left
+        elapsed = time.time() - start_time
+        remaining = context.get_remaining_time_in_millis() / 1000 if hasattr(context, 'get_remaining_time_in_millis') else 30
+        if remaining < 10:
+            logger.error(f"⏱️ TEXT_GEN: Not enough time remaining ({remaining}s), aborting")
+            return {
+                'statusCode': 504,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Request timeout - insufficient time remaining')
+            }
+        
+        try:
+            logger.info("Creating Bedrock LLM instance.")
+            
+            @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=10.0)
+            def _create_llm():
+                return bedrock_circuit_breaker.call(
+                    get_bedrock_llm,
+                    bedrock_llm_id=BEDROCK_LLM_ID,
+                    streaming=stream
+                )
+            
+            llm = _create_llm()
+        except CircuitBreakerOpenError as e:
+            logger.error(f"🔴 TEXT_GEN: Bedrock circuit breaker open - service unavailable: {e}")
+            return {
+                'statusCode': 503,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Bedrock service temporarily unavailable - please try again later')
+            }
+        except (ConnectTimeoutError, ReadTimeoutError) as e:
+            logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout: {e}")
+            return {
+                'statusCode': 504,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Bedrock API timeout - please try again')
+            }
+        except Exception as e:
+            logger.error(f"Error getting LLM from Bedrock: {e}")
+            return {
+                'statusCode': 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error getting LLM from Bedrock')
+            }
+
+        try:
+            logger.info("Retrieving vectorstore config.")
+            db_secret = get_secret(DB_SECRET_NAME)
+            vectorstore_config_dict = {
+                'collection_name': patient_id,
+                'dbname': db_secret["dbname"],
+                'user': db_secret["username"],
+                'password': db_secret["password"],
+                'host': RDS_PROXY_ENDPOINT,
+                'port': db_secret["port"]
+            }
+        except Exception as e:
+            logger.error(f"Error retrieving vectorstore config: {e}")
+            return {
+                'statusCode': 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error retrieving vectorstore config')
+            }
+
+        try:
+            logger.info("Creating history-aware retriever.")
+
+            history_aware_retriever = get_vectorstore_retriever(
+                llm=llm,
+                vectorstore_config_dict=vectorstore_config_dict,
+                embeddings=embeddings
+            )
+        except Exception as e:
+            logger.error(f"Error creating history-aware retriever: {e}")
+            return {
+                'statusCode': 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error creating history-aware retriever')
+            }
+
+        try:
+            logger.info("Generating response from the LLM.")
+            logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
+            
+            @retry_with_backoff(max_retries=1, base_delay=2.0, max_delay=5.0)
+            def _get_response():
+                return bedrock_circuit_breaker.call(
+                    get_response,
+                    query=student_query,
+                    patient_name=patient_name,
+                    llm=llm,
+                    history_aware_retriever=history_aware_retriever,
+                    table_name=TABLE_NAME,
+                    session_id=session_id,
+                    system_prompt=system_prompt,
+                    patient_age=patient_age,
+                    patient_prompt=patient_prompt,
+                    llm_completion=llm_completion,
+                    stream=stream
+                )
+            
+            response = _get_response()
+        except CircuitBreakerOpenError as e:
+            logger.error(f"🔴 TEXT_GEN: Circuit breaker open during response generation: {e}")
+            return {
+                'statusCode': 503,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('LLM service temporarily unavailable - please try again later')
+            }
+        except (ConnectTimeoutError, ReadTimeoutError) as e:
+            logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout during response generation: {e}")
+            return {
+                'statusCode': 504,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Response generation timeout - please try again')
+            }
+        except Exception as e:
+            logger.error(f"Error getting response: {e}")
+            logger.exception("Full error details:")
+            return {
+                'statusCode': 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps(f'Error getting response: {str(e)}')
+            }
+
+        try:
+            logger.info("Updating session name if this is the first exchange between the LLM and student")
+            potential_session_name = update_session_name(
+                TABLE_NAME, session_id, BEDROCK_LLM_ID, patient_name)
+            if potential_session_name:
+                logger.info("This is the first exchange between the LLM and student. Updating session name.")
+                session_name = potential_session_name
+            else:
+                logger.info("Not the first exchange between the LLM and student. Session name remains the same.")
+        except Exception as e:
+            logger.error(f"Error updating session name: {e}")
+            session_name = "New Chat"
+        
+
+        if stream:
+            logger.info("Returning streaming response.")
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps(response),
+                "isBase64Encoded": False
+            }
+        else:
+            logger.info("Returning the generated response.")
+            empathy_eval = response.get('empathy_evaluation', None)
+            logger.info(f"LLM RESPONSE: {empathy_eval}")
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                "body": json.dumps({
+                    "session_name": session_name,
+                    "llm_output": response.get("llm_output", "LLM failed to create response"),
+                    "llm_verdict": response.get("llm_verdict", "LLM failed to create verdict"),
+                    "empathy_evaluation": response.get("empathy_evaluation", None)
+                })
+            }
     except Exception as e:
-        logger.error(f"Error updating session name: {e}")
-        session_name = "New Chat"
-    
-
-
-    if stream:
-        logger.info("Returning streaming response.")
+        logger.error(f"❌ TEXT_GEN: Unhandled exception in handler: {e}")
+        logger.exception("Full traceback:")
         return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-            },
-            "body": json.dumps(response),
-            "isBase64Encoded": False
-        }
-    else:
-        logger.info("Returning the generated response.")
-        empathy_eval = response.get('empathy_evaluation', None)
-        logger.info(f"LLM RESPONSE: {empathy_eval}")
-        return {
-            "statusCode": 200,
+            'statusCode': 500,
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "*",
             },
-            "body": json.dumps({
-                "session_name": session_name,
-                "llm_output": response.get("llm_output", "LLM failed to create response"),
-                "llm_verdict": response.get("llm_verdict", "LLM failed to create verdict"),
-                "empathy_evaluation": response.get("empathy_evaluation", None)
-            })
+            'body': json.dumps('Internal server error')
         }
+    finally:
+        # 🔴 CRITICAL: Always return connection to the pool, even if error
+        if connection_obj:
+            close_db_connection(connection_obj)

@@ -132,3 +132,4 @@ dist
 # Python virtual environment
 venv/
 .env/
+.github/AI_DEVELOPMENT_GUIDE.md
