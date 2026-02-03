@@ -138,6 +138,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const streamSubRef = useRef(null);
   const streamSessionIdRef = useRef(null);
   const fullResponseRef = useRef("");
+  const lastLoadedSessionIdRef = useRef(null);
   const [authCache, setAuthCache] = useState({ token: null, exp: 0, email: null });
 
   const getAuth = async () => {
@@ -1343,11 +1344,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
   
   useEffect(() => {
-    if (session?.session_id) {
+    if (session?.session_id && session.session_id !== lastLoadedSessionIdRef.current) {
       setCurrentSessionId(session.session_id);
-      // Only fetch existing messages for sessions that aren't brand new
-      // Brand new sessions won't have messages yet and will get them via streaming
-      if (session.created_at) {
+      lastLoadedSessionIdRef.current = session.session_id;
+      // Only fetch existing messages if this is an existing session (not newly created)
+      // New sessions will populate messages via streaming
+      // Check if session has any previous timestamps indicating it's not brand new
+      if (session.created_at && new Date(session.created_at).getTime() < Date.now() - 5000) {
         getMessages();
       }
     }
