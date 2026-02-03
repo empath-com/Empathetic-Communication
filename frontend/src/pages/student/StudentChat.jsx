@@ -1279,17 +1279,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           session.session_id
         )}`,
         {
-          method: "POST",
+          method: "GET",
           headers: {
             "Content-Type": "application/json",
             Authorization: (await fetchAuthSession()).tokens.idToken,
           },
-          body: JSON.stringify({
-            query,
-            variables: {
-              sessionId: session.session_id,
-            },
-          }),
         }
       );
 
