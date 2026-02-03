@@ -1252,9 +1252,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const getMessages = async () => {
     try {
       if (!session?.session_id) {
-        console.warn("Cannot fetch messages: session or session_id is undefined");
+        console.warn("[getMessages] Cannot fetch messages: session or session_id is undefined");
         return;
       }
+
+      console.log("[getMessages] Starting fetch for session_id:", session.session_id);
 
       if (!import.meta.env.VITE_APPSYNC_GRAPHQL_URL) {
         console.error("VITE_APPSYNC_GRAPHQL_URL is not configured");
@@ -1274,11 +1276,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         }
       `;
 
+      const apiUrl = `${import.meta.env.VITE_API_ENDPOINT}student/get_messages?session_id=${encodeURIComponent(session.session_id)}`;
+      console.log("[getMessages] Calling API:", apiUrl);
+      
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/get_messages?session_id=${encodeURIComponent(
-          session.session_id
-        )}`,
+        apiUrl,
         {
           method: "GET",
           headers: {
@@ -1288,9 +1290,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         }
       );
 
+      console.log("[getMessages] API response status:", response.status, response.statusText);
+      
       if (response.ok) {
         const result = await response.json();
+        console.log("[getMessages] Full API response:", result);
         const data = result.data?.listMessagesBySession || [];
+        console.log("[getMessages] Extracted messages count:", data.length);
 
         // Enhanced duplicate detection and removal
         const uniqueMessages = [];
@@ -1330,29 +1336,39 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         });
 
         console.log(
-          `Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`
+          `[getMessages] Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`
         );
+        console.log("[getMessages] Setting messages state with:", uniqueMessages);
         setMessages(uniqueMessages);
       } else {
-        console.error("Failed to retrieve session:", response.statusText);
+        const errorText = await response.text();
+        console.error("[getMessages] Failed to retrieve messages - Status:", response.status, response.statusText, "Body:", errorText);
         setMessages([]);
       }
     } catch (error) {
-      console.error("Error fetching session:", error);
+      console.error("[getMessages] Error fetching messages:", error);
       setMessages([]);
     }
   };
   
   useEffect(() => {
+    console.log("[useEffect] Session changed. New session_id:", session?.session_id, "Last loaded:", lastLoadedSessionIdRef.current);
     if (session?.session_id && session.session_id !== lastLoadedSessionIdRef.current) {
+      console.log("[useEffect] Switching to new session:", session.session_id);
       setCurrentSessionId(session.session_id);
       lastLoadedSessionIdRef.current = session.session_id;
       // Only fetch existing messages if this is an existing session (not newly created)
       // New sessions will populate messages via streaming
       // Check if session has any previous timestamps indicating it's not brand new
       if (session.created_at && new Date(session.created_at).getTime() < Date.now() - 5000) {
+        console.log("[useEffect] Session created_at:", session.created_at, "- Calling getMessages()");
         getMessages();
+      } else {
+        console.log("[useEffect] New session (created_at:", session.created_at, ") - Skipping getMessages()");
+        setMessages([]);
       }
+    } else {
+      console.log("[useEffect] Session ID unchanged or undefined - skipping getMessages()");
     }
   }, [session?.session_id]);
 
