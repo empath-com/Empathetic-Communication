@@ -1295,7 +1295,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       if (response.ok) {
         const result = await response.json();
         console.log("[getMessages] Full API response:", result);
-        const data = result.data?.listMessagesBySession || [];
+        // API returns messages directly as an array, not nested in data.listMessagesBySession
+        const data = Array.isArray(result) ? result : (result.data?.listMessagesBySession || []);
         console.log("[getMessages] Extracted messages count:", data.length);
 
         // Enhanced duplicate detection and removal
