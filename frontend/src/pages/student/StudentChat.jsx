@@ -1341,12 +1341,17 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       setMessages([]);
     }
   };
+  
   useEffect(() => {
-    if (session) {
+    if (session?.session_id) {
       setCurrentSessionId(session.session_id);
-      getMessages();
+      // Only fetch existing messages for sessions that aren't brand new
+      // Brand new sessions won't have messages yet and will get them via streaming
+      if (session.created_at) {
+        getMessages();
+      }
     }
-  }, [session]);
+  }, [session?.session_id]);
 
   // Open the confirmation dialog
   const handleOpenConfirm = () => {
