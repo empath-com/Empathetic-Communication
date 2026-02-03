@@ -1357,16 +1357,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       console.log("[useEffect] Switching to new session:", session.session_id);
       setCurrentSessionId(session.session_id);
       lastLoadedSessionIdRef.current = session.session_id;
-      // Only fetch existing messages if this is an existing session (not newly created)
-      // New sessions will populate messages via streaming
-      // Check if session has any previous timestamps indicating it's not brand new
-      if (session.created_at && new Date(session.created_at).getTime() < Date.now() - 5000) {
-        console.log("[useEffect] Session created_at:", session.created_at, "- Calling getMessages()");
-        getMessages();
-      } else {
-        console.log("[useEffect] New session (created_at:", session.created_at, ") - Skipping getMessages()");
-        setMessages([]);
-      }
+      // Always fetch messages when switching sessions
+      // If it's a brand new session, the API will return empty results (which is fine)
+      // Existing sessions should have historical messages to display
+      console.log("[useEffect] Calling getMessages() for session:", session.session_id);
+      getMessages();
     } else {
       console.log("[useEffect] Session ID unchanged or undefined - skipping getMessages()");
     }
