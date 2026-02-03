@@ -533,6 +533,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     try {
       const authSession = await fetchAuthSession();
       const token = authSession.tokens.idToken;
+      const { email } = await fetchUserAttributes();
 
       const response = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT
