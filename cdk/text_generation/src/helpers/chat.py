@@ -98,7 +98,7 @@ def get_student_query(raw_query: str) -> str:
 def get_initial_student_query(patient_name: str) -> str:
     """Generate an initial query for the student to interact with the system."""
     return f"""
-    Greet me and then ask me a question related to the patient: {patient_name}. 
+    Begin the conversation as the patient: {patient_name}, by greeting the pharmacist and sharing why you're here. 
     """
 
 def get_default_system_prompt(patient_name) -> str:
@@ -582,7 +582,7 @@ def get_response(
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
-    # Save the student message without triggering empathy evaluation
+    # we want to save student message without blocking (empathy will be evaluated async during streaming)
     is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
     try:
         save_message_to_db(session_id, True, query, None)
@@ -602,16 +602,24 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    system_prompt = (
+    if not system_prompt or len(system_prompt.strip()) < 50:
+        system_prompt = get_default_system_prompt(patient_name)
+        logger.info("USING DEFAULT SYSTEM PROMPT, passed prompt was empty")
+
+    final_system_prompt = (
         f"""
         <|begin_of_text|>
         <|start_header_id|>patient<|end_header_id|>
-        Please pay close attention to this: {system_prompt} 
-        Here are some additional details about your personality, symptoms, or overall condition: {patient_prompt}
+        
+        CRITICAL: You are {patient_name}, a PATIENT seeking help from a pharmacist.
+        NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
+
+        {system_prompt}
+
+        Additional details about your personality, symptoms or condition:
+        {patient_prompt if patient_prompt else "No additional details provided."}
+
         {completion_string}
-        You are a patient named {patient_name}.
-         
-        {get_system_prompt(patient_name=patient_name)}
 
         <|eot_id|>
         <|start_header_id|>documents<|end_header_id|>
@@ -620,11 +628,15 @@ def get_response(
         """
     )
 
-    print(f"🔍 System prompt for {patient_name}:\\\\n{system_prompt}")
-    logger.info(f"🔍 System prompt, {patient_name}:\\\\n{system_prompt}")
+    logger.info("====================================")
+    logger.info("FINAL SYSTEM PROMPT BEING USED:")
+    logger.info(f"    system prompt length: {len(final_system_prompt)} chars")
+    logger.info(f"    contains PATIENT: {'patient' in final_system_prompt.lower()}")
+    logger.info(f"    first 400 chars\n{final_system_prompt[:400]}")
+    logger.info("====================================")
     
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
+        ("system", final_system_prompt),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ])
@@ -710,7 +722,30 @@ def generate_streaming_response(
     
     logger.info(f"🚀 STREAMING FUNCTION STARTED with query: '{query}' - DEPLOYMENT TEST v2")
 
-    # Empathy evaluation disabled for streaming; only save the user message
+    def empathy_async():
+        try:
+            logger.info(f"🧠 ASYNC EMPATHY THREAD STARTED for query: {query[:50]}...")
+            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
+            nova_client = {
+                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
+                "model_id": "amazon.nova-pro-v1:0"
+            }
+            logger.info(f"🧠 CALLING evaluate_empathy function...")
+            evaluation = evaluate_empathy(query, patient_context, nova_client)
+            logger.info(f"🧠 ASYNC EMPATHY EVALUATION RESULT: {evaluation is not None}")
+            
+            save_message_to_db(session_id, True, query, evaluation)
+            
+            if evaluation:
+                logger.info("🧠 Publishing empathy data to AppSync")
+                # empathy_feedback = build_empathy_feedback(evaluation)
+                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
+            else:
+                logger.warning("🧠 No empathy evaluation to publish")
+        except Exception as e:
+            logger.exception("Async empathy publish failed")
+            save_message_to_db(session_id, True, query, None)
 
     try:
         logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")
