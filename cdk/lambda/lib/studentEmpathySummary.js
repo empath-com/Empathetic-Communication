@@ -2,10 +2,15 @@
  * Handler for fetching empathy summary for a student
  */
 const studentEmpathySummary = async (event, sqlConnection) => {
+  console.log("[studentEmpathySummary] Incoming event:", JSON.stringify(event));
+  
   const { session_id, email, simulation_group_id, patient_id } =
     event.queryStringParameters || {};
 
+  console.log("[studentEmpathySummary] Parameters:", { session_id, email, simulation_group_id, patient_id });
+
   if (!email || !simulation_group_id) {
+    console.error("[studentEmpathySummary] Missing required parameters");
     return {
       statusCode: 400,
       body: JSON.stringify({ error: "Missing required parameters: email, simulation_group_id" }),
@@ -13,13 +18,16 @@ const studentEmpathySummary = async (event, sqlConnection) => {
   }
 
   try {
+    console.log("[studentEmpathySummary] Checking if empathy_evaluation column exists");
     // First check if empathy_evaluation column exists
     const columnCheck = await sqlConnection`
       SELECT column_name FROM information_schema.columns 
       WHERE table_name = 'messages' AND column_name = 'empathy_evaluation';
     `;
 
+    console.log("[studentEmpathySummary] Column check result:", columnCheck.length);
     if (columnCheck.length === 0) {
+      console.log("[studentEmpathySummary] empathy_evaluation column does not exist");
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -38,54 +46,68 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       };
     }
 
+    console.log("[studentEmpathySummary] Getting user_id from email:", email);
     // Get user_id from email
     const userResult = await sqlConnection`
       SELECT user_id FROM "users" WHERE user_email = ${email} LIMIT 1;
     `;
 
+    console.log("[studentEmpathySummary] User query result:", userResult.length, "rows");
     const userId = userResult[0]?.user_id;
     if (!userId) {
+      console.error("[studentEmpathySummary] User not found for email:", email);
       return {
         statusCode: 404,
         body: JSON.stringify({ error: "User not found" }),
       };
     }
 
+    console.log("[studentEmpathySummary] userId:", userId, "simulation_group_id:", simulation_group_id, "patient_id:", patient_id);
+    
     // Get ALL empathy evaluations for score calculation
     let allEmpathyData;
-    if (patient_id) {
-      allEmpathyData = await sqlConnection`
-        SELECT m.empathy_evaluation
-        FROM "messages" m
-        JOIN "sessions" s ON m.session_id = s.session_id
-        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
-        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
-        WHERE e.user_id = ${userId}
-          AND e.simulation_group_id = ${simulation_group_id}
-          AND si.patient_id = ${patient_id}
-          AND m.student_sent = true
-          AND m.empathy_evaluation IS NOT NULL
-        ORDER BY m.time_sent DESC;
-      `;
-    } else {
-      allEmpathyData = await sqlConnection`
-        SELECT m.empathy_evaluation
-        FROM "messages" m
-        JOIN "sessions" s ON m.session_id = s.session_id
-        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
-        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
-        WHERE e.user_id = ${userId}
-          AND e.simulation_group_id = ${simulation_group_id}
-          AND m.student_sent = true
-          AND m.empathy_evaluation IS NOT NULL
-        ORDER BY m.time_sent DESC;
-      `;
+    try {
+      if (patient_id) {
+        console.log("[studentEmpathySummary] Querying empathy data WITH patient_id");
+        allEmpathyData = await sqlConnection`
+          SELECT m.empathy_evaluation
+          FROM "messages" m
+          JOIN "sessions" s ON m.session_id = s.session_id
+          JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+          JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+          WHERE e.user_id = ${userId}
+            AND e.simulation_group_id = ${simulation_group_id}
+            AND si.patient_id = ${patient_id}
+            AND m.student_sent = true
+            AND m.empathy_evaluation IS NOT NULL
+          ORDER BY m.time_sent DESC;
+        `;
+      } else {
+        console.log("[studentEmpathySummary] Querying empathy data WITHOUT patient_id");
+        allEmpathyData = await sqlConnection`
+          SELECT m.empathy_evaluation
+          FROM "messages" m
+          JOIN "sessions" s ON m.session_id = s.session_id
+          JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+          JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+          WHERE e.user_id = ${userId}
+            AND e.simulation_group_id = ${simulation_group_id}
+            AND m.student_sent = true
+            AND m.empathy_evaluation IS NOT NULL
+          ORDER BY m.time_sent DESC;
+        `;
+      }
+      console.log("[studentEmpathySummary] Query returned:", allEmpathyData?.length || 0, "rows");
+    } catch (queryError) {
+      console.error("[studentEmpathySummary] Query error:", queryError.message);
+      throw queryError;
     }
     
     // Get recent evaluations for feedback text (top 3)
     const recentEmpathyData = allEmpathyData.slice(0, 3);
 
     if (!allEmpathyData || allEmpathyData.length === 0) {
+      console.log("[studentEmpathySummary] No empathy data found, returning empty summary");
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -386,11 +408,12 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       }),
     };
   } catch (error) {
-    console.error("Error fetching empathy summary:", error);
-    console.error("Stack trace:", error.stack);
+    console.error("[studentEmpathySummary] Error fetching empathy summary:", error);
+    console.error("[studentEmpathySummary] Stack trace:", error.stack);
+    console.error("[studentEmpathySummary] Error message:", error.message);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Failed to fetch empathy summary" }),
+      body: JSON.stringify({ error: "Failed to fetch empathy summary", details: error.message }),
     };
   }
 };
