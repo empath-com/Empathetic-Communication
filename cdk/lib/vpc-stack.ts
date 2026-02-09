@@ -2,6 +2,7 @@ import { Stack, StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as cdk from "aws-cdk-lib";
 import { Fn } from "aws-cdk-lib";
 import {
   AwsCustomResource,
@@ -18,29 +19,123 @@ export class VpcStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const existingVpcId: string = "vpc-06dabb93e0ed16197"; // CHANGE IF DEPLOYING WITH EXISTING VPC
+    // CDK Parameters for flexible deployment
+    const vpcIdParam = new cdk.CfnParameter(this, "vpcId", {
+      type: "String",
+      description: "The existing VPC ID to use (leave empty to create new VPC)",
+      default: "",
+    });
+
+    const subnetPrefixParam = new cdk.CfnParameter(this, "subnetPrefix", {
+      type: "String",
+      description: "Subnet name prefix (e.g., 'prd-phar-empath-ai-prd'). Leave empty to use hardcoded subnet IDs.",
+      default: "",
+    });
+
+    const existingVpcId: string = vpcIdParam.valueAsString;
 
     if (existingVpcId !== "") {
       const AWSControlTowerStackSet =
         "ProvisionVPC"; // CHANGE TO YOUR CONTROL TOWER STACK SET
       
+      // Dynamic subnet and route table lookup configuration
+      // Use subnetPrefix parameter (e.g., "prd-phar-empath-ai-prd") or leave empty for hardcoded IDs
+      const subnetNamePrefix = subnetPrefixParam.valueAsString; // e.g., "prd-phar-empath-ai-prd"
+      const region = this.region; // Get region dynamically from stack
+      
+      // Helper function to construct subnet/route names dynamically
+      const constructResourceName = (type: "back" | "front", az: string): string => {
+        return `${subnetNamePrefix}-${type}-${region}${az}`;
+      };
+      
       // **IMPORTANT**: Replace these with your actual subnet IDs and route table IDs
       // You can find these in AWS Console > VPC > Subnets
       // Backend (app/data) private subnets used by DB, API, Lambdas
-      const backendSubnetId: string = "subnet-0369c2fa2e5d70695"; // prd-phar-empath-ai-prd-back-ca-central-1a
-      const backendSubnetId2: string = "subnet-07434d19387938307"; // prd-phar-empath-ai-prd-back-ca-central-1b
+      const backendSubnetId: string = subnetNamePrefix ? "" : "subnet-0369c2fa2e5d70695"; // prd-phar-empath-ai-prd-back-ca-central-1a
+      const backendSubnetId2: string = subnetNamePrefix ? "" : "subnet-07434d19387938307"; // prd-phar-empath-ai-prd-back-ca-central-1b
       const backendSubnetId3: string = ""; // OPTIONAL: Backend subnet for ca-central-1d
 
       // Front (LB/ECS/frontend) private subnets requested for frontend systems
-      const frontSubnetId: string = "subnet-017bb497f28d38596"; // prd-phar-empath-ai-prd-front-ca-central-1a
-      const frontSubnetId2: string = "subnet-064739f90fa0d44c5"; // prd-phar-empath-ai-prd-front-ca-central-1b
+      const frontSubnetId: string = subnetNamePrefix ? "" : "subnet-017bb497f28d38596"; // prd-phar-empath-ai-prd-front-ca-central-1a
+      const frontSubnetId2: string = subnetNamePrefix ? "" : "subnet-064739f90fa0d44c5"; // prd-phar-empath-ai-prd-front-ca-central-1b
       // optional third AZ if needed in future
       const frontSubnetId3: string = "";
       
       // Route table IDs for the subnets above (find in AWS Console > VPC > Subnets > Route table tab)
-      const backendRouteTableId: string = "rtb-0ac8f0231dd8db334"; // Route table ID for backendSubnetId
-      const backendRouteTableId2: string = "rtb-0ac8f0231dd8db334"; // Route table ID for backendSubnetId2
+      // Note: If multiple subnets share the same route table, list it only once
+      const backendRouteTableId: string = subnetNamePrefix ? "" : "rtb-0ac8f0231dd8db334"; // Route table ID for backendSubnetId and backendSubnetId2 (they share the same table)
       const backendRouteTableId3: string = ""; // OPTIONAL: Route table ID for backendSubnetId3
+      
+      // If using dynamic naming, lookup subnet and route table IDs by name tag
+      let resolvedBackendSubnetIds: string[] = [];
+      let resolvedFrontSubnetIds: string[] = [];
+      let resolvedRouteTableIds: string[] = [];
+      
+      if (subnetNamePrefix) {
+        // Create custom resources to look up subnet and route table IDs by name
+        const availabilityZones = ["a", "b"]; // Can add "d" if needed
+        
+        availabilityZones.forEach((az, index) => {
+          const backendSubnetName = constructResourceName("back", az);
+          const frontSubnetName = constructResourceName("front", az);
+          
+          // Lookup backend subnet ID by name
+          const backendSubnetLookup = new AwsCustomResource(this, `BackendSubnetLookup-${az}`, {
+            onUpdate: {
+              service: "EC2",
+              action: "describeSubnets",
+              parameters: {
+                Filters: [
+                  { Name: "tag:Name", Values: [backendSubnetName] },
+                  { Name: "vpc-id", Values: [existingVpcId] }
+                ]
+              },
+              physicalResourceId: PhysicalResourceId.of(`BackendSubnet-${existingVpcId}-${backendSubnetName}`)
+            },
+            policy: AwsCustomResourcePolicy.fromSdkCalls({ resources: AwsCustomResourcePolicy.ANY_RESOURCE })
+          });
+          
+          const backendSubnetIdFromLookup = backendSubnetLookup.getResponseField("Subnets.0.SubnetId");
+          resolvedBackendSubnetIds.push(backendSubnetIdFromLookup);
+          
+          // Lookup front subnet ID by name
+          const frontSubnetLookup = new AwsCustomResource(this, `FrontSubnetLookup-${az}`, {
+            onUpdate: {
+              service: "EC2",
+              action: "describeSubnets",
+              parameters: {
+                Filters: [
+                  { Name: "tag:Name", Values: [frontSubnetName] },
+                  { Name: "vpc-id", Values: [existingVpcId] }
+                ]
+              },
+              physicalResourceId: PhysicalResourceId.of(`FrontSubnet-${existingVpcId}-${frontSubnetName}`)
+            },
+            policy: AwsCustomResourcePolicy.fromSdkCalls({ resources: AwsCustomResourcePolicy.ANY_RESOURCE })
+          });
+          
+          const frontSubnetIdFromLookup = frontSubnetLookup.getResponseField("Subnets.0.SubnetId");
+          resolvedFrontSubnetIds.push(frontSubnetIdFromLookup);
+          
+          // Lookup route table ID associated with backend subnet
+          const routeTableLookup = new AwsCustomResource(this, `RouteTableLookup-${az}`, {
+            onUpdate: {
+              service: "EC2",
+              action: "describeRouteTables",
+              parameters: {
+                Filters: [
+                  { Name: "association.subnet-id", Values: [backendSubnetIdFromLookup] }
+                ]
+              },
+              physicalResourceId: PhysicalResourceId.of(`RouteTable-${existingVpcId}-${backendSubnetName}`)
+            },
+            policy: AwsCustomResourcePolicy.fromSdkCalls({ resources: AwsCustomResourcePolicy.ANY_RESOURCE })
+          });
+          
+          const routeTableIdFromLookup = routeTableLookup.getResponseField("RouteTables.0.RouteTableId");
+          resolvedRouteTableIds.push(routeTableIdFromLookup);
+        });
+      }
 
       const vciPrefix = "VIRTUAL-CARE-INTERACTION-production";
 
@@ -48,8 +143,32 @@ export class VpcStack extends Stack {
 
       // Determine if we should use specific subnets or CloudFormation imports
       // When using specific subnets, we will only use the AZs for which subnets are provided
-      const providedSubnetIds = [backendSubnetId, backendSubnetId2, backendSubnetId3].filter((s) => !!s);
-      const providedRouteTableIds = [backendRouteTableId, backendRouteTableId2, backendRouteTableId3].filter((r) => !!r);
+      const finalBackendSubnetIds = subnetNamePrefix 
+        ? resolvedBackendSubnetIds 
+        : [backendSubnetId, backendSubnetId2, backendSubnetId3].filter((s) => !!s);
+      
+      const finalFrontSubnetIds = subnetNamePrefix
+        ? resolvedFrontSubnetIds
+        : [frontSubnetId, frontSubnetId2, frontSubnetId3].filter((s) => !!s);
+      
+      const finalRouteTableIds = subnetNamePrefix
+        ? resolvedRouteTableIds
+        : [backendRouteTableId, backendRouteTableId3].filter((r) => !!r);
+      
+      const providedSubnetIds = finalBackendSubnetIds;
+      
+      // Deduplicate route table IDs - convert to string for comparison to handle CDK tokens
+      const uniqueRouteTableIds: string[] = [];
+      const seenRtIds = new Set<string>();
+      
+      for (const rtId of finalRouteTableIds) {
+        const rtIdStr = rtId.toString();
+        if (!seenRtIds.has(rtIdStr)) {
+          seenRtIds.add(rtIdStr);
+          uniqueRouteTableIds.push(rtId as string);
+        }
+      }
+      
       const useSpecificSubnets = providedSubnetIds.length > 0;
 
       // VPC for application
@@ -68,10 +187,9 @@ export class VpcStack extends Stack {
               Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2AID`),
               Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3AID`),
             ],
-        // Don't specify publicSubnetIds - use private subnets only for the deployment
-        // This is the preferred architecture: all resources in private subnets with NAT
+        // Provide deduplicated route table IDs for gateway endpoints
         privateSubnetRouteTableIds: useSpecificSubnets
-          ? providedRouteTableIds.length > 0 ? providedRouteTableIds : undefined
+          ? uniqueRouteTableIds.length > 0 ? uniqueRouteTableIds : undefined
           : [
               Fn.importValue(
                 `${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`
@@ -95,9 +213,8 @@ export class VpcStack extends Stack {
 
       // Expose front-end subnets for selective placement (e.g., ALB/NLB/ECS)
       // These subnets remain separate from the VPC's default private subnets (backend)
-      const frontSubnetIds = [frontSubnetId, frontSubnetId2, frontSubnetId3].filter((s) => !!s);
       // Using lightweight ISubnet references from IDs is sufficient for placement
-      this.frontPrivateSubnets = frontSubnetIds.map((sid, idx) =>
+      this.frontPrivateSubnets = finalFrontSubnetIds.map((sid, idx) =>
         ec2.Subnet.fromSubnetId(this, `${id}-FrontSubnet-${idx + 1}`, sid)
       );
 
@@ -179,8 +296,8 @@ export class VpcStack extends Stack {
         {
           vpc: this.vpc,
           description: "Security group for VPC endpoints",
-          // Allow egress so interface endpoints can respond; inbound is still scoped below
-          allowAllOutbound: true,
+          // Set allowAllOutbound to false so we can use explicit rules
+          allowAllOutbound: false,
         }
       );
 
@@ -191,38 +308,39 @@ export class VpcStack extends Stack {
         "Allow HTTPS from VPC"
       );
 
-      // Explicit egress for HTTPS keeps traffic flowing even if defaults change
+      // Explicit egress for HTTPS keeps traffic flowing
       endpointSecurityGroup.addEgressRule(
         ec2.Peer.ipv4(this.vpcCidrString),
         ec2.Port.tcp(443),
         "Allow HTTPS egress to VPC"
       );
 
+      /*
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
         subnets: subnetSelection,
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
         subnets: subnetSelection,
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("RDS Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.RDS,
         subnets: subnetSelection,
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
       this.vpc.addInterfaceEndpoint("Glue Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.GLUE,
         subnets: subnetSelection,
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
@@ -230,7 +348,7 @@ export class VpcStack extends Stack {
       this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
         subnets: subnetSelection,
-        privateDnsEnabled: true,
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
@@ -239,21 +357,26 @@ export class VpcStack extends Stack {
       this.vpc.addInterfaceEndpoint("Cognito IDP Endpoint", {
         service: new ec2.InterfaceVpcEndpointService(`com.amazonaws.${this.region}.cognito-idp`, 443),
         subnets: subnetSelection,
-        privateDnsEnabled: true, // Enable private DNS for proper resolution
+        privateDnsEnabled: false, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
+      */
 
-      // Add DynamoDB VPC endpoint (required for chat history)
-      this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
-        service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
-        subnets: [subnetSelection],
-      });
+      // Only add gateway endpoints if NOT using specific subnets
+      // (existing VPC likely already has them, and they cause route table duplicate issues)
+      if (!useSpecificSubnets) {
+        // Add DynamoDB VPC endpoint (required for chat history)
+        this.vpc.addGatewayEndpoint("DynamoDB Endpoint", {
+          service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+          subnets: [subnetSelection],
+        });
 
-      // Add S3 gateway endpoint for private-subnet S3 access without NAT
-      this.vpc.addGatewayEndpoint("S3 Endpoint", {
-        service: ec2.GatewayVpcEndpointAwsService.S3,
-        subnets: [subnetSelection],
-      });
+        // Add S3 gateway endpoint for private-subnet S3 access without NAT
+        this.vpc.addGatewayEndpoint("S3 Endpoint", {
+          service: ec2.GatewayVpcEndpointAwsService.S3,
+          subnets: [subnetSelection],
+        });
+      }
 
       this.vpc.addFlowLog(`${id}-vpcFlowLog`);
 

@@ -253,7 +253,7 @@ export class EcsSocketStack extends Stack {
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 5,
         interval: Duration.seconds(30),
-        timeout: Duration.seconds(10),
+        timeout: Duration.seconds(30), // Increased from 10s to 30s to allow socket server more time to respond
       },
       deregistrationDelay: Duration.seconds(120),
     });

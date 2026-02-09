@@ -17,6 +17,7 @@
     ]
   },
   "context": {
+    "@aws-cdk/aws-ec2:noSubnetRouteTableId": true,
     "@aws-cdk/core:disableDeprecatedPropertyOverride": false,
     "@aws-cdk/core:newStyleStackSynthesis": true,
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,

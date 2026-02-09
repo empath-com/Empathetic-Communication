@@ -17,6 +17,7 @@ export class DatabaseStack extends Stack {
     public readonly secretPathUser: secretsmanager.Secret;
     public readonly secretPathTableCreator: secretsmanager.Secret;
     public readonly rdsProxyEndpoint: string;
+    public readonly lambdaSecurityGroup: ec2.SecurityGroup;
     // Removed: rdsProxyEndpointTableCreator, rdsProxyEndpointAdmin - using single proxy
 
     constructor(scope: Construct, id: string, vpcStack: VpcStack, props?: StackProps) {
@@ -28,6 +29,16 @@ export class DatabaseStack extends Stack {
         // new iam.CfnServiceLinkedRole(this, `${id}-RDSServiceLinkedRole`, {
         //     awsServiceName: 'rds.amazonaws.com',
         // });
+
+        /**
+         * Create security group for Lambda to connect to RDS
+         * Created here to avoid circular dependency with DBFlow stack
+         */
+        this.lambdaSecurityGroup = new ec2.SecurityGroup(this, `${id}-lambda-sg`, {
+            vpc: vpcStack.vpc,
+            description: 'Security group for Lambda to access RDS',
+            allowAllOutbound: true
+        });
 
         /**
          * Retrieve a secret from Secret Manager
@@ -128,6 +139,13 @@ export class DatabaseStack extends Stack {
                 "Allow PostgreSQL traffic from VPC"
             );
         });
+
+        // Allow Lambda security group to connect to RDS
+        this.dbInstance.connections.allowFrom(
+            this.lambdaSecurityGroup,
+            ec2.Port.tcp(5432),
+            'Allow Lambda to connect to RDS on port 5432'
+        );
 
         /**
          * Create IAM role for RDS Proxy

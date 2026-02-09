@@ -264,16 +264,18 @@ exports.handler = async function () {
   const { DB_SECRET_NAME, DB_USER_SECRET_NAME, DB_PROXY } = process.env;
   const adminDb = await getSecret(DB_SECRET_NAME);
   
-  // Fix migration tracking first
+  // Create roles FIRST before anything else
+  await createAppUsers(adminDb, DB_SECRET_NAME, DB_USER_SECRET_NAME, DB_PROXY);
+  
+  // Fix migration tracking
   await fixMigrationTracking(adminDb);
   
-  // Then run any new migrations
+  // Then run any new migrations (roles already exist)
   await ensureBaselineOrMigrate(adminDb);
   
   // Ensure empathy_prompt_history table exists with proper permissions
   await ensureEmpathyPromptHistoryTable(adminDb);
   
-  await createAppUsers(adminDb, DB_SECRET_NAME, DB_USER_SECRET_NAME, DB_PROXY);
   return { status: "ok" };
 };
 

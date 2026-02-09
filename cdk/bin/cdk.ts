@@ -11,8 +11,8 @@ import { EcsSocketStack } from "../lib/ecs-socket-stack";
 const app = new cdk.App();
 
 const env = {
-  account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION,
+  account: process.env.CDK_DEFAULT_ACCOUNT || process.env.AWS_ACCOUNT_ID || "456349520196",
+  region: process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || "ca-central-1",
 };
 
 const StackPrefix = app.node.tryGetContext("StackPrefix");

@@ -342,7 +342,7 @@ aws secretsmanager create-secret ^
 ```powershell
 aws secretsmanager create-secret `
     --name VCISecrets `
-    --secret-string '{\"DB_Username\":\"<YOUR-DB-USERNAME>\"}' `
+    --secret-string '{"DB_Username":"<YOUR-DB-USERNAME>"}' `
     --profile <your-profile-name>
 ```
 </details>
@@ -354,7 +354,7 @@ For example,
 ```
 aws secretsmanager create-secret \
     --name VCISecrets \
-    --secret-string '{\"DB_Username\":\"VCISecrets\"}'\
+    --secret-string '{"DB_Username":"VCISecrets"}'\
     --profile <your-profile-name>
 ```
 

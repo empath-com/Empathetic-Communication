@@ -99,12 +99,9 @@ export class DBFlowStack extends Stack {
             role: lambdaRole,
         });
 
-        // Create security group for Lambda to connect to RDS
-        const lambdaSecurityGroup = new ec2.SecurityGroup(this, `${id}-lambda-sg`, {
-            vpc: vpcStack.vpc,
-            description: 'Security group for Lambda to access RDS',
-            allowAllOutbound: true
-        });
+        // Use Lambda security group created in Database stack
+        // (created there to avoid circular dependency)
+        const lambdaSecurityGroup = db.lambdaSecurityGroup;
 
         // Add the security group to Lambda
         initializerLambda.addToRolePolicy(
