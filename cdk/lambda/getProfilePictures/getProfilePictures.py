@@ -12,6 +12,7 @@ REGION = os.environ["REGION"]
 BUCKET = os.environ["BUCKET"]
 DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
 RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
+CORS_ALLOWED_ORIGIN = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
 
 # AWS Clients
 secrets_manager_client = boto3.client('secretsmanager')
@@ -113,7 +114,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("Missing required parameter: simulation_group_id"),
@@ -128,7 +129,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("No patient IDs found"),
@@ -146,7 +147,7 @@ def lambda_handler(event, context):
         "headers": {
             "Content-Type": "application/json",
             "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+            "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
             "Access-Control-Allow-Methods": "*",
         },
         'body': json.dumps(profile_pics)

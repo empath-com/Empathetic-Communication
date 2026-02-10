@@ -10,6 +10,7 @@ s3 = boto3.client('s3')
 BUCKET = os.environ["BUCKET"]
 DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
 RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
+CORS_ALLOWED_ORIGIN = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
 
 # AWS Clients
 secrets_manager_client = boto3.client('secretsmanager')
@@ -100,7 +101,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameters: simulation_group_id, patient_id, file_name, file_type, or folder_type')
@@ -132,7 +133,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps('Unsupported file type')
@@ -161,7 +162,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Error deleting file {file_name}.{file_type} from the database")
@@ -172,7 +173,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('File deleted successfully')
@@ -185,7 +186,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Internal server error')

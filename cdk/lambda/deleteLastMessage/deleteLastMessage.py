@@ -19,6 +19,7 @@ TABLE_NAME = None
 
 DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
 RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
+CORS_ALLOWED_ORIGIN = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
 
 def get_secret(secret_name, expect_json=True):
     global db_secret
@@ -125,7 +126,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps('Missing required parameter: session_id')
@@ -150,7 +151,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"No conversation history found for session_id: {session_id}")
@@ -166,7 +167,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Not enough messages to delete for session_id: {session_id}")
@@ -199,7 +200,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Successfully deleted the last human and AI messages for session_id: {session_id}")
@@ -211,7 +212,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Error deleting last messages from the database for session_id: {session_id}")
@@ -224,7 +225,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps(f"Error deleting last message: {e}")

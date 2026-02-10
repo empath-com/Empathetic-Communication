@@ -1,5 +1,5 @@
 const { initializeConnection } = require("./lib.js");
-let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL } = process.env;
+let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL, CORS_ALLOWED_ORIGIN = "*" } = process.env;
 const {
   CognitoIdentityProviderClient,
   AdminGetUserCommand,
@@ -39,7 +39,7 @@ exports.handler = async (event) => {
       headers: {
         "Access-Control-Allow-Headers":
           "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+        "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
         "Access-Control-Allow-Methods": "*",
       },
       body: JSON.stringify({ error: "Unauthorized" }),
@@ -51,7 +51,7 @@ exports.handler = async (event) => {
     headers: {
       "Access-Control-Allow-Headers":
         "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+      "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "*",
     },
     body: "",

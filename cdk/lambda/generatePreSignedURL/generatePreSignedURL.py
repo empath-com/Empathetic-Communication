@@ -5,6 +5,7 @@ from aws_lambda_powertools import Logger
 
 BUCKET = os.environ["BUCKET"]
 REGION = os.environ["REGION"]
+CORS_ALLOWED_ORIGIN = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
 
 s3 = boto3.client(
     "s3",
@@ -131,7 +132,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             "body": json.dumps({"presignedurl": presigned_url}),

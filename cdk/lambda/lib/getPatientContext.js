@@ -2,6 +2,8 @@ const { Pool } = require('pg');
 
 let pool;
 
+const CORS_ALLOWED_ORIGIN = process.env.CORS_ALLOWED_ORIGIN || "*";
+
 function getPool() {
   if (!pool) {
     pool = new Pool({
@@ -19,7 +21,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 400,
       headers: {
-        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+        "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },
@@ -50,7 +52,7 @@ exports.getPatientContext = async (event) => {
       return {
         statusCode: 404,
         headers: {
-          "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+          "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
           "Access-Control-Allow-Headers": "*", 
           "Access-Control-Allow-Methods": "*",
         },
@@ -69,7 +71,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+        "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },
@@ -81,7 +83,7 @@ exports.getPatientContext = async (event) => {
     return {
       statusCode: 500,
       headers: {
-        "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+        "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "*",
       },

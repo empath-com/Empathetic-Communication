@@ -76,12 +76,8 @@ export class AmplifyStack extends cdk.Stack {
         VITE_COGNITO_USER_POOL_CLIENT_ID: apiStack.getUserPoolClientId(),
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
-        // Use explicit exported ALB DNS to avoid missing auto-export names
-        VITE_SOCKET_URL: "wss://ws.empath-ai.pharmsci.ubc.ca", //Temporary hardcoded value for ssl
-        /*/cdk.Fn.join("", [
-          "ws://",
-          cdk.Fn.importValue(`${ecsSocketStack.stackName}-ALB-DNS`),
-        ]),*/
+        // Use ALB DNS name from EcsSocketStack for WebSocket URL
+        VITE_SOCKET_URL: ecsSocketStack.socketUrl,
         VITE_APPSYNC_GRAPHQL_URL: apiStack.appSyncApi.graphqlUrl,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),

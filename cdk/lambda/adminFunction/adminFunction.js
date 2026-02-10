@@ -1,6 +1,6 @@
 const { initializeConnection } = require("./libadmin.js");
 
-let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT } = process.env;
+let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, CORS_ALLOWED_ORIGIN = "*" } = process.env;
 
 // SQL conneciton from global variable at libadmin.js
 let sqlConnectionTableCreator = global.sqlConnectionTableCreator;
@@ -11,7 +11,7 @@ exports.handler = async (event) => {
     headers: {
       "Access-Control-Allow-Headers":
         "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+      "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "*",
     },
     body: "",

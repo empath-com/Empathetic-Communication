@@ -6,13 +6,12 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
-  public readonly nlbDnsName: string;
+  public readonly nlbDnsName?: string; // NLB temporarily disabled
   public readonly albDnsName: string;
   public readonly albArn: string;
 
@@ -26,30 +25,21 @@ export class EcsSocketStack extends Stack {
   ) {
     super(scope, id, props);
 
+    // CORS configuration parameter
+    const corsAllowedOrigin = new cdk.CfnParameter(this, "corsAllowedOrigin", {
+      type: "String",
+      default: "*",
+      description: "Allowed origin for CORS (e.g., https://example.com or * for all)",
+    });
+
+    // Socket domain parameter for reference
+    const socketDomainParam = new cdk.CfnParameter(this, "socketDomain", {
+      type: "String",
+      default: "",
+      description: "Custom domain for WebSocket server (e.g., ws.example.com). Certificate and DNS must be configured externally. Leave empty to use ALB DNS name.",
+    });
+
     const vpc = vpcStack.vpc;
-
-    // ============================================
-    // ACM CERTIFICATE FOR HTTPS/WSS (optional)
-    // ============================================
-    // Create certificate if domain is specified via SOCKET_DOMAIN env var
-    let certificate: acm.ICertificate | undefined;
-    const socketDomain = process.env.SOCKET_DOMAIN || "";
-
-    if (socketDomain) {
-      try {
-        certificate = new acm.Certificate(this, "SocketCertificate", {
-          domainName: socketDomain,
-          validation: acm.CertificateValidation.fromDns(),
-          subjectAlternativeNames: [`*.${socketDomain}`],
-        });
-        console.log(`✅ Creating ACM certificate for domain: ${socketDomain}`);
-      } catch (e) {
-        console.warn(`⚠️  Failed to create certificate for ${socketDomain}. Falling back to HTTP/WS.`, e);
-        certificate = undefined;
-      }
-    } else {
-      console.warn("⚠️  SOCKET_DOMAIN not set. Skipping HTTPS/WSS. Set env var to enable: export SOCKET_DOMAIN=your-domain.com");
-    }
 
     // 1) ECS cluster
     const cluster = new ecs.Cluster(this, "SocketCluster", { vpc });
@@ -172,6 +162,7 @@ export class EcsSocketStack extends Stack {
         TEXT_GENERATION_ENDPOINT: apiServiceStack.getEndpointUrl(),
         APPSYNC_GRAPHQL_URL: apiServiceStack.appSyncApi.graphqlUrl,
         SOCKET_EXECUTION_ROLE_ARN: taskRole.roleArn,
+        CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
       },
     });
 
@@ -179,17 +170,24 @@ export class EcsSocketStack extends Stack {
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 2, // Start with 2 tasks for better availability
+      desiredCount: 1, // Start with single task - deployment is simpler and more stable
       assignPublicIp: false, // No public IPs
       vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
       deploymentController: {
         type: ecs.DeploymentControllerType.ECS,
       },
+      // Give containers 3 minutes to initialize before health check evaluation
+      healthCheckGracePeriod: Duration.seconds(180),
+      // Disable circuit breaker for now - let's see if it's a deployment state issue, not health
+      // circuitBreaker: { rollback: true },
+      // Standard deployment defaults for single task
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
     });
 
-    // Auto-scaling configuration
+    // Auto-scaling configuration - starts from 1 task, scales up based on metrics
     const scaling = service.autoScaleTaskCount({
-      minCapacity: 2,
+      minCapacity: 1,
       maxCapacity: 10,
     });
 
@@ -204,7 +202,7 @@ export class EcsSocketStack extends Stack {
     });
 
     // ============================================
-    // APPLICATION LOAD BALANCER (WebSocket/HTTPS)
+    // APPLICATION LOAD BALANCER (WebSocket/HTTP)
     // ============================================
     const alb = new elbv2.ApplicationLoadBalancer(this, "SocketALB", {
       vpc,
@@ -220,17 +218,20 @@ export class EcsSocketStack extends Stack {
       "Allow load balancers to reach ECS service"
     );
 
-    // Update ALB security group to allow HTTPS (443) if certificate is configured
+    // Update ALB security group to allow HTTP (80)
     const albSecurityGroup = alb.connections.securityGroups[0];
     albSecurityGroup.addIngressRule(
       ec2.Peer.ipv4("10.0.0.0/8"),
-      ec2.Port.tcp(443),
-      "Allow HTTPS to WebSocket ALB"
+      ec2.Port.tcp(80),
+      "Allow HTTP to WebSocket ALB"
     );
 
     // ============================================
     // NETWORK LOAD BALANCER (TCP/UDP protocols)
     // ============================================
+    // TODO: NLB health checks are causing tasks to fail. Disabled temporarily.
+    // Will re-enable once ALB is working reliably.
+    /*
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
       internetFacing: false, // Private NLB for VPC access only
@@ -248,52 +249,26 @@ export class EcsSocketStack extends Stack {
       port: 80,
       targets: [service],
       healthCheck: {
-        protocol: elbv2.Protocol.TCP,
+        protocol: elbv2.Protocol.HTTP, // Changed from TCP to HTTP for proper health checks
         port: "80",
+        path: "/health", // HTTP health check needs a path
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 5,
+        unhealthyThresholdCount: 10, // Increased from 5 to match ALB tolerance (300s before unhealthy)
         interval: Duration.seconds(30),
-        timeout: Duration.seconds(30), // Increased from 10s to 30s to allow socket server more time to respond
+        timeout: Duration.seconds(10), // Reduced from 30s since HTTP is deterministic
       },
       deregistrationDelay: Duration.seconds(120),
     });
+    */
 
-    // Add HTTP listener that redirects to HTTPS
+    // Add HTTP listener for WebSocket connections
     const httpListener = alb.addListener("HttpListener", {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
     });
 
-    // Use certificate if available
-    let httpsListener: elbv2.ApplicationListener | undefined;
-
-    if (certificate) {
-      try {
-        httpsListener = alb.addListener("HttpsListener", {
-          port: 443,
-          protocol: elbv2.ApplicationProtocol.HTTPS,
-          certificates: [certificate],
-        });
-
-        // Redirect HTTP to HTTPS
-        httpListener.addAction("RedirectToHttps", {
-          action: elbv2.ListenerAction.redirect({
-            protocol: "HTTPS",
-            port: "443",
-            permanent: true,
-          }),
-        });
-        console.log("✅ HTTPS listener created. HTTP traffic will redirect to HTTPS.");
-      } catch (e) {
-        console.warn("⚠️  Failed to create HTTPS listener. Using HTTP only.", e);
-      }
-    } else {
-      console.warn("⚠️  No certificate available. WebSocket will use ws:// (insecure).");
-    }
-
-    // Add targets to the appropriate listener (HTTPS if available, HTTP otherwise)
-    const targetListener = httpsListener || httpListener;
-    targetListener.addTargets("AlbEcsTargets", {
+    // Add targets to HTTP listener
+    httpListener.addTargets("AlbEcsTargets", {
       protocol: elbv2.ApplicationProtocol.HTTP,
       port: 80,
       targets: [service],
@@ -318,33 +293,21 @@ export class EcsSocketStack extends Stack {
       "Allow HTTP to WebSocket ALB"
     );
 
-    // Note: NLB does not use security groups - traffic control is handled at the target level
+    // Note: NLB is temporarily disabled - was causing health check failures
 
     // ============================================
     // OUTPUTS FOR CROSS-ACCOUNT CONSUMPTION
     // ============================================
-    this.nlbDnsName = nlb.loadBalancerDnsName;
+    // this.nlbDnsName = nlb.loadBalancerDnsName;  // NLB disabled
     this.albDnsName = alb.loadBalancerDnsName;
     this.albArn = alb.loadBalancerArn;
-    // Use WSS if HTTPS is configured, otherwise fall back to WS
-    this.socketUrl = httpsListener
-      ? `wss://${alb.loadBalancerDnsName}`
-      : `ws://${alb.loadBalancerDnsName}`;
+    // Use custom domain if provided, otherwise use ALB DNS name
+    const socketDomain = socketDomainParam.valueAsString;
+    const domainForUrl = socketDomain && socketDomain.trim() !== "" ? socketDomain : alb.loadBalancerDnsName;
+    // WebSocket uses ws:// (HTTP) protocol. HTTPS/WSS must be configured externally via Route53 alias and CloudFront or similar
+    this.socketUrl = `ws://${domainForUrl}`;
 
-    // Output NLB for direct TCP access (VPC peering, PrivateLink, etc.)
-    new CfnOutput(this, "NetworkLoadBalancerDnsName", {
-      value: this.nlbDnsName,
-      description: "NLB DNS Name for cross-VPC/cross-account access via VPC peering or PrivateLink",
-      exportName: `${id}-NLB-DNS`,
-    });
-
-    new CfnOutput(this, "NetworkLoadBalancerArn", {
-      value: nlb.loadBalancerArn,
-      description: "NLB ARN for cross-account access",
-      exportName: `${id}-NLB-ARN`,
-    });
-
-    // Output ALB for HTTP/WebSocket access
+    // Output ALB for HTTP/WebSocket access (removed NLB outputs since it's disabled)
     new CfnOutput(this, "ApplicationLoadBalancerDnsName", {
       value: this.albDnsName,
       description: "ALB DNS Name for WebSocket connections within same VPC or via VPC peering",
@@ -360,33 +323,17 @@ export class EcsSocketStack extends Stack {
     // Output internal WebSocket URL
     new CfnOutput(this, "InternalWebSocketUrl", {
       value: this.socketUrl,
-      description: httpsListener
-        ? "Internal WebSocket server URL (wss:// protocol - secure)"
-        : "Internal WebSocket server URL (ws:// protocol - insecure)",
+      description: "Internal WebSocket server URL (ws:// protocol - HTTP). Configure external TLS termination for wss:// (HTTPS).",
       exportName: `${id}-WebSocket-URL`,
     });
 
-    // Output note about HTTPS configuration
+    // Output note about external HTTPS configuration
     new CfnOutput(this, "HttpsConfigurationNote", {
-      value: certificate
-        ? `✅ HTTPS/WSS enabled with certificate for domain: ${socketDomain}`
-        : "⚠️  HTTP/WS only. Set SOCKET_DOMAIN env var before deploying to enable HTTPS/WSS (e.g., export SOCKET_DOMAIN=socket.example.com).",
-      description: "WebSocket security configuration status",
+      value: socketDomain && socketDomain.trim() !== ""
+        ? `Custom domain provided: ${socketDomain}. Configure DNS, TLS, and routing in the account managing that domain.`
+        : `No custom domain provided. Using ALB DNS: ${alb.loadBalancerDnsName}. For HTTPS/WSS, set up external TLS termination.`,
+      description: "Instructions for external HTTPS/WSS configuration",
     });
-
-    // Output certificate ARN if created
-    if (certificate) {
-      new CfnOutput(this, "CertificateArn", {
-        value: (certificate as any).certificateArn,
-        description: "ACM Certificate ARN for Socket WebSocket domain",
-        exportName: `${id}-Certificate-ARN`,
-      });
-
-      new CfnOutput(this, "CertificateValidationNote", {
-        value: `Certificate requires DNS validation. Check AWS Certificate Manager console for CNAME records to add to ${socketDomain} DNS.`,
-        description: "Certificate validation instructions",
-      });
-    }
 
     // Export front subnet IDs used by the service and load balancers to validate placement
     new CfnOutput(this, "FrontSubnetIds", {

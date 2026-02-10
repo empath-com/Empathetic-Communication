@@ -8,13 +8,39 @@ const { verifyToken, getStsCredentials } = require("./auth");
 
 const app = express();
 const server = createServer(app);
+
+// CORS configuration: allow specific domain or default to all origins
+const corsOrigin = process.env.CORS_ALLOWED_ORIGIN || "*";
+console.log(`🌐 CORS configured for origin: ${corsOrigin}`);
+
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: { origin: corsOrigin, methods: ["GET", "POST"] },
 });
+
+// Track server startup time and state
+const SERVER_START_TIME = Date.now();
+let serverReady = false;
+let lastHealthCheckTime = Date.now();
+let healthCheckCount = 0;
+let totalConnections = 0;
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
-  res.json({ status: "healthy" });
+  healthCheckCount++;
+  lastHealthCheckTime = Date.now();
+  const uptime = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
+  const metrics = {
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime_seconds: uptime,
+    server_ready: serverReady,
+    active_clients: io.engine.clientsCount,
+    total_connections: totalConnections,
+    health_checks: healthCheckCount,
+    memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+  };
+  console.log(`[${new Date().toISOString()}] Health check #${healthCheckCount} from ${req.ip} - Uptime: ${uptime}s, Clients: ${io.engine.clientsCount}`);
+  res.json(metrics);
 });
 
 // ─── Socket.IO Connection ─────────────────────────────────────────────────────
@@ -37,14 +63,15 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", (socket) => {
-  console.log("🔌 CLIENT CONNECTED:", socket.id, "User:", socket.userEmail);
+  totalConnections++;
+  console.log(`🔌 CLIENT CONNECTED: ${socket.id} (Total connections: ${totalConnections}, Active: ${io.engine.clientsCount})`);
   console.log(
     process.env.SM_DB_CREDENTIALS
-      ? "🔐 DB CREDENTIALS LOADED"
+      ? "✅ DB CREDENTIALS LOADED"
       : "❌ NO DB CREDENTIALS"
   );
   console.log(
-    process.env.RDS_PROXY_ENDPOINT ? "🔐 RDS PROXY LOADED" : "❌ NO RDS PROXY"
+    process.env.RDS_PROXY_ENDPOINT ? `✅ RDS PROXY: ${process.env.RDS_PROXY_ENDPOINT}` : "❌ NO RDS PROXY"
   );
 
   let novaProcess = null;
@@ -471,5 +498,40 @@ io.on("connection", (socket) => {
 // ─── Start HTTP server on port 80 ─────────────────────────────────────────
 const PORT = process.env.PORT || 80;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Socket server running on port ${PORT}`);
+  serverReady = true;
+  const startupTime = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`✅ Socket server ready and listening on port ${PORT}`);
+  console.log(`   Startup time: ${startupTime}s`);
+  console.log(`   Time: ${new Date().toISOString()}`);
+  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`${'='.repeat(70)}\n`);
+  
+  // Log environment readiness
+  if (process.env.SM_DB_CREDENTIALS) {
+    console.log(`✅ DB Credentials: LOADED`);
+  } else {
+    console.log(`⚠️  DB Credentials: NOT SET`);
+  }
+  
+  if (process.env.RDS_PROXY_ENDPOINT) {
+    console.log(`✅ RDS Proxy: ${process.env.RDS_PROXY_ENDPOINT}`);
+  } else {
+    console.log(`⚠️  RDS Proxy: NOT SET`);
+  }
+  
+  if (process.env.APPSYNC_GRAPHQL_URL) {
+    console.log(`✅ AppSync GraphQL: CONFIGURED`);
+  } else {
+    console.log(`⚠️  AppSync GraphQL: NOT SET`);
+  }
+  
+  // Start a watchdog to log status every 30 seconds if running for debugging
+  if (process.env.ENABLE_STATUS_LOGS === 'true') {
+    setInterval(() => {
+      const uptime = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
+      const memory = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+      console.log(`📊 Status: Uptime=${uptime}s, Clients=${io.engine.clientsCount}, Memory=${memory}MB, HealthChecks=${healthCheckCount}`);
+    }, 30000);
+  }
 });

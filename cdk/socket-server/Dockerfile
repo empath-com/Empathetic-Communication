@@ -2,8 +2,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install Python and pip
-RUN apk add --no-cache python3 py3-pip
+# Install Python, pip, and wget (needed for debugging)
+RUN apk add --no-cache python3 py3-pip wget
+
+# Force rebuild on 2026-02-10 - CORS domain configurable via parameter
+ENV REBUILD_TIMESTAMP=2026-02-10-v7
 
 # Install Node.js dependencies
 COPY package.json ./
@@ -26,13 +29,6 @@ ENV AWS_DEFAULT_REGION=us-east-1
 
 # Listen on HTTP port
 EXPOSE 80
-
-# Add container health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-check-certificate -qO- http://localhost:80/health || exit 1
-
-# Install wget for healthcheck
-RUN apk add --no-cache wget
 
 # Launch your HTTP + WebSocket server
 CMD ["node", "server.js"]

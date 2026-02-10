@@ -7,6 +7,7 @@ logger = Logger()
 
 s3 = boto3.client('s3')
 BUCKET = os.environ["BUCKET"]
+CORS_ALLOWED_ORIGIN = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
 
 @logger.inject_lambda_context
 def lambda_handler(event, context):
@@ -24,7 +25,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps("Missing required parameters: simulation_group_id or patient_id")
@@ -69,7 +70,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"Deleted patient directory: {patient_prefix}")
@@ -81,7 +82,7 @@ def lambda_handler(event, context):
                 "headers": {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                    "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                     "Access-Control-Allow-Methods": "*",
                 },
                 'body': json.dumps(f"No objects found in patient directory: {patient_prefix}")
@@ -94,7 +95,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Origin": "https://empath-ai.pharmsci.ubc.ca",
+                "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
                 "Access-Control-Allow-Methods": "*",
             },
             'body': json.dumps(f"Internal server error: {str(e)}")

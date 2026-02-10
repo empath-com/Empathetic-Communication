@@ -60,6 +60,13 @@ export class ApiServiceStack extends cdk.Stack {
   ) {
     super(scope, id, props);
 
+    // CORS configuration parameter
+    const corsAllowedOrigin = new cdk.CfnParameter(this, "corsAllowedOrigin", {
+      type: "String",
+      default: "*",
+      description: "Allowed origin for CORS requests (default: *)",
+    });
+
     this.layerList = {};
 
     const embeddingStorageBucket = new s3.Bucket(
@@ -657,6 +664,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           USER_POOL: this.userPool.userPoolId,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-studentFunction`,
         memorySize: 1024,
@@ -689,6 +697,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           USER_POOL: this.userPool.userPoolId,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-instructorFunction`,
         memorySize: 1024,
@@ -720,6 +729,7 @@ export class ApiServiceStack extends cdk.Stack {
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-adminFunction`,
         memorySize: 1024,
@@ -1626,6 +1636,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-GetFilesFunction`,
         layers: [psycopgLayer, powertoolsLayer],
@@ -1680,6 +1691,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-GetFilesFunctionStudent`,
         layers: [psycopgLayer, powertoolsLayer],
@@ -1734,6 +1746,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-GetProfilePictures`,
         layers: [psycopgLayer, powertoolsLayer],
@@ -1788,6 +1801,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-GetProfilePicturesStudent`,
         layers: [psycopgLayer, powertoolsLayer],
@@ -1839,6 +1853,7 @@ export class ApiServiceStack extends cdk.Stack {
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // RDS Proxy Endpoint
         BUCKET: dataIngestionBucket.bucketName,
         REGION: this.region,
+        CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
       },
       functionName: `${id}-DeleteFileFunction`,
       layers: [psycopgLayer, powertoolsLayer],
@@ -1888,6 +1903,7 @@ export class ApiServiceStack extends cdk.Stack {
         environment: {
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-DeletePatientFunction`,
         layers: [powertoolsLayer],
@@ -1929,6 +1945,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
           REGION: this.region,
+          CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-DeleteLastMessage`,
         layers: [psycopgLayer, powertoolsLayer],
