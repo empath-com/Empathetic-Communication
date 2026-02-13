@@ -1,0 +1,4236 @@
+Using specific subnets. Skipping creation of public resources.
+Deploying with new VPC. No need to add private subnet CIDR ranges to inbound rules of RDS.
+🏗️ RDS_PROXY_ENDPOINT: ${Token[TOKEN.285]}
+[CDK Build] Processing OpenAPI with CORS origin: *
+[CDK Build] Found 77 multi-line and 77 inline instances
+[CDK Build] Replaced 154 instances. 0 CorsAllowedOrigin references remaining (should be 0)
+[CDK Build] ✓ All CORS parameters successfully replaced
+Parameters:
+  corsAllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: "Allowed origin for CORS requests (default: *)"
+  BootstrapVersion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cdk-bootstrap/hnb659fds/version
+    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
+Resources:
+  EmpathAIApiembeddingStorageBucket39A8D9C4:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - HEAD
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - "*"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-embeddingStorageBucket/Resource
+  EmpathAIApiembeddingStorageBucketPolicyF0533458:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: EmpathAIApiembeddingStorageBucket39A8D9C4
+      PolicyDocument:
+        Statement:
+          - Action: s3:*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Effect: Deny
+            Principal:
+              AWS: "*"
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiembeddingStorageBucket39A8D9C4
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiembeddingStorageBucket39A8D9C4
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-embeddingStorageBucket/Policy/Resource
+  awsjwtverifyD79E70E1:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - nodejs20.x
+      Content:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: db469102ea73946c1423a2134e7ab1a58d0c500c8713d736f070b7df241b4f01.zip
+      Description: Contains the aws-jwt-verify library for JS
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/aws-jwt-verify/Resource
+      aws:asset:path: asset.db469102ea73946c1423a2134e7ab1a58d0c500c8713d736f070b7df241b4f01.zip
+      aws:asset:is-bundled: false
+      aws:asset:property: Content
+  postgres6BBC2FA4:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - nodejs20.x
+      Content:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 31bc76ac736cf9a98ec3b5dbc8b0c5b72766d75e249a7adbe8de5254a5b654d8.zip
+      Description: Contains the postgres library for JS
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/postgres/Resource
+      aws:asset:path: asset.31bc76ac736cf9a98ec3b5dbc8b0c5b72766d75e249a7adbe8de5254a5b654d8.zip
+      aws:asset:is-bundled: false
+      aws:asset:property: Content
+  psycopgLambdaLayer8E470E0D:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.12
+      Content:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: a89f812c50d24866c26cb8c09506412689baee357bec3625d9e15a7e8faaf89f.zip
+      Description: Lambda layer containing the psycopg2 Python library
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/psycopgLambdaLayer/Resource
+      aws:asset:path: asset.a89f812c50d24866c26cb8c09506412689baee357bec3625d9e15a7e8faaf89f.zip
+      aws:asset:is-bundled: false
+      aws:asset:property: Content
+  EmpathAIApipool6F4BC077:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AutoVerifiedAttributes:
+        - email
+      EmailVerificationMessage: |-
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>Verify your email</title>
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+          <style>
+            body { margin:0; padding:0; background:#f3faf6; font-family:'Outfit',Arial,'Helvetica Neue',Helvetica,sans-serif; -webkit-font-smoothing:antialiased; color:#203128; }
+            a { color:#0d6b47; text-decoration:none; }
+            .full { width:100%; }
+            .container { max-width:600px; margin:0 auto; }
+            .shadow { box-shadow:0 4px 16px rgba(0,0,0,0.06); }
+            .rounded { border-radius:18px; }
+            .p { padding:40px 44px 36px; }
+            h1 { margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:0.3px; color:#0d6b47; }
+            p { margin:0 0 18px; font-size:15px; line-height:1.55; }
+            .header-bar { background:linear-gradient(135deg,#0d6b47,#15915d); padding:24px 44px 70px; text-align:left; border-radius:24px 24px 0 0; position:relative; overflow:hidden; }
+            .brand { font-size:18px; font-weight:600; color:#ffffff; letter-spacing:0.5px; }
+            .panel { background:#ffffff; position:relative; top:-56px; border:1px solid #dcefe3; }
+            .code-wrap { text-align:center; margin:28px 0 10px; }
+            .code-label { font-size:12px; font-weight:600; letter-spacing:1px; color:#3d5a4b; text-transform:uppercase; margin-bottom:10px; }
+            .code { display:inline-block; background:#0d6b47; color:#ffffff; font-weight:700; font-size:34px; letter-spacing:10px; padding:18px 26px 18px 32px; border-radius:14px; box-shadow:0 4px 10px rgba(13,107,71,0.25); font-family:'Outfit',Arial,sans-serif; }
+            .divider { height:1px; background:linear-gradient(to right,rgba(13,107,71,0.15),rgba(13,107,71,0.05),rgba(13,107,71,0.15)); margin:34px 0 26px; border:none; }
+            ul { margin:0 0 18px 20px; padding:0; }
+            li { margin:0 0 8px; }
+            .muted { font-size:12px; line-height:1.45; color:#5c6b61; margin-top:6px; }
+            .footer { text-align:center; font-size:11px; line-height:1.4; color:#6f7d74; padding:0 24px 40px; }
+            .btn-wrap { text-align:center; margin-top:30px; }
+            .btn { background:#15915d; background:linear-gradient(135deg,#15915d,#0d6b47); color:#ffffff !important; padding:14px 30px; font-size:15px; font-weight:600; border-radius:40px; display:inline-block; letter-spacing:0.4px; box-shadow:0 4px 12px rgba(21,145,93,0.35); }
+            .btn:hover { filter:brightness(1.05); }
+            @media (max-width:640px){ .p { padding:34px 28px 30px; } .header-bar { padding:22px 28px 62px; } h1 { font-size:24px; } .code { font-size:30px; letter-spacing:8px; padding:16px 22px 16px 28px; } }
+            @media (prefers-color-scheme: dark){ body { background:#0c1410; color:#e6efe9; } .panel { background:#15221b; border-color:#1e3027; } h1 { color:#6ee7b7; } p, .muted, .footer, li { color:#d9e7dd; } .code { background:#16a34a; box-shadow:0 4px 12px rgba(0,0,0,0.5); } .header-bar { background:linear-gradient(135deg,#0f5132,#157347); } .btn { background:linear-gradient(135deg,#16a34a,#0f5132); box-shadow:0 4px 12px rgba(0,0,0,0.6); } .divider { background:linear-gradient(to right,rgba(110,231,183,0.25),rgba(110,231,183,0.05),rgba(110,231,183,0.25)); } }
+          </style>
+        </head>
+        <body>
+          <table role="presentation" class="full" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f3faf6; padding:32px 14px;">
+            <tr>
+              <td>
+                <div class="container">
+                  <div class="header-bar">
+                    <div class="brand">Virtual Care Interactions</div>
+                  </div>
+                  <div class="panel rounded shadow">
+                    <div class="p">
+                      <h1>Confirm your email</h1>
+                      <p>Welcome to <strong>Virtual Care Interactions</strong>!</p>
+                      <p>Use the verification code below to complete your sign up:</p>
+                      <div class="code-wrap">
+                        <div class="code-label">Your verification code</div>
+                        <div class="code">{####}</div>
+                      </div>
+                      <hr class="divider" />
+                      <p style="margin:0 0 12px; font-weight:600; color:#0d6b47;">Don't remember signing up?</p>
+                      <ul>
+                        <li>If you didn't request this email you can ignore it safely.</li>
+                      </ul>
+                    </div>
+                    <div class="footer">You are receiving this email because a sign-up was initiated for this address. If this wasn't you, no further action is required.</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      EmailVerificationSubject: Confirm your email for Virtual Care Interactions
+      LambdaConfig:
+        PostAuthentication:
+          Fn::GetAtt:
+            - EmpathAIApiadjustUserRoles2543A0E3
+            - Arn
+        PostConfirmation:
+          Fn::GetAtt:
+            - EmpathAIApiaddStudentOnSignUpB5646CB2
+            - Arn
+        PreSignUp:
+          Fn::GetAtt:
+            - preSignupLambda248DA3D5
+            - Arn
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      SmsVerificationMessage: The verification code to your new account is {####}
+      UserPoolName: EmpathAI-Api-UserPool
+      UserPoolTags:
+        app: Virtual-Care-Interaction
+      UsernameAttributes:
+        - email
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: |-
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width,initial-scale=1" />
+            <title>Verify your email</title>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+            <style>
+              body { margin:0; padding:0; background:#f3faf6; font-family:'Outfit',Arial,'Helvetica Neue',Helvetica,sans-serif; -webkit-font-smoothing:antialiased; color:#203128; }
+              a { color:#0d6b47; text-decoration:none; }
+              .full { width:100%; }
+              .container { max-width:600px; margin:0 auto; }
+              .shadow { box-shadow:0 4px 16px rgba(0,0,0,0.06); }
+              .rounded { border-radius:18px; }
+              .p { padding:40px 44px 36px; }
+              h1 { margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:0.3px; color:#0d6b47; }
+              p { margin:0 0 18px; font-size:15px; line-height:1.55; }
+              .header-bar { background:linear-gradient(135deg,#0d6b47,#15915d); padding:24px 44px 70px; text-align:left; border-radius:24px 24px 0 0; position:relative; overflow:hidden; }
+              .brand { font-size:18px; font-weight:600; color:#ffffff; letter-spacing:0.5px; }
+              .panel { background:#ffffff; position:relative; top:-56px; border:1px solid #dcefe3; }
+              .code-wrap { text-align:center; margin:28px 0 10px; }
+              .code-label { font-size:12px; font-weight:600; letter-spacing:1px; color:#3d5a4b; text-transform:uppercase; margin-bottom:10px; }
+              .code { display:inline-block; background:#0d6b47; color:#ffffff; font-weight:700; font-size:34px; letter-spacing:10px; padding:18px 26px 18px 32px; border-radius:14px; box-shadow:0 4px 10px rgba(13,107,71,0.25); font-family:'Outfit',Arial,sans-serif; }
+              .divider { height:1px; background:linear-gradient(to right,rgba(13,107,71,0.15),rgba(13,107,71,0.05),rgba(13,107,71,0.15)); margin:34px 0 26px; border:none; }
+              ul { margin:0 0 18px 20px; padding:0; }
+              li { margin:0 0 8px; }
+              .muted { font-size:12px; line-height:1.45; color:#5c6b61; margin-top:6px; }
+              .footer { text-align:center; font-size:11px; line-height:1.4; color:#6f7d74; padding:0 24px 40px; }
+              .btn-wrap { text-align:center; margin-top:30px; }
+              .btn { background:#15915d; background:linear-gradient(135deg,#15915d,#0d6b47); color:#ffffff !important; padding:14px 30px; font-size:15px; font-weight:600; border-radius:40px; display:inline-block; letter-spacing:0.4px; box-shadow:0 4px 12px rgba(21,145,93,0.35); }
+              .btn:hover { filter:brightness(1.05); }
+              @media (max-width:640px){ .p { padding:34px 28px 30px; } .header-bar { padding:22px 28px 62px; } h1 { font-size:24px; } .code { font-size:30px; letter-spacing:8px; padding:16px 22px 16px 28px; } }
+              @media (prefers-color-scheme: dark){ body { background:#0c1410; color:#e6efe9; } .panel { background:#15221b; border-color:#1e3027; } h1 { color:#6ee7b7; } p, .muted, .footer, li { color:#d9e7dd; } .code { background:#16a34a; box-shadow:0 4px 12px rgba(0,0,0,0.5); } .header-bar { background:linear-gradient(135deg,#0f5132,#157347); } .btn { background:linear-gradient(135deg,#16a34a,#0f5132); box-shadow:0 4px 12px rgba(0,0,0,0.6); } .divider { background:linear-gradient(to right,rgba(110,231,183,0.25),rgba(110,231,183,0.05),rgba(110,231,183,0.25)); } }
+            </style>
+          </head>
+          <body>
+            <table role="presentation" class="full" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f3faf6; padding:32px 14px;">
+              <tr>
+                <td>
+                  <div class="container">
+                    <div class="header-bar">
+                      <div class="brand">Virtual Care Interactions</div>
+                    </div>
+                    <div class="panel rounded shadow">
+                      <div class="p">
+                        <h1>Confirm your email</h1>
+                        <p>Welcome to <strong>Virtual Care Interactions</strong>!</p>
+                        <p>Use the verification code below to complete your sign up:</p>
+                        <div class="code-wrap">
+                          <div class="code-label">Your verification code</div>
+                          <div class="code">{####}</div>
+                        </div>
+                        <hr class="divider" />
+                        <p style="margin:0 0 12px; font-weight:600; color:#0d6b47;">Don't remember signing up?</p>
+                        <ul>
+                          <li>If you didn't request this email you can ignore it safely.</li>
+                        </ul>
+                      </div>
+                      <div class="footer">You are receiving this email because a sign-up was initiated for this address. If this wasn't you, no further action is required.</div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>
+        EmailSubject: Confirm your email for Virtual Care Interactions
+        SmsMessage: The verification code to your new account is {####}
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-pool/Resource
+  EmpathAIApipoolAD331348:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - profile
+        - phone
+        - email
+        - openid
+        - aws.cognito.signin.user.admin
+      CallbackURLs:
+        - https://example.com
+      ClientName: EmpathAI-Api-UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      UserPoolId:
+        Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-pool/EmpathAI-Api-pool/Resource
+  EmpathAIApipoolPostAuthenticationCognitoE4FBBBBB:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - EmpathAIApiadjustUserRoles2543A0E3
+          - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApipool6F4BC077
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-pool/PostAuthenticationCognito
+  EmpathAIApipoolPostConfirmationCognito6AACBFF3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - EmpathAIApiaddStudentOnSignUpB5646CB2
+          - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApipool6F4BC077
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-pool/PostConfirmationCognito
+  EmpathAIApipoolPreSignUpCognitoFDC13481:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - preSignupLambda248DA3D5
+          - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApipool6F4BC077
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-pool/PreSignUpCognito
+  EmpathAIApiidentitypool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      AllowUnauthenticatedIdentities: true
+      CognitoIdentityProviders:
+        - ClientId:
+            Ref: EmpathAIApipoolAD331348
+          ProviderName:
+            Fn::GetAtt:
+              - EmpathAIApipool6F4BC077
+              - ProviderName
+      IdentityPoolName: EmpathAI-Api-IdentityPool
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-identity-pool
+  EmpathAIApiVCICognitoSecrets32A22A80:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Cognito Secrets for authentication
+      Name: EmpathAI-Api-VCI_Cognito_Secrets
+      SecretString:
+        Fn::Join:
+          - ""
+          - - '{"VITE_COGNITO_USER_POOL_ID":"'
+            - Ref: EmpathAIApipool6F4BC077
+            - '","VITE_COGNITO_USER_POOL_CLIENT_ID":"'
+            - Ref: EmpathAIApipoolAD331348
+            - '","VITE_AWS_REGION":"ca-central-1","VITE_IDENTITY_POOL_ID":"'
+            - Ref: EmpathAIApiidentitypool
+            - '"}'
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-VCI_Cognito_Secrets/Resource
+  EmpathAIApiAPIGateway49B13B3E:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Body:
+        Fn::Transform:
+          Name: AWS::Include
+          Parameters:
+            Location: s3://cdk-hnb659fds-assets-521610749125-ca-central-1/c1e4f49be9547b43e8ea58a9a9f653e779e97fdb7c86508dd968bc279dc815c7.yaml
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: EmpathAI-Api-API
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/Resource
+  EmpathAIApiAPIGatewayCloudWatchRole3031B325:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/CloudWatchRole/Resource
+  EmpathAIApiAPIGatewayAccountBC4E1391:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn:
+        Fn::GetAtt:
+          - EmpathAIApiAPIGatewayCloudWatchRole3031B325
+          - Arn
+    DependsOn:
+      - EmpathAIApiAPIGateway49B13B3E
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/Account
+  EmpathAIApiAPIGatewayDeployment1C95E8F2c0a7db17d59f055c308a34d71021cf72:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      Description: Automatically created by the RestApi construct
+      RestApiId:
+        Ref: EmpathAIApiAPIGateway49B13B3E
+    DependsOn:
+      - EmpathAIApiAPIGatewayEmpathAIApiDefault4xxResponseC2ECEBD3
+      - EmpathAIApiAPIGatewayEmpathAIApiDefault5xxResponse4E2DE6F1
+      - EmpathAIApiAPIGatewayEmpathAIApiUnauthorizedResponse8E8D3322
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/Deployment/Resource
+  EmpathAIApiAPIGatewayDeploymentStageprod17558CB6:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId:
+        Ref: EmpathAIApiAPIGatewayDeployment1C95E8F2c0a7db17d59f055c308a34d71021cf72
+      MethodSettings:
+        - DataTraceEnabled: true
+          HttpMethod: "*"
+          LoggingLevel: ERROR
+          MetricsEnabled: true
+          ResourcePath: /*
+        - DataTraceEnabled: false
+          HttpMethod: "*"
+          ResourcePath: /*
+          ThrottlingBurstLimit: 200
+          ThrottlingRateLimit: 100
+      RestApiId:
+        Ref: EmpathAIApiAPIGateway49B13B3E
+      StageName: prod
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    DependsOn:
+      - EmpathAIApiAPIGatewayAccountBC4E1391
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/DeploymentStage.prod/Resource
+  EmpathAIApiAPIGatewayEmpathAIApiDefault4xxResponseC2ECEBD3:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS,PATCH'"
+      ResponseType: DEFAULT_4XX
+      RestApiId:
+        Ref: EmpathAIApiAPIGateway49B13B3E
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/EmpathAI-Api-Default4xxResponse/Resource
+  EmpathAIApiAPIGatewayEmpathAIApiDefault5xxResponse4E2DE6F1:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS,PATCH'"
+      ResponseType: DEFAULT_5XX
+      RestApiId:
+        Ref: EmpathAIApiAPIGateway49B13B3E
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/EmpathAI-Api-Default5xxResponse/Resource
+  EmpathAIApiAPIGatewayEmpathAIApiUnauthorizedResponse8E8D3322:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS,PATCH'"
+      ResponseType: UNAUTHORIZED
+      RestApiId:
+        Ref: EmpathAIApiAPIGateway49B13B3E
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-APIGateway/EmpathAI-Api-UnauthorizedResponse/Resource
+  EmpathAIApiStudentRoleB061AF7F:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  Ref: EmpathAIApiidentitypool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+            Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-StudentRole/Resource
+  EmpathAIApiStudentPolicyACE6678B:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: execute-api:Invoke
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                  - Ref: EmpathAIApiAPIGateway49B13B3E
+                  - /*/*/student/*
+          - Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Effect: Allow
+            Resource: arn:aws:dynamodb:ca-central-1:521610749125:table/DynamoDB-Conversation-Table
+          - Action:
+              - bedrock:Converse
+              - bedrock:ConverseStream
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithBidirectionalStream
+              - bedrock:InvokeModelWithResponseStream
+            Effect: Allow
+            Resource: "*"
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource:
+              Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiStudentPolicyACE6678B
+      Roles:
+        - Ref: EmpathAIApiStudentRoleB061AF7F
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-StudentPolicy/Resource
+  EmpathAIApiInstructorRole3704AFBC:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  Ref: EmpathAIApiidentitypool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+            Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-InstructorRole/Resource
+  EmpathAIApiInstructorPolicyB9873F52:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: execute-api:Invoke
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                  - Ref: EmpathAIApiAPIGateway49B13B3E
+                  - /*/*/instructor/*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiInstructorPolicyB9873F52
+      Roles:
+        - Ref: EmpathAIApiInstructorRole3704AFBC
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-InstructorPolicy/Resource
+  EmpathAIApiAdminRole18DFE659:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  Ref: EmpathAIApiidentitypool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+            Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-AdminRole/Resource
+  EmpathAIApiAdminPolicy2ADEDD11:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: execute-api:Invoke
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                    - Ref: EmpathAIApiAPIGateway49B13B3E
+                    - /*/*/admin/*
+              - Fn::Join:
+                  - ""
+                  - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                    - Ref: EmpathAIApiAPIGateway49B13B3E
+                    - /*/*/instructor/*
+              - Fn::Join:
+                  - ""
+                  - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                    - Ref: EmpathAIApiAPIGateway49B13B3E
+                    - /*/*/student/*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiAdminPolicy2ADEDD11
+      Roles:
+        - Ref: EmpathAIApiAdminRole18DFE659
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-AdminPolicy/Resource
+  EmpathAIApiTechAdminRoleECD32A6F:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  Ref: EmpathAIApiidentitypool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+            Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TechAdminRole/Resource
+  EmpathAIApiTechAdminPolicy11CCECEC:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: execute-api:Invoke
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:ca-central-1:521610749125:"
+                  - Ref: EmpathAIApiAPIGateway49B13B3E
+                  - /*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiTechAdminPolicy11CCECEC
+      Roles:
+        - Ref: EmpathAIApiTechAdminRoleECD32A6F
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TechAdminPolicy/Resource
+  EmpathAIApiStudentGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: student
+      RoleArn:
+        Fn::GetAtt:
+          - EmpathAIApiStudentRoleB061AF7F
+          - Arn
+      UserPoolId:
+        Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-StudentGroup
+  EmpathAIApiInstructorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: instructor
+      RoleArn:
+        Fn::GetAtt:
+          - EmpathAIApiInstructorRole3704AFBC
+          - Arn
+      UserPoolId:
+        Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-InstructorGroup
+  EmpathAIApiAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      RoleArn:
+        Fn::GetAtt:
+          - EmpathAIApiAdminRole18DFE659
+          - Arn
+      UserPoolId:
+        Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-AdminGroup
+  EmpathAIApiTechAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: techadmin
+      RoleArn:
+        Fn::GetAtt:
+          - EmpathAIApiTechAdminRoleECD32A6F
+          - Arn
+      UserPoolId:
+        Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TechAdminGroup
+  EmpathAIApiUnauthenticatedRole00708F0D:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  Ref: EmpathAIApiidentitypool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: unauthenticated
+            Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-UnauthenticatedRole/Resource
+  EmpathAIApipostgresLambdaRolecacentral1508A34BD:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      RoleName: EmpathAI-Api-postgresLambdaRole-ca-central-1
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-postgresLambdaRole-ca-central-1/Resource
+  EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+          - Action:
+              - ec2:AssignPrivateIpAddresses
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:DescribeNetworkInterfaces
+              - ec2:UnassignPrivateIpAddresses
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource: arn:aws:logs:*:*:*
+          - Action: rds-db:connect
+            Effect: Allow
+            Resource: arn:aws:rds-db:ca-central-1:521610749125:dbuser:*/applicationUsername
+          - Action:
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource:
+              Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      Roles:
+        - Ref: EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-postgresLambdaRole-ca-central-1/DefaultPolicy/Resource
+  EmpathAIApiadminAddUserToGroupPolicyLambda4004E6BE:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminListGroupsForUser
+              - cognito-idp:AdminRemoveUserFromGroup
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - arn:aws:cognito-idp:ca-central-1:521610749125:userpool/
+                  - Ref: EmpathAIApipool6F4BC077
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiadminAddUserToGroupPolicyLambda4004E6BE
+      Roles:
+        - Ref: EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adminAddUserToGroupPolicyLambda/Resource
+  EmpathAIApiIdentityPoolRoles:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId:
+        Ref: EmpathAIApiidentitypool
+      Roles:
+        authenticated:
+          Fn::GetAtt:
+            - EmpathAIApiStudentRoleB061AF7F
+            - Arn
+        unauthenticated:
+          Fn::GetAtt:
+            - EmpathAIApiUnauthenticatedRole00708F0D
+            - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-IdentityPoolRoles
+  EmpathAIApistudentFunctionSecurityGroupCF65C51E:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApistudentFunction98D000AC
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-studentFunction/SecurityGroup/Resource
+  studentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          USER_POOL:
+            Ref: EmpathAIApipool6F4BC077
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-studentFunction
+      Handler: studentFunction.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApistudentFunctionSecurityGroupCF65C51E
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-studentFunction/Resource
+      aws:asset:path: asset.b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApistudentFunctionAllowApiGatewayInvokeE3DCCE23:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - studentFunction
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/student*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-studentFunction/AllowApiGatewayInvoke
+  EmpathAIApiinstructorFunctionSecurityGroupC0304183:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiinstructorFunction97A9E285
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructorFunction/SecurityGroup/Resource
+  instructorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          USER_POOL:
+            Ref: EmpathAIApipool6F4BC077
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-instructorFunction
+      Handler: instructorFunction.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiinstructorFunctionSecurityGroupC0304183
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructorFunction/Resource
+      aws:asset:path: asset.b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiinstructorFunctionAllowApiGatewayInvoke2EC416F9:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - instructorFunction
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructorFunction/AllowApiGatewayInvoke
+  EmpathAIApiadminFunctionSecurityGroupA986C65C:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiadminFunctionEE988739
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adminFunction/SecurityGroup/Resource
+  adminFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: e18c5b869bd0c14078d2fa53a304e6ca79f13a25e19f83c78ea68f48e64eb372.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-adminFunction
+      Handler: adminFunction.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiadminFunctionSecurityGroupA986C65C
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adminFunction/Resource
+      aws:asset:path: asset.e18c5b869bd0c14078d2fa53a304e6ca79f13a25e19f83c78ea68f48e64eb372
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiadminFunctionAllowApiGatewayInvoke9E2168B3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - adminFunction
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/admin*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adminFunction/AllowApiGatewayInvoke
+  EmpathAIApicognitoLambdaRolecacentral1FBA666C1:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      RoleName: EmpathAI-Api-cognitoLambdaRole-ca-central-1
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-cognitoLambdaRole-ca-central-1/Resource
+  EmpathAIApicognitoLambdaRolecacentral1DefaultPolicy8351B8B1:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:PutSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+          - Action:
+              - ec2:AssignPrivateIpAddresses
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:DescribeNetworkInterfaces
+              - ec2:UnassignPrivateIpAddresses
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource: arn:aws:logs:*:*:*
+          - Action: rds-db:connect
+            Effect: Allow
+            Resource: arn:aws:rds-db:ca-central-1:521610749125:dbuser:*/applicationUsername
+          - Action: iam:AddUserToGroup
+            Effect: Allow
+            Resource:
+              - arn:aws:iam::521610749125:group/*
+              - arn:aws:iam::521610749125:user/*
+          - Action: ssm:GetParameter
+            Effect: Allow
+            Resource: arn:aws:ssm:ca-central-1:521610749125:parameter/*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApicognitoLambdaRolecacentral1DefaultPolicy8351B8B1
+      Roles:
+        - Ref: EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-cognitoLambdaRole-ca-central-1/DefaultPolicy/Resource
+  EmpathAIApiAdminAddUserToGroupPolicy7F42EA9D:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminListGroupsForUser
+              - cognito-idp:AdminRemoveUserFromGroup
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - arn:aws:cognito-idp:ca-central-1:521610749125:userpool/
+                  - Ref: EmpathAIApipool6F4BC077
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiAdminAddUserToGroupPolicy7F42EA9D
+      Roles:
+        - Ref: EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-AdminAddUserToGroupPolicy/Resource
+  EmpathAIApiaddStudentOnSignUpSecurityGroupD9AB1FD3:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiaddStudentOnSignUp78BBD630
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-addStudentOnSignUp/SecurityGroup/Resource
+  EmpathAIApiaddStudentOnSignUpB5646CB2:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+      FunctionName: EmpathAI-Api-addStudentOnSignUp
+      Handler: addStudentOnSignUp.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiaddStudentOnSignUpSecurityGroupD9AB1FD3
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApicognitoLambdaRolecacentral1DefaultPolicy8351B8B1
+      - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-addStudentOnSignUp/Resource
+      aws:asset:path: asset.b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiadjustUserRolesSecurityGroup94DD1BA1:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiadjustUserRoles80C0B977
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adjustUserRoles/SecurityGroup/Resource
+  EmpathAIApiadjustUserRoles2543A0E3:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsTableCreator4AF31F394351C776
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+      FunctionName: EmpathAI-Api-adjustUserRoles
+      Handler: adjustUserRoles.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiadjustUserRolesSecurityGroup94DD1BA1
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApicognitoLambdaRolecacentral1DefaultPolicy8351B8B1
+      - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-adjustUserRoles/Resource
+      aws:asset:path: asset.b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  preSignupLambda248DA3D5:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990.zip
+      Environment:
+        Variables:
+          ALLOWED_EMAIL_DOMAINS: /VCI/AllowedEmailDomains
+      FunctionName: EmpathAI-Api-preSignupLambda
+      Handler: preSignup.handler
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+    DependsOn:
+      - EmpathAIApicognitoLambdaRolecacentral1DefaultPolicy8351B8B1
+      - EmpathAIApicognitoLambdaRolecacentral1FBA666C1
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/preSignupLambda/Resource
+      aws:asset:path: asset.b700fe29ee1967c53752f568a40096a153e94cb434a87738ee7a3d465dbaf990
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiadminauthorizationapigatewaySecurityGroup9E25219F:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiadminauthorizationapigatewayF7039150
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-admin-authorization-api-gateway/SecurityGroup/Resource
+  adminLambdaAuthorizer:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: e18dffdd1d6c0d0757d31e8efe4820203a92c02a89ca6c3601f2b897e28f1eeb.zip
+      Environment:
+        Variables:
+          SM_COGNITO_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+      FunctionName: EmpathAI-Api-adminLambdaAuthorizer
+      Handler: adminAuthorizerFunction.handler
+      Layers:
+        - Ref: awsjwtverifyD79E70E1
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiadminauthorizationapigatewaySecurityGroup9E25219F
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-admin-authorization-api-gateway/Resource
+      aws:asset:path: asset.e18dffdd1d6c0d0757d31e8efe4820203a92c02a89ca6c3601f2b897e28f1eeb
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiadminauthorizationapigatewayInvokeFcyXBRX02EWa52GlFECQiCzDt0fdRUDi4mo4foC5aUD7A88456:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - adminLambdaAuthorizer
+          - Arn
+      Principal: apigateway.amazonaws.com
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-admin-authorization-api-gateway/InvokeFcyXBRX02EWa52GlF+ECQiCzDt0fdRUDi4mo4foC5aU=
+  EmpathAIApistudentauthorizationapigatewaySecurityGroup7AAD36C2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApistudentauthorizationapigateway9D610E6F
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-student-authorization-api-gateway/SecurityGroup/Resource
+  studentLambdaAuthorizer:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: bbd83ba1c635ec7e2fa2cf4940334902fcef39a30d9b15c87da09f9a7825b9d1.zip
+      Environment:
+        Variables:
+          SM_COGNITO_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+      FunctionName: EmpathAI-Api-studentLambdaAuthorizer
+      Handler: studentAuthorizerFunction.handler
+      Layers:
+        - Ref: awsjwtverifyD79E70E1
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApistudentauthorizationapigatewaySecurityGroup7AAD36C2
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-student-authorization-api-gateway/Resource
+      aws:asset:path: asset.bbd83ba1c635ec7e2fa2cf4940334902fcef39a30d9b15c87da09f9a7825b9d1
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApistudentauthorizationapigatewayInvokeFcyXBRX02EWa52GlFECQiCzDt0fdRUDi4mo4foC5aU1BD46428:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - studentLambdaAuthorizer
+          - Arn
+      Principal: apigateway.amazonaws.com
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-student-authorization-api-gateway/InvokeFcyXBRX02EWa52GlF+ECQiCzDt0fdRUDi4mo4foC5aU=
+  EmpathAIApiinstructorauthorizationapigatewaySecurityGroupF58B1BA4:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiinstructorauthorizationapigateway67A874EA
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructor-authorization-api-gateway/SecurityGroup/Resource
+  instructorLambdaAuthorizer:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 0eb03372549b1151748cf477f19240dec1f4a4ba73ee67afe645a3faf4a0bbb6.zip
+      Environment:
+        Variables:
+          SM_COGNITO_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Ref: EmpathAIApiVCICognitoSecrets32A22A80
+      FunctionName: EmpathAI-Api-instructorLambdaAuthorizer
+      Handler: instructorAuthorizerFunction.handler
+      Layers:
+        - Ref: awsjwtverifyD79E70E1
+      MemorySize: 1024
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiinstructorauthorizationapigatewaySecurityGroupF58B1BA4
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructor-authorization-api-gateway/Resource
+      aws:asset:path: asset.0eb03372549b1151748cf477f19240dec1f4a4ba73ee67afe645a3faf4a0bbb6
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiinstructorauthorizationapigatewayInvokeFcyXBRX02EWa52GlFECQiCzDt0fdRUDi4mo4foC5aU5464CD96:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - instructorLambdaAuthorizer
+          - Arn
+      Principal: apigateway.amazonaws.com
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-instructor-authorization-api-gateway/InvokeFcyXBRX02EWa52GlF+ECQiCzDt0fdRUDi4mo4foC5aU=
+  BedrockLLMParameterF07E38C7:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Parameter containing the Bedrock LLM ID
+      Name: /EmpathAI-Api/VCI/BedrockLLMId
+      Tags:
+        app: Virtual-Care-Interaction
+      Type: String
+      Value: meta.llama3-70b-instruct-v1:0
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/BedrockLLMParameter/Resource
+  EmbeddingModelParameter6449C87F:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Parameter containing the Embedding Model ID
+      Name: /EmpathAI-Api/VCI/EmbeddingModelId
+      Tags:
+        app: Virtual-Care-Interaction
+      Type: String
+      Value: amazon.titan-embed-text-v2:0
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmbeddingModelParameter/Resource
+  TableNameParameter8411BB4B:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Parameter containing the DynamoDB table name
+      Name: /EmpathAI-Api/VCI/TableName
+      Tags:
+        app: Virtual-Care-Interaction
+      Type: String
+      Value: DynamoDB-Conversation-Table
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TableNameParameter/Resource
+  TextStreamingApi494FBF80:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AdditionalAuthenticationProviders:
+        - AuthenticationType: AWS_IAM
+      AuthenticationType: AMAZON_COGNITO_USER_POOLS
+      Name: text-streaming-api
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      UserPoolConfig:
+        AwsRegion: ca-central-1
+        DefaultAction: ALLOW
+        UserPoolId:
+          Ref: EmpathAIApipool6F4BC077
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/Resource
+  TextStreamingApiSchema28C89614:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - TextStreamingApi494FBF80
+          - ApiId
+      Definition: "type TextStreamData {\r
+
+        \  sessionId: String!\r
+
+        \  data: AWSJSON!\r
+
+        }\r
+
+        \r
+
+        type Message {\r
+
+        \  message_id: String!\r
+
+        \  session_id: String!\r
+
+        \  message_content: String!\r
+
+        \  student_sent: Boolean!\r
+
+        \  time_sent: String!\r
+
+        }\r
+
+        \r
+
+        type Mutation {\r
+
+        \  publishTextStream(sessionId: String!, data: AWSJSON!): TextStreamData @aws_iam @aws_cognito_user_pools\r
+
+        }\r
+
+        \r
+
+        type Subscription {\r
+
+        \  onTextStream(sessionId: String!): TextStreamData\r
+
+        \    @aws_subscribe(mutations: [\"publishTextStream\"]) @aws_iam @aws_cognito_user_pools\r
+
+        }\r
+
+        \r
+
+        type Query {\r
+
+        \  getTextStream: String\r
+
+        \  listMessagesBySession(sessionId: String!): [Message] @aws_cognito_user_pools\r
+
+        }\r\n"
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/Schema
+  TextStreamingApiNoneDataSourceEB903F9E:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - TextStreamingApi494FBF80
+          - ApiId
+      Name: NoneDataSource
+      Type: NONE
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/NoneDataSource/Resource
+  TextStreamingApiPublishTextStreamResolver3FCB353A:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - TextStreamingApi494FBF80
+          - ApiId
+      DataSourceName: NoneDataSource
+      FieldName: publishTextStream
+      Kind: UNIT
+      RequestMappingTemplate: |-2
+        
+          {
+            "version": "2018-05-29",
+            "payload": {}
+          }
+      ResponseMappingTemplate: |-2
+        
+          $util.toJson({
+            "sessionId": $ctx.args.sessionId,
+            "data": $ctx.args.data
+          })
+      TypeName: Mutation
+    DependsOn:
+      - TextStreamingApiNoneDataSourceEB903F9E
+      - TextStreamingApiSchema28C89614
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/PublishTextStreamResolver/Resource
+  TextStreamingApiListMessagesDataSourceServiceRoleE4A30B5C:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+        Version: "2012-10-17"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/ListMessagesDataSource/ServiceRole/Resource
+  TextStreamingApiListMessagesDataSourceServiceRoleDefaultPolicy5E39BC6D:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: lambda:InvokeFunction
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - ListMessagesBySessionFunctionF56B7F5E
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - ListMessagesBySessionFunctionF56B7F5E
+                        - Arn
+                    - :*
+        Version: "2012-10-17"
+      PolicyName: TextStreamingApiListMessagesDataSourceServiceRoleDefaultPolicy5E39BC6D
+      Roles:
+        - Ref: TextStreamingApiListMessagesDataSourceServiceRoleE4A30B5C
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/ListMessagesDataSource/ServiceRole/DefaultPolicy/Resource
+  TextStreamingApiListMessagesDataSource9C38789A:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - TextStreamingApi494FBF80
+          - ApiId
+      LambdaConfig:
+        LambdaFunctionArn:
+          Fn::GetAtt:
+            - ListMessagesBySessionFunctionF56B7F5E
+            - Arn
+      Name: ListMessagesDataSource
+      ServiceRoleArn:
+        Fn::GetAtt:
+          - TextStreamingApiListMessagesDataSourceServiceRoleE4A30B5C
+          - Arn
+      Type: AWS_LAMBDA
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/ListMessagesDataSource/Resource
+  TextStreamingApiListMessagesBySessionResolver11C64121:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - TextStreamingApi494FBF80
+          - ApiId
+      DataSourceName: ListMessagesDataSource
+      FieldName: listMessagesBySession
+      Kind: UNIT
+      TypeName: Query
+    DependsOn:
+      - TextStreamingApiListMessagesDataSource9C38789A
+      - TextStreamingApiSchema28C89614
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/TextStreamingApi/ListMessagesBySessionResolver/Resource
+  ListMessagesBySessionFunctionSecurityGroup63682D72:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiListMessagesBySessionFunction6FC412AC
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/ListMessagesBySessionFunction/SecurityGroup/Resource
+  ListMessagesBySessionFunctionF56B7F5E:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile:
+          Fn::Join:
+            - ""
+            - - |-2
+                
+                          const postgres = require('postgres');
+                          const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+                          const smClient = new SecretsManagerClient({});
+
+                          let pool;
+
+                          const getConnection = async () => {
+                            if (pool) return pool;
+                            
+                            try {
+                              const secret = await smClient.send(new GetSecretValueCommand({
+                                SecretId: '
+              - Fn::Join:
+                  - "-"
+                  - - Fn::Select:
+                        - 0
+                        - Fn::Split:
+                            - "-"
+                            - Fn::Select:
+                                - 6
+                                - Fn::Split:
+                                    - ":"
+                                    - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                    - Fn::Select:
+                        - 1
+                        - Fn::Split:
+                            - "-"
+                            - Fn::Select:
+                                - 6
+                                - Fn::Split:
+                                    - ":"
+                                    - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "-"
+                            - Fn::Select:
+                                - 6
+                                - Fn::Split:
+                                    - ":"
+                                    - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+              - |-
+                ',
+                              }));
+                              
+                              const { username, password } = JSON.parse(secret.SecretString);
+                              
+                              pool = postgres({
+                                host: '
+              - Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+              - "',
+
+                \                port: 5432,
+
+                \                database: 'vci',
+
+                \                username: username,
+
+                \                password: password,
+
+                \                ssl: false,
+
+                \              });
+
+                \             \ 
+
+                \              return pool;
+
+                \            } catch (error) {
+
+                \              console.error('Failed to create connection:', error);
+
+                \              throw error;
+
+                \            }
+
+                \          };
+
+
+                \          exports.handler = async (event) => {
+
+                \            const sessionId = event.arguments.sessionId;
+
+                \           \ 
+
+                \            try {
+
+                \              const sql = await getConnection();
+
+                \              const messages = await sql`
+
+                \                SELECT message_id, session_id, message_content, student_sent, time_sent\ 
+
+                \                FROM messages\ 
+
+                \                WHERE session_id = ${sessionId}\ 
+
+                \                ORDER BY time_sent ASC
+
+                \              `;
+
+                \             \ 
+
+                \              return messages;
+
+                \            } catch (error) {
+
+                \              console.error('Error fetching messages:', error);
+
+                \              throw new Error('Failed to fetch messages');
+
+                \            }
+
+                \          };
+
+                \        "
+      Environment:
+        Variables:
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+      Handler: index.handler
+      Layers:
+        - Ref: postgres6BBC2FA4
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - ListMessagesBySessionFunctionSecurityGroup63682D72
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/ListMessagesBySessionFunction/Resource
+  EmpathAIApiTextGenLambdaDockerFunctionServiceRole15AF344D:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TextGenLambdaDockerFunction/ServiceRole/Resource
+  EmpathAIApiTextGenLambdaDockerFunctionServiceRoleDefaultPolicyB2BA6EA8:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: lambda:InvokeFunction
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - bedrock:ApplyGuardrail
+              - bedrock:InvokeEndpoint
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Effect: Allow
+            Resource:
+              - arn:aws:bedrock:ca-central-1:521610749125:guardrail/*
+              - arn:aws:bedrock:ca-central-1::foundation-model/amazon.titan-embed-text-v2:0
+              - arn:aws:bedrock:ca-central-1::foundation-model/meta.llama3-70b-instruct-v1:0
+              - arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+          - Action:
+              - dynamodb:CreateTable
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:ListTables
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Effect: Allow
+            Resource: arn:aws:dynamodb:ca-central-1:521610749125:table/*
+          - Action: ssm:GetParameter
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - arn:aws:ssm:ca-central-1:521610749125:parameter
+                    - Ref: BedrockLLMParameterF07E38C7
+              - Fn::Join:
+                  - ""
+                  - - arn:aws:ssm:ca-central-1:521610749125:parameter
+                    - Ref: EmbeddingModelParameter6449C87F
+              - Fn::Join:
+                  - ""
+                  - - arn:aws:ssm:ca-central-1:521610749125:parameter
+                    - Ref: TableNameParameter8411BB4B
+          - Action:
+              - appsync:GetGraphqlApi
+              - appsync:GraphQL
+              - appsync:ListGraphqlApis
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TextStreamingApi494FBF80
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TextStreamingApi494FBF80
+                        - Arn
+                    - /*
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TextStreamingApi494FBF80
+                        - Arn
+                    - /types/Mutation/fields/publishTextStream
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiTextGenLambdaDockerFunctionServiceRoleDefaultPolicyB2BA6EA8
+      Roles:
+        - Ref: EmpathAIApiTextGenLambdaDockerFunctionServiceRole15AF344D
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TextGenLambdaDockerFunction/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiTextGenLambdaDockerFunctionSecurityGroupE7F46C9B:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiTextGenLambdaDockerFunction662EC932
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TextGenLambdaDockerFunction/SecurityGroup/Resource
+  TextGenLambdaDockerFunc:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ImageUri:
+          Fn::Sub: 521610749125.dkr.ecr.ca-central-1.${AWS::URLSuffix}/cdk-hnb659fds-container-assets-521610749125-ca-central-1:5938b9577adb1f3247d0c423ec0a5f02587a7b24f41ecf93aeecb100c2b0aef5
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS: EmpathAI-Database-VCI/credentials/rdsDbCredential
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          REGION: ca-central-1
+          BEDROCK_LLM_PARAM:
+            Ref: BedrockLLMParameterF07E38C7
+          EMBEDDING_MODEL_PARAM:
+            Ref: EmbeddingModelParameter6449C87F
+          TABLE_NAME_PARAM:
+            Ref: TableNameParameter8411BB4B
+          BEDROCK_GUARDRAIL_ID: ""
+          APPSYNC_GRAPHQL_URL:
+            Fn::GetAtt:
+              - TextStreamingApi494FBF80
+              - GraphQLUrl
+          APPSYNC_API_ID:
+            Fn::GetAtt:
+              - TextStreamingApi494FBF80
+              - ApiId
+          BEDROCK_TIMEOUT_SECONDS: "15"
+      FunctionName: EmpathAI-Api-TextGenLambdaDockerFunction
+      MemorySize: 1024
+      PackageType: Image
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiTextGenLambdaDockerFunctionServiceRole15AF344D
+          - Arn
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiTextGenLambdaDockerFunctionSecurityGroupE7F46C9B
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiTextGenLambdaDockerFunctionServiceRoleDefaultPolicyB2BA6EA8
+      - EmpathAIApiTextGenLambdaDockerFunctionServiceRole15AF344D
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TextGenLambdaDockerFunction/Resource
+      aws:asset:path: asset.5938b9577adb1f3247d0c423ec0a5f02587a7b24f41ecf93aeecb100c2b0aef5
+      aws:asset:dockerfile-path: Dockerfile
+      aws:asset:property: Code.ImageUri
+  EmpathAIApiTextGenLambdaDockerFunctionAllowApiGatewayInvoke46EDB032:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TextGenLambdaDockerFunc
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/student*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TextGenLambdaDockerFunction/AllowApiGatewayInvoke
+  EmpathAIApiDataIngestionBucket6DA09F66:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - HEAD
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - "*"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestionBucket/Resource
+  EmpathAIApiDataIngestionBucketPolicyA1EDFBFB:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: EmpathAIApiDataIngestionBucket6DA09F66
+      PolicyDocument:
+        Statement:
+          - Action: s3:*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Effect: Deny
+            Principal:
+              AWS: "*"
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestionBucket/Policy/Resource
+  EmpathAIApiDataIngestionBucketNotificationsB31044AC:
+    Type: Custom::S3BucketNotifications
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691
+          - Arn
+      BucketName:
+        Ref: EmpathAIApiDataIngestionBucket6DA09F66
+      NotificationConfiguration:
+        LambdaFunctionConfigurations:
+          - Events:
+              - s3:ObjectCreated:*
+            LambdaFunctionArn:
+              Fn::GetAtt:
+                - DataIngestLambdaDockerFunc
+                - Arn
+          - Events:
+              - s3:ObjectRemoved:*
+            LambdaFunctionArn:
+              Fn::GetAtt:
+                - DataIngestLambdaDockerFunc
+                - Arn
+          - Events:
+              - s3:ObjectRestore:Completed
+            LambdaFunctionArn:
+              Fn::GetAtt:
+                - DataIngestLambdaDockerFunc
+                - Arn
+      Managed: true
+    DependsOn:
+      - EmpathAIApiDataIngestionBucketAllowBucketNotificationsToEmpathAIApiEmpathAIApiDataIngestLambdaDockerFunctionAEC566241BE142E7
+      - EmpathAIApiDataIngestionBucketPolicyA1EDFBFB
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestionBucket/Notifications/Resource
+  EmpathAIApiDataIngestionBucketAllowBucketNotificationsToEmpathAIApiEmpathAIApiDataIngestLambdaDockerFunctionAEC566241BE142E7:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DataIngestLambdaDockerFunc
+          - Arn
+      Principal: s3.amazonaws.com
+      SourceAccount: "521610749125"
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApiDataIngestionBucket6DA09F66
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestionBucket/AllowBucketNotificationsToEmpathAIApiEmpathAIApiDataIngestLambdaDockerFunctionAEC56624
+  EmpathAIApiGeneratePreSignedURLFunctionServiceRole86B2E0E7:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GeneratePreSignedURLFunction/ServiceRole/Resource
+  EmpathAIApiGeneratePreSignedURLFunctionServiceRoleDefaultPolicy4308FBB4:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:Abort*
+              - s3:DeleteObject*
+              - s3:GetBucket*
+              - s3:GetObject
+              - s3:GetObject*
+              - s3:List*
+              - s3:PutObject
+              - s3:PutObjectLegalHold
+              - s3:PutObjectRetention
+              - s3:PutObjectTagging
+              - s3:PutObjectVersionTagging
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiGeneratePreSignedURLFunctionServiceRoleDefaultPolicy4308FBB4
+      Roles:
+        - Ref: EmpathAIApiGeneratePreSignedURLFunctionServiceRole86B2E0E7
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GeneratePreSignedURLFunction/ServiceRole/DefaultPolicy/Resource
+  GeneratePreSignedURLFunc:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 9d4e9854e079586aaa6b57a72eda5d550a0279eb70e328012d0fdb43bdf09c62.zip
+      Environment:
+        Variables:
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+      FunctionName: EmpathAI-Api-GeneratePreSignedURLFunction
+      Handler: generatePreSignedURL.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiGeneratePreSignedURLFunctionServiceRole86B2E0E7
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+    DependsOn:
+      - EmpathAIApiGeneratePreSignedURLFunctionServiceRoleDefaultPolicy4308FBB4
+      - EmpathAIApiGeneratePreSignedURLFunctionServiceRole86B2E0E7
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GeneratePreSignedURLFunction/Resource
+      aws:asset:path: asset.9d4e9854e079586aaa6b57a72eda5d550a0279eb70e328012d0fdb43bdf09c62
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiGeneratePreSignedURLFunctionAllowApiGatewayInvokeB6A74F62:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GeneratePreSignedURLFunc
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GeneratePreSignedURLFunction/AllowApiGatewayInvoke
+  EmpathAIApiDataIngestLambdaDockerFunctionServiceRole81936BFE:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaDockerFunction/ServiceRole/Resource
+  EmpathAIApiDataIngestLambdaDockerFunctionServiceRoleDefaultPolicy937B7A0A:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: s3:ListBucket
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::GetAtt:
+                  - EmpathAIApiembeddingStorageBucket39A8D9C4
+                  - Arn
+          - Action:
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:PutObject
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:s3:::"
+                  - Ref: EmpathAIApiembeddingStorageBucket39A8D9C4
+                  - /*
+          - Action:
+              - bedrock:ApplyGuardrail
+              - bedrock:InvokeEndpoint
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Effect: Allow
+            Resource:
+              - arn:aws:bedrock:ca-central-1:521610749125:guardrail/*
+              - arn:aws:bedrock:ca-central-1::foundation-model/amazon.titan-embed-text-v2:0
+              - arn:aws:bedrock:ca-central-1::foundation-model/meta.llama3-70b-instruct-v1:0
+              - arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+          - Action: ssm:GetParameter
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - arn:aws:ssm:ca-central-1:521610749125:parameter
+                  - Ref: EmbeddingModelParameter6449C87F
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiDataIngestLambdaDockerFunctionServiceRoleDefaultPolicy937B7A0A
+      Roles:
+        - Ref: EmpathAIApiDataIngestLambdaDockerFunctionServiceRole81936BFE
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaDockerFunction/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiDataIngestLambdaDockerFunctionSecurityGroup6F704DE3:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiDataIngestLambdaDockerFunctionAEC56624
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaDockerFunction/SecurityGroup/Resource
+  DataIngestLambdaDockerFunc:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ImageUri:
+          Fn::Sub: 521610749125.dkr.ecr.ca-central-1.${AWS::URLSuffix}/cdk-hnb659fds-container-assets-521610749125-ca-central-1:c8b666615fe80b343e9d71f7eb4cc2437e75619095ca35459913a29c7797ab0e
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS: EmpathAI-Database-VCI/credentials/rdsDbCredential
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          EMBEDDING_BUCKET_NAME:
+            Ref: EmpathAIApiembeddingStorageBucket39A8D9C4
+          EMBEDDING_MODEL_PARAM:
+            Ref: EmbeddingModelParameter6449C87F
+      FunctionName: EmpathAI-Api-DataIngestLambdaDockerFunction
+      MemorySize: 3008
+      PackageType: Image
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiDataIngestLambdaDockerFunctionServiceRole81936BFE
+          - Arn
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 900
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiDataIngestLambdaDockerFunctionSecurityGroup6F704DE3
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiDataIngestLambdaDockerFunctionServiceRoleDefaultPolicy937B7A0A
+      - EmpathAIApiDataIngestLambdaDockerFunctionServiceRole81936BFE
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaDockerFunction/Resource
+      aws:asset:path: asset.c8b666615fe80b343e9d71f7eb4cc2437e75619095ca35459913a29c7797ab0e
+      aws:asset:dockerfile-path: Dockerfile
+      aws:asset:property: Code.ImageUri
+  BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource
+  BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: s3:PutBucketNotification
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36
+      Roles:
+        - Ref: BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource
+  BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: AWS CloudFormation handler for "Custom::S3BucketNotifications" resources (@aws-cdk/aws-s3)
+      Code:
+        ZipFile: |
+          import boto3  # type: ignore
+          import json
+          import logging
+          import urllib.request
+
+          s3 = boto3.client("s3")
+
+          EVENTBRIDGE_CONFIGURATION = 'EventBridgeConfiguration'
+          CONFIGURATION_TYPES = ["TopicConfigurations", "QueueConfigurations", "LambdaFunctionConfigurations"]
+
+          def handler(event: dict, context):
+            response_status = "SUCCESS"
+            error_message = ""
+            try:
+              props = event["ResourceProperties"]
+              notification_configuration = props["NotificationConfiguration"]
+              managed = props.get('Managed', 'true').lower() == 'true'
+              stack_id = event['StackId']
+              old = event.get("OldResourceProperties", {}).get("NotificationConfiguration", {})
+              if managed:
+                config = handle_managed(event["RequestType"], notification_configuration)
+              else:
+                config = handle_unmanaged(props["BucketName"], stack_id, event["RequestType"], notification_configuration, old)
+              s3.put_bucket_notification_configuration(Bucket=props["BucketName"], NotificationConfiguration=config)
+            except Exception as e:
+              logging.exception("Failed to put bucket notification configuration")
+              response_status = "FAILED"
+              error_message = f"Error: {str(e)}. "
+            finally:
+              submit_response(event, context, response_status, error_message)
+
+          def handle_managed(request_type, notification_configuration):
+            if request_type == 'Delete':
+              return {}
+            return notification_configuration
+
+          def handle_unmanaged(bucket, stack_id, request_type, notification_configuration, old):
+            def with_id(n):
+              n['Id'] = f"{stack_id}-{hash(json.dumps(n, sort_keys=True))}"
+              return n
+
+            external_notifications = {}
+            existing_notifications = s3.get_bucket_notification_configuration(Bucket=bucket)
+            for t in CONFIGURATION_TYPES:
+              if request_type == 'Update':
+                  ids = [with_id(n) for n in old.get(t, [])]
+                  old_incoming_ids = [n['Id'] for n in ids]
+                  external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'] in old_incoming_ids]
+              elif request_type == 'Delete':
+                  external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'].startswith(f"{stack_id}-")]
+              elif request_type == 'Create':
+                  external_notifications[t] = [n for n in existing_notifications.get(t, [])]
+            if EVENTBRIDGE_CONFIGURATION in existing_notifications:
+              external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]
+
+            if request_type == 'Delete':
+              return external_notifications
+
+            notifications = {}
+            for t in CONFIGURATION_TYPES:
+              external = external_notifications.get(t, [])
+              incoming = [with_id(n) for n in notification_configuration.get(t, [])]
+              notifications[t] = external + incoming
+
+            if EVENTBRIDGE_CONFIGURATION in notification_configuration:
+              notifications[EVENTBRIDGE_CONFIGURATION] = notification_configuration[EVENTBRIDGE_CONFIGURATION]
+            elif EVENTBRIDGE_CONFIGURATION in external_notifications:
+              notifications[EVENTBRIDGE_CONFIGURATION] = external_notifications[EVENTBRIDGE_CONFIGURATION]
+
+            return notifications
+
+          def submit_response(event: dict, context, response_status: str, error_message: str):
+            response_body = json.dumps(
+              {
+                "Status": response_status,
+                "Reason": f"{error_message}See the details in CloudWatch Log Stream: {context.log_stream_name}",
+                "PhysicalResourceId": event.get("PhysicalResourceId") or event["LogicalResourceId"],
+                "StackId": event["StackId"],
+                "RequestId": event["RequestId"],
+                "LogicalResourceId": event["LogicalResourceId"],
+                "NoEcho": False,
+              }
+            ).encode("utf-8")
+            headers = {"content-type": "", "content-length": str(len(response_body))}
+            try:
+              req = urllib.request.Request(url=event["ResponseURL"], headers=headers, data=response_body, method="PUT")
+              with urllib.request.urlopen(req) as response:
+                print(response.read().decode("utf-8"))
+              print("Status code: " + response.reason)
+            except Exception as e:
+                print("send(..) failed executing request.urlopen(..): " + str(e))
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC
+          - Arn
+      Runtime: python3.11
+      Timeout: 300
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    DependsOn:
+      - BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36
+      - BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource
+  EmpathAIApiDataIngestLambdaLogGroupB97C2580:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: DataIngestLambdaDockerFunc
+      RetentionInDays: 7
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaLogGroup/Resource
+  EmpathAIApiLambdaTimeoutMetricFilter51A80F7B:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: Task timed out after
+      LogGroupName:
+        Ref: EmpathAIApiDataIngestLambdaLogGroupB97C2580
+      MetricTransformations:
+        - MetricName: DataIngestLambdaTimeouts
+          MetricNamespace: LambdaTimeouts
+          MetricValue: "1"
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-LambdaTimeoutMetricFilter/Resource
+  EmpathAIApiDataIngestLambdaTimeoutAlarm0447444A:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription:
+        Fn::Join:
+          - ""
+          - - "Alarm when "
+            - Ref: DataIngestLambdaDockerFunc
+            - " Lambda function times out"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: DataIngestLambdaTimeouts
+      Namespace: LambdaTimeouts
+      Period: 10
+      Statistic: Sum
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Threshold: 1
+      TreatMissingData: notBreaching
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaTimeoutAlarm/Resource
+  EmpathAIApiDataIngestLambdaTimeoutRuleFD89EBB4:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - CloudWatch Alarm State Change
+        detail:
+          state:
+            value:
+              - ALARM
+              - OK
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - TimeoutHandlerLambda
+              - Arn
+          Id: Target0
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaTimeoutRule/Resource
+  EmpathAIApiDataIngestLambdaTimeoutRuleAllowEventRuleEmpathAIApiEmpathAIApiTimeoutHandlerLambda30DCB4C68CCB20E6:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TimeoutHandlerLambda
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApiDataIngestLambdaTimeoutRuleFD89EBB4
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DataIngestLambdaTimeoutRule/AllowEventRuleEmpathAIApiEmpathAIApiTimeoutHandlerLambda30DCB4C6
+  EmpathAIApiTimeoutHandlerLambdaSecurityGroupC923E0CB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiTimeoutHandlerLambda30DCB4C6
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TimeoutHandlerLambda/SecurityGroup/Resource
+  TimeoutHandlerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 24091412624d2790e9e21a71cb72b576d437ac7a81ef52d87ddf9638498d87f1.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+      FunctionName: EmpathAI-Api-TimeoutHandlerLambda
+      Handler: timeoutHandler.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiTimeoutHandlerLambdaSecurityGroupC923E0CB
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApipostgresLambdaRolecacentral1DefaultPolicyE076C6C4
+      - EmpathAIApipostgresLambdaRolecacentral1508A34BD
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TimeoutHandlerLambda/Resource
+      aws:asset:path: asset.24091412624d2790e9e21a71cb72b576d437ac7a81ef52d87ddf9638498d87f1
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiTimeoutHandlerLambdaAllowEventBridgeInvoke42A0B055:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TimeoutHandlerLambda
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - EmpathAIApiDataIngestLambdaTimeoutRuleFD89EBB4
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-TimeoutHandlerLambda/AllowEventBridgeInvoke
+  EmpathAIApiGetFilesFunctionServiceRole3FBBF0B9:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunction/ServiceRole/Resource
+  EmpathAIApiGetFilesFunctionServiceRoleDefaultPolicy38A85F42:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiGetFilesFunctionServiceRoleDefaultPolicy38A85F42
+      Roles:
+        - Ref: EmpathAIApiGetFilesFunctionServiceRole3FBBF0B9
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunction/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiGetFilesFunctionSecurityGroupBD21F7FF:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiGetFilesFunction6C81B21E
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunction/SecurityGroup/Resource
+  GetFilesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 58bc8db2abc821366b198d6927a66750c80802555a19f8f267f591802646e9c5.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-GetFilesFunction
+      Handler: getFilesFunction.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiGetFilesFunctionServiceRole3FBBF0B9
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiGetFilesFunctionSecurityGroupBD21F7FF
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiGetFilesFunctionServiceRoleDefaultPolicy38A85F42
+      - EmpathAIApiGetFilesFunctionServiceRole3FBBF0B9
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunction/Resource
+      aws:asset:path: asset.58bc8db2abc821366b198d6927a66750c80802555a19f8f267f591802646e9c5
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiGetFilesFunctionAllowApiGatewayInvokeF77F1569:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GetFilesFunction
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunction/AllowApiGatewayInvoke
+  EmpathAIApiGetFilesFunctionStudentServiceRoleCB13E002:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunctionStudent/ServiceRole/Resource
+  EmpathAIApiGetFilesFunctionStudentServiceRoleDefaultPolicy7B4EFB2C:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiGetFilesFunctionStudentServiceRoleDefaultPolicy7B4EFB2C
+      Roles:
+        - Ref: EmpathAIApiGetFilesFunctionStudentServiceRoleCB13E002
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunctionStudent/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiGetFilesFunctionStudentSecurityGroup0A70FC1B:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiGetFilesFunctionStudent2DE4F071
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunctionStudent/SecurityGroup/Resource
+  GetFilesFunctionStudent:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 58bc8db2abc821366b198d6927a66750c80802555a19f8f267f591802646e9c5.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-GetFilesFunctionStudent
+      Handler: getFilesFunction.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiGetFilesFunctionStudentServiceRoleCB13E002
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiGetFilesFunctionStudentSecurityGroup0A70FC1B
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiGetFilesFunctionStudentServiceRoleDefaultPolicy7B4EFB2C
+      - EmpathAIApiGetFilesFunctionStudentServiceRoleCB13E002
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunctionStudent/Resource
+      aws:asset:path: asset.58bc8db2abc821366b198d6927a66750c80802555a19f8f267f591802646e9c5
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiGetFilesFunctionStudentAllowApiGatewayInvoke41B690BE:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GetFilesFunctionStudent
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/student*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetFilesFunctionStudent/AllowApiGatewayInvoke
+  EmpathAIApiGetProfilePicturesServiceRoleDD946E0C:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePictures/ServiceRole/Resource
+  EmpathAIApiGetProfilePicturesServiceRoleDefaultPolicy82ECBA50:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiGetProfilePicturesServiceRoleDefaultPolicy82ECBA50
+      Roles:
+        - Ref: EmpathAIApiGetProfilePicturesServiceRoleDD946E0C
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePictures/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiGetProfilePicturesSecurityGroup7345D300:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiGetProfilePictures73B635FC
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePictures/SecurityGroup/Resource
+  GetProfilePictures:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 06b3f614cad16f1fa6bd2bce003f0a74b4d36982cdc4b1162a1dbe969d7709d9.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-GetProfilePictures
+      Handler: getProfilePictures.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiGetProfilePicturesServiceRoleDD946E0C
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiGetProfilePicturesSecurityGroup7345D300
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiGetProfilePicturesServiceRoleDefaultPolicy82ECBA50
+      - EmpathAIApiGetProfilePicturesServiceRoleDD946E0C
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePictures/Resource
+      aws:asset:path: asset.06b3f614cad16f1fa6bd2bce003f0a74b4d36982cdc4b1162a1dbe969d7709d9
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiGetProfilePicturesAllowApiGatewayInvoke538C1573:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GetProfilePictures
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePictures/AllowApiGatewayInvoke
+  EmpathAIApiGetProfilePicturesStudentServiceRole20CDBABC:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePicturesStudent/ServiceRole/Resource
+  EmpathAIApiGetProfilePicturesStudentServiceRoleDefaultPolicy31C1BEC8:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiGetProfilePicturesStudentServiceRoleDefaultPolicy31C1BEC8
+      Roles:
+        - Ref: EmpathAIApiGetProfilePicturesStudentServiceRole20CDBABC
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePicturesStudent/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiGetProfilePicturesStudentSecurityGroup305CF2DC:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiGetProfilePicturesStudent32C73E90
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePicturesStudent/SecurityGroup/Resource
+  GetProfilePicturesStudent:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 06b3f614cad16f1fa6bd2bce003f0a74b4d36982cdc4b1162a1dbe969d7709d9.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-GetProfilePicturesStudent
+      Handler: getProfilePictures.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiGetProfilePicturesStudentServiceRole20CDBABC
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiGetProfilePicturesStudentSecurityGroup305CF2DC
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiGetProfilePicturesStudentServiceRoleDefaultPolicy31C1BEC8
+      - EmpathAIApiGetProfilePicturesStudentServiceRole20CDBABC
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePicturesStudent/Resource
+      aws:asset:path: asset.06b3f614cad16f1fa6bd2bce003f0a74b4d36982cdc4b1162a1dbe969d7709d9
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiGetProfilePicturesStudentAllowApiGatewayInvoke2067688F:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - GetProfilePicturesStudent
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/student*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-GetProfilePicturesStudent/AllowApiGatewayInvoke
+  EmpathAIApiDeleteFileFunctionServiceRole171E84CA:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteFileFunction/ServiceRole/Resource
+  EmpathAIApiDeleteFileFunctionServiceRoleDefaultPolicyCA401122:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: s3:DeleteObject*
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - EmpathAIApiDataIngestionBucket6DA09F66
+                      - Arn
+                  - /*
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiDeleteFileFunctionServiceRoleDefaultPolicyCA401122
+      Roles:
+        - Ref: EmpathAIApiDeleteFileFunctionServiceRole171E84CA
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteFileFunction/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiDeleteFileFunctionSecurityGroup84572C50:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiDeleteFileFunctionC9D690C1
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteFileFunction/SecurityGroup/Resource
+  DeleteFileFunc:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 032092c114d73b1473346370c98b1a6986fbd336b55240f992521465e62475e6.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-DeleteFileFunction
+      Handler: deleteFile.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiDeleteFileFunctionServiceRole171E84CA
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiDeleteFileFunctionSecurityGroup84572C50
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiDeleteFileFunctionServiceRoleDefaultPolicyCA401122
+      - EmpathAIApiDeleteFileFunctionServiceRole171E84CA
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteFileFunction/Resource
+      aws:asset:path: asset.032092c114d73b1473346370c98b1a6986fbd336b55240f992521465e62475e6
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiDeleteFileFunctionAllowApiGatewayInvoke1759DF7B:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DeleteFileFunc
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteFileFunction/AllowApiGatewayInvoke
+  EmpathAIApiDeletePatientFunctionServiceRole9A9051B3:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeletePatientFunction/ServiceRole/Resource
+  EmpathAIApiDeletePatientFunctionServiceRoleDefaultPolicyCEC4A626:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetBucket*
+              - s3:GetObject*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - EmpathAIApiDataIngestionBucket6DA09F66
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - EmpathAIApiDataIngestionBucket6DA09F66
+                        - Arn
+                    - /*
+          - Action: s3:DeleteObject*
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - EmpathAIApiDataIngestionBucket6DA09F66
+                      - Arn
+                  - /*
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiDeletePatientFunctionServiceRoleDefaultPolicyCEC4A626
+      Roles:
+        - Ref: EmpathAIApiDeletePatientFunctionServiceRole9A9051B3
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeletePatientFunction/ServiceRole/DefaultPolicy/Resource
+  DeletePatientFunc:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 89ec112fa2882d1e6094bd3abf265dfb04274e756db5952fdd386b62c1e00c35.zip
+      Environment:
+        Variables:
+          BUCKET:
+            Ref: EmpathAIApiDataIngestionBucket6DA09F66
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-DeletePatientFunction
+      Handler: deletePatient.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiDeletePatientFunctionServiceRole9A9051B3
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+    DependsOn:
+      - EmpathAIApiDeletePatientFunctionServiceRoleDefaultPolicyCEC4A626
+      - EmpathAIApiDeletePatientFunctionServiceRole9A9051B3
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeletePatientFunction/Resource
+      aws:asset:path: asset.89ec112fa2882d1e6094bd3abf265dfb04274e756db5952fdd386b62c1e00c35
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiDeletePatientFunctionAllowApiGatewayInvoke2C535D60:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DeletePatientFunc
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/instructor*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeletePatientFunction/AllowApiGatewayInvoke
+  EmpathAIApiDeleteLastMessageServiceRole3D426B08:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteLastMessage/ServiceRole/Resource
+  EmpathAIApiDeleteLastMessageServiceRoleDefaultPolicy8ED4984E:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource: arn:aws:secretsmanager:ca-central-1:521610749125:secret:*
+          - Action:
+              - dynamodb:GetItem
+              - dynamodb:UpdateItem
+            Effect: Allow
+            Resource: arn:aws:dynamodb:ca-central-1:521610749125:table/*
+          - Action: ssm:GetParameter
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - arn:aws:ssm:ca-central-1:521610749125:parameter
+                  - Ref: TableNameParameter8411BB4B
+        Version: "2012-10-17"
+      PolicyName: EmpathAIApiDeleteLastMessageServiceRoleDefaultPolicy8ED4984E
+      Roles:
+        - Ref: EmpathAIApiDeleteLastMessageServiceRole3D426B08
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteLastMessage/ServiceRole/DefaultPolicy/Resource
+  EmpathAIApiDeleteLastMessageSecurityGroupF91F0DA7:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Automatic security group for Lambda Function EmpathAIApiEmpathAIApiDeleteLastMessage904FEB61
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: "-1"
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VpcId:
+        Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputRefvpcId754FFE66
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteLastMessage/SecurityGroup/Resource
+  DeleteLastMessage:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-521610749125-ca-central-1
+        S3Key: 0aff5c16ce0397fdedbcab04ba374ce2fb5570b0d5d5a0bdda4f1881be81627e.zip
+      Environment:
+        Variables:
+          SM_DB_CREDENTIALS:
+            Fn::Join:
+              - "-"
+              - - Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+                - Fn::Select:
+                    - 2
+                    - Fn::Split:
+                        - "-"
+                        - Fn::Select:
+                            - 6
+                            - Fn::Split:
+                                - ":"
+                                - Fn::ImportValue: EmpathAI-Database:ExportsOutputRefEmpathAIDatabaseVCIuserCredentialsrdsDbCredential6ED5773268F8FE69
+          RDS_PROXY_ENDPOINT:
+            Fn::ImportValue: EmpathAI-Database:ExportsOutputFnGetAttEmpathAIDatabasedatabaseEmpathAIDatabaseproxy2A81728CEndpoint5C3D9410
+          TABLE_NAME_PARAM:
+            Ref: TableNameParameter8411BB4B
+          REGION: ca-central-1
+          CORS_ALLOWED_ORIGIN:
+            Ref: corsAllowedOrigin
+      FunctionName: EmpathAI-Api-DeleteLastMessage
+      Handler: deleteLastMessage.lambda_handler
+      Layers:
+        - arn:aws:lambda:ca-central-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:78
+        - Ref: psycopgLambdaLayer8E470E0D
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - EmpathAIApiDeleteLastMessageServiceRole3D426B08
+          - Arn
+      Runtime: python3.12
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::GetAtt:
+              - EmpathAIApiDeleteLastMessageSecurityGroupF91F0DA7
+              - GroupId
+        SubnetIds:
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupaF897FF09Subnets0SubnetId2CE04745
+          - Fn::ImportValue: EmpathAI-VpcStack:ExportsOutputFnGetAttBackendSubnetLookupb7F070F29Subnets0SubnetId0010E467
+    DependsOn:
+      - EmpathAIApiDeleteLastMessageServiceRoleDefaultPolicy8ED4984E
+      - EmpathAIApiDeleteLastMessageServiceRole3D426B08
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteLastMessage/Resource
+      aws:asset:path: asset.0aff5c16ce0397fdedbcab04ba374ce2fb5570b0d5d5a0bdda4f1881be81627e
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  EmpathAIApiDeleteLastMessageAllowApiGatewayInvokeA4A673BD:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DeleteLastMessage
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:ca-central-1:521610749125:"
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /*/*/student*
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-DeleteLastMessage/AllowApiGatewayInvoke
+  EmpathAIApiwaf:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      DefaultAction:
+        Allow: {}
+      Description: VCI waf
+      Rules:
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          OverrideAction:
+            None: {}
+          Priority: 1
+          Statement:
+            ManagedRuleGroupStatement:
+              Name: AWSManagedRulesCommonRuleSet
+              VendorName: AWS
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: AWS-AWSManagedRulesCommonRuleSet
+            SampledRequestsEnabled: true
+        - Action:
+            Block: {}
+          Name: LimitRequests1000
+          Priority: 2
+          Statement:
+            RateBasedStatement:
+              AggregateKeyType: IP
+              Limit: 1000
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: LimitRequests1000
+            SampledRequestsEnabled: true
+      Scope: REGIONAL
+      Tags:
+        - Key: app
+          Value: Virtual-Care-Interaction
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: virtualcareint-firewall
+        SampledRequestsEnabled: true
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-waf
+  EmpathAIApiwafassociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn:
+        Fn::Join:
+          - ""
+          - - arn:aws:apigateway:ca-central-1::/restapis/
+            - Ref: EmpathAIApiAPIGateway49B13B3E
+            - /stages/
+            - Ref: EmpathAIApiAPIGatewayDeploymentStageprod17558CB6
+      WebACLArn:
+        Fn::GetAtt:
+          - EmpathAIApiwaf
+          - Arn
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/EmpathAI-Api-waf-association
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/11SXW/bMAz8LX1XtTYdBuzRTdCgQLplDrY9FozCOGr04Yl0AkPwfx8kO3aaJ95RFMWjbiYfv36TD3dwpnu1O94bvZVxw6COYr53awhgkTEIONN7pCcZnxt1RE6HA+rD2hut2ik98J48A2EnDNjtDmRcQYvhDwbS3qULt3yNwWrK7KVxiof0iBdeHTG8WqjwkusEPb0DETLJIgWhfOU0exl/E4a19ya1GPEFzI1Gx9dHU+Z1h441t7eXl8E39W1B6Q0WzKAOFh13glAFZLLgoMIg4ybzdKtHnYBaV8B4hlbGTY2qROKi1qnkAksk3wSFaX0pXyjlG8digbXxrR3mvGIbhipX9mDZ9y+Rau/6FjepTmiwMqbp88MpTj/Zo06gmmUFTdDcjvI/JTpBZJNxgnbV5JprCyXJNbVOybgMUB/+mUFuZr9Wn9lGHdCC+OEdLoBhkxeR5U4s7cec+mdGvMoum6rS+OHijSvr9DZBFWSJtSfNPrR50cZXJOPKV6PSEb8hB61etBm0XfNOKOOb3RlYHWQsDASb/yyBTuAJHZOMZTNsujHYiTPsTzMZ53v3F7fFfCVGVBB5pSF7uxN51vSn2lWjK1Lxz4brhi/6e7nO71B+0JfT7EE+fpezuw/S+j40jrVFWfbxPyUpqMz3AwAA
+    Metadata:
+      aws:cdk:path: EmpathAI-Api/CDKMetadata/Default
+Outputs:
+  EmpathAIApiAPIGatewayEndpoint47CFFC39:
+    Value:
+      Fn::Join:
+        - ""
+        - - https://
+          - Ref: EmpathAIApiAPIGateway49B13B3E
+          - .execute-api.ca-central-1.
+          - Ref: AWS::URLSuffix
+          - /
+          - Ref: EmpathAIApiAPIGatewayDeploymentStageprod17558CB6
+          - /
+  EmpathAIApiUserPoolIdOutput:
+    Description: The ID of the Cognito User Pool
+    Value:
+      Ref: EmpathAIApipool6F4BC077
+  AppSyncApiUrl:
+    Value:
+      Fn::GetAtt:
+        - TextStreamingApi494FBF80
+        - GraphQLUrl
+  AppSyncApiId:
+    Value:
+      Fn::GetAtt:
+        - TextStreamingApi494FBF80
+        - ApiId
+  ExportsOutputRefEmpathAIApiVCICognitoSecrets32A22A80141C24BD:
+    Value:
+      Ref: EmpathAIApiVCICognitoSecrets32A22A80
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApiVCICognitoSecrets32A22A80141C24BD
+  ExportsOutputRefEmpathAIApipool6F4BC077431B586F:
+    Value:
+      Ref: EmpathAIApipool6F4BC077
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApipool6F4BC077431B586F
+  ExportsOutputRefEmpathAIApipoolAD331348C42DCB3E:
+    Value:
+      Ref: EmpathAIApipoolAD331348
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApipoolAD331348C42DCB3E
+  ExportsOutputRefEmpathAIApiidentitypoolE8CAC96D:
+    Value:
+      Ref: EmpathAIApiidentitypool
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApiidentitypoolE8CAC96D
+  ExportsOutputRefEmpathAIApiAPIGateway49B13B3E68A2F21B:
+    Value:
+      Ref: EmpathAIApiAPIGateway49B13B3E
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApiAPIGateway49B13B3E68A2F21B
+  ExportsOutputRefEmpathAIApiAPIGatewayDeploymentStageprod17558CB66F27F76D:
+    Value:
+      Ref: EmpathAIApiAPIGatewayDeploymentStageprod17558CB6
+    Export:
+      Name: EmpathAI-Api:ExportsOutputRefEmpathAIApiAPIGatewayDeploymentStageprod17558CB66F27F76D
+  ExportsOutputFnGetAttTextStreamingApi494FBF80GraphQLUrl42A61212:
+    Value:
+      Fn::GetAtt:
+        - TextStreamingApi494FBF80
+        - GraphQLUrl
+    Export:
+      Name: EmpathAI-Api:ExportsOutputFnGetAttTextStreamingApi494FBF80GraphQLUrl42A61212
+

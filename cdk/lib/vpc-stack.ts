@@ -316,31 +316,21 @@ export class VpcStack extends Stack {
       );
 
       /*
+      
+
+      */
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
         subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
-      this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-        subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
-        securityGroups: [endpointSecurityGroup],
-      });
-
-      this.vpc.addInterfaceEndpoint("RDS Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
-        securityGroups: [endpointSecurityGroup],
-      });
 
       this.vpc.addInterfaceEndpoint("Glue Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.GLUE,
         subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
@@ -348,7 +338,21 @@ export class VpcStack extends Stack {
       this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
         subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
+        securityGroups: [endpointSecurityGroup],
+      });
+
+      this.vpc.addInterfaceEndpoint("RDS Endpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.RDS,
+        subnets: subnetSelection,
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
+        securityGroups: [endpointSecurityGroup],
+      });
+      
+      this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+        subnets: subnetSelection,
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
 
@@ -357,10 +361,9 @@ export class VpcStack extends Stack {
       this.vpc.addInterfaceEndpoint("Cognito IDP Endpoint", {
         service: new ec2.InterfaceVpcEndpointService(`com.amazonaws.${this.region}.cognito-idp`, 443),
         subnets: subnetSelection,
-        privateDnsEnabled: false, // Disable to avoid DNS conflicts
+        privateDnsEnabled: true, // Disable to avoid DNS conflicts
         securityGroups: [endpointSecurityGroup],
       });
-      */
 
       // Only add gateway endpoints if NOT using specific subnets
       // (existing VPC likely already has them, and they cause route table duplicate issues)

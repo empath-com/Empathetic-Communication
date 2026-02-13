@@ -22,6 +22,8 @@ exports.handler = async (event) => {
   } catch (error) {
     console.error(error);
     throw new Error("Error validating email domain during pre-signup.");
+  } finally {
+    await ssmClient.destroy();
   }
 };
 

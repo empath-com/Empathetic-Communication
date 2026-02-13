@@ -29,6 +29,13 @@ export class AmplifyStack extends cdk.Stack {
       description: "The name of the GitHub repository",
     }).valueAsString;
 
+    // Define the WebSocket URL as a parameter
+    const socketUrl = new cdk.CfnParameter(this, "socketUrl", {
+      type: "String",
+      description: "WebSocket server URL (e.g., ws://example.com or wss://example.com)",
+      default: "",
+    }).valueAsString;
+
     const amplifyYaml = yaml.parse(` 
       version: 1
       applications:
@@ -76,8 +83,8 @@ export class AmplifyStack extends cdk.Stack {
         VITE_COGNITO_USER_POOL_CLIENT_ID: apiStack.getUserPoolClientId(),
         VITE_API_ENDPOINT: apiStack.getEndpointUrl(),
         VITE_IDENTITY_POOL_ID: apiStack.getIdentityPoolId(),
-        // Use ALB DNS name from EcsSocketStack for WebSocket URL
-        VITE_SOCKET_URL: ecsSocketStack.socketUrl,
+        // WebSocket URL specified via deployment parameter
+        VITE_SOCKET_URL: socketUrl,
         VITE_APPSYNC_GRAPHQL_URL: apiStack.appSyncApi.graphqlUrl,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),

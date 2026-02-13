@@ -31,6 +31,8 @@ import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as appsync from "aws-cdk-lib/aws-appsync";
+import * as fs from "fs";
+import * as path from "path";
 
 export class ApiServiceStack extends cdk.Stack {
   private readonly api: apigateway.SpecRestApi;
@@ -60,12 +62,15 @@ export class ApiServiceStack extends cdk.Stack {
   ) {
     super(scope, id, props);
 
-    // CORS configuration parameter
+    // CORS configuration parameter and environment variable
     const corsAllowedOrigin = new cdk.CfnParameter(this, "corsAllowedOrigin", {
       type: "String",
       default: "*",
       description: "Allowed origin for CORS requests (default: *)",
     });
+
+    // Get CORS origin from environment variable or parameter (default: *)
+    const corsOriginEnv = process.env.CORS_ALLOWED_ORIGIN || "*";
 
     this.layerList = {};
 
@@ -290,11 +295,54 @@ export class ApiServiceStack extends cdk.Stack {
     /**
      *
      * Load OpenAPI file into API Gateway using REST API
+     * Process the file at build time to replace CORS origin dynamically
      */
+
+    // Helper function to process OpenAPI file with dynamic CORS substitution
+    const processOpenAPIFile = (corsOrigin: string): string => {
+      const openAPIPath = path.join(__dirname, "../OpenAPI_Swagger_Definition.yaml");
+      let content = fs.readFileSync(openAPIPath, "utf-8");
+
+      // Log the CORS origin being used
+      console.log(`[CDK Build] Processing OpenAPI with CORS origin: ${corsOrigin}`);
+
+      // Replace all instances of !Sub "'${CorsAllowedOrigin}'" with the actual CORS origin
+      // This is done at build time so CloudFormation's Include transform receives valid YAML
+      // Pattern handles multi-line format where !Sub and the string are on different lines
+      const beforeCount = (content.match(/!Sub\s+"'\${CorsAllowedOrigin}'"/g) || []).length;
+      
+      // Also match the inline format: !Sub "'${CorsAllowedOrigin}'"
+      const inlineCount = (content.match(/!Sub\s+"'\${CorsAllowedOrigin}'"/g) || []).length;
+      const totalBefore = beforeCount + inlineCount;
+
+      console.log(`[CDK Build] Found ${beforeCount} multi-line and ${inlineCount} inline instances`);
+      
+      // Inline: !Sub "'${CorsAllowedOrigin}'" -> "'*'"
+      content = content.replace(
+        /!Sub\s+"'\${CorsAllowedOrigin}'"/g,
+        `"'${corsOrigin}'"`
+      );
+
+      const afterCount = (content.match(/CorsAllowedOrigin/g) || []).length;
+      console.log(`[CDK Build] Replaced ${totalBefore} instances. ${afterCount} CorsAllowedOrigin references remaining (should be 0)`);
+
+      if (afterCount === 0) {
+        console.log(`[CDK Build] ✓ All CORS parameters successfully replaced`);
+      } else {
+        console.warn(`[CDK Build] ⚠ Warning: ${afterCount} unreplaced CORS references found`);
+      }
+
+      return content;
+    };
+
+    // Process the OpenAPI file with the CORS origin from environment
+    const processedOpenAPIContent = processOpenAPIFile(corsOriginEnv);
+    const tempOpenAPIPath = path.join(__dirname, "../OpenAPI_Swagger_Definition_processed.yaml");
+    fs.writeFileSync(tempOpenAPIPath, processedOpenAPIContent);
 
     // Read OpenAPI file and load file to S3
     const asset = new Asset(this, "SampleAsset", {
-      path: "OpenAPI_Swagger_Definition.yaml",
+      path: tempOpenAPIPath,
     });
 
     const data = Fn.transform("AWS::Include", { Location: asset.s3ObjectUrl });
@@ -660,6 +708,7 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "studentFunction.handler",
         timeout: Duration.seconds(300),
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -693,6 +742,7 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "instructorFunction.handler",
         timeout: Duration.seconds(300),
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -726,6 +776,7 @@ export class ApiServiceStack extends cdk.Stack {
         handler: "adminFunction.handler",
         timeout: Duration.seconds(300),
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
@@ -894,6 +945,7 @@ export class ApiServiceStack extends cdk.Stack {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
         },
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         functionName: `${id}-addStudentOnSignUp`,
         memorySize: 256,
         layers: [postgres],
@@ -910,7 +962,8 @@ export class ApiServiceStack extends cdk.Stack {
         SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
       },
-      vpc: db.dbInstance.vpc,
+      vpc: vpcStack.vpc,
+      securityGroups: [db.lambdaSecurityGroup],
       functionName: `${id}-adjustUserRoles`,
       memorySize: 1024,
       layers: [postgres],
@@ -1134,6 +1187,8 @@ export class ApiServiceStack extends cdk.Stack {
       {
         runtime: Runtime.NODEJS_20_X,
         handler: "index.handler",
+        vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         code: Code.fromInline(`
           const postgres = require('postgres');
           const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
@@ -1189,7 +1244,6 @@ export class ApiServiceStack extends cdk.Stack {
         environment: {
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         },
-        vpc: vpcStack.vpc,
         vpcSubnets: { subnets: vpcStack.vpc.privateSubnets },
         layers: [postgres], // Add the postgres layer
         role: lambdaRole,
@@ -1233,6 +1287,7 @@ export class ApiServiceStack extends cdk.Stack {
         memorySize: 1024,
         timeout: cdk.Duration.seconds(300),
         vpc: vpcStack.vpc, // Pass the VPC
+        securityGroups: [db.lambdaSecurityGroup],
         architecture: lambda.Architecture.X86_64,
         functionName: `${id}-TextGenLambdaDockerFunction`,
         environment: {
@@ -1438,6 +1493,7 @@ export class ApiServiceStack extends cdk.Stack {
         memorySize: 3008,
         timeout: cdk.Duration.seconds(900),
         vpc: vpcStack.vpc, // Pass the VPC
+        securityGroups: [db.lambdaSecurityGroup],
         functionName: `${id}-DataIngestLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
@@ -1592,6 +1648,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -1631,6 +1688,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -1686,6 +1744,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,

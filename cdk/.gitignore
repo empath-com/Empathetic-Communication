@@ -18,5 +18,7 @@ lambda/textGenLambdaFolder/*
 # Ignore everything in textGenLambda ZIP since over 100 MB
 lambda/textGenLambda.zip
 
+# Ignore generated processed OpenAPI file
+OpenAPI_Swagger_Definition_processed.yaml
 # Ignore torch.zip since over 100 MB
 layers/torch.zip
