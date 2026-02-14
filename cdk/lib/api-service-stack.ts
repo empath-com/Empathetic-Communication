@@ -1800,6 +1800,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -1855,6 +1856,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
@@ -1907,6 +1909,7 @@ export class ApiServiceStack extends cdk.Stack {
       timeout: Duration.seconds(300),
       memorySize: 256,
       vpc: vpcStack.vpc,
+      securityGroups: [db.lambdaSecurityGroup],
       environment: {
         SM_DB_CREDENTIALS: db.secretPathUser.secretName, // Database User Credentials
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // RDS Proxy Endpoint
@@ -1999,6 +2002,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         memorySize: 256,
         vpc: vpcStack.vpc,
+        securityGroups: [db.lambdaSecurityGroup],
         environment: {
           SM_DB_CREDENTIALS: db.secretPathUser.secretName,
           RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,

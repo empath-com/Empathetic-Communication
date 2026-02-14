@@ -85,6 +85,16 @@ def connect_to_db():
                 connection.rollback()
                 connection.close()
             raise
+    else:
+        # Check if connection is in a bad state (aborted transaction) and reset it
+        try:
+            with connection.cursor() as cur:
+                cur.execute("SELECT 1")
+        except psycopg2.errors.InFailedSqlTransaction:
+            logger.warning("Connection in aborted transaction state, closing and reconnecting...")
+            connection.close()
+            connection = None
+            return connect_to_db()
     return connection
 
 def get_embedding_count(patient_id):
@@ -214,6 +224,7 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
             "body": json.dumps("Database connection failed.")
         }
 
+    cur = None
     try:
         cur = connection.cursor()
 
@@ -263,6 +274,9 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
         if cur:
             cur.close()
         connection.rollback()
+        # Reset connection to clear aborted transaction state
+        global connection as global_connection
+        global_connection = None
         logger.error(f"Error inserting file {file_name}.{file_type} into database: {e}")
         raise
 
