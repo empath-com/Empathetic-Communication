@@ -16,7 +16,6 @@ import {
   DialogTitle,
   Tabs,
   Tab,
-  Grid,
   Paper,
 } from "@mui/material";
 import {
@@ -27,10 +26,9 @@ import {
   ArrowForwardIos as ArrowForwardIosIcon,
   Warning as WarningIcon,
   RestartAlt as ResetIcon,
-  Token as TokenIcon,
   Psychology as PsychologyIcon,
-  History as HistoryIcon,
   Chat as ChatIcon,
+  History as HistoryIcon,
 } from "@mui/icons-material";
 import { useAuthentication } from "../../functions/useAuth";
 import { fetchAuthSession } from "aws-amplify/auth";
@@ -54,10 +52,6 @@ const AISettings = () => {
   // Tab State
   const [activeTab, setActiveTab] = useState(0);
 
-
-  const [tokenLimit, setTokenLimit] = useState(20000);
-  const [selectedUser, setSelectedUser] = useState("");
-  const [users, setUsers] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptHistory, setPromptHistory] = useState([]);
   const [empathyPrompt, setEmpathyPrompt] = useState("");
@@ -230,7 +224,6 @@ Provide structured evaluation with detailed justifications for each score.
     if (authToken) {
       fetchSystemPrompts();
       fetchEmpathyPrompts();
-      fetchUsers();
     }
   }, [authToken]);
 
@@ -371,85 +364,6 @@ Provide structured evaluation with detailed justifications for each score.
       }
     } catch (error) {
       showAlert("Failed to update empathy prompt", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }/admin/instructors?instructor_email=all`,
-        {
-          headers: {
-            Authorization: token,
-          },
-        }
-      );
-      const data = await response.json();
-      setUsers(data || []);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-    }
-  };
-
-  const updateUserTokenLimit = async () => {
-    if (!selectedUser || !tokenLimit) return;
-
-    setLoading(true);
-    try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      if (selectedUser === "ALL") {
-        // Update all users with single endpoint
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}/admin/update_all_token_limits`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: token,
-            },
-            body: JSON.stringify({
-              token_limit: tokenLimit,
-            }),
-          }
-        );
-
-        if (response.ok) {
-          showAlert("All user token limits updated successfully", "success");
-        } else {
-          showAlert("Failed to update all user token limits", "error");
-        }
-      } else {
-        // Update single user
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}/admin/update_user_token_limit`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: token,
-            },
-            body: JSON.stringify({
-              user_email: selectedUser,
-              token_limit: tokenLimit,
-            }),
-          }
-        );
-
-        if (response.ok) {
-          showAlert("User token limit updated successfully", "success");
-        } else {
-          showAlert("Failed to update user token limit", "error");
-        }
-      }
-    } catch (error) {
-      showAlert("Failed to update user token limit", "error");
     } finally {
       setLoading(false);
     }
@@ -607,81 +521,21 @@ Provide structured evaluation with detailed justifications for each score.
             },
           }}
         >
-          <Tab icon={<TokenIcon />} iconPosition="start" label="Token Limits" />
           <Tab icon={<ChatIcon />} iconPosition="start" label="System Prompt" />
           <Tab icon={<PsychologyIcon />} iconPosition="start" label="Empathy Prompt" />
-          <Tab icon={<HistoryIcon />} iconPosition="start" label="Prompt History" />
         </Tabs>
       </Paper>
 
-      {/* ===== TAB 0: TOKEN LIMITS ===== */}
+      {/* ===== TAB 0: SYSTEM PROMPT ===== */}
       <TabPanel value={activeTab} index={0}>
-        <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+        <Card sx={{ boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#1f2937" }}>
-              User Token Limits
-            </Typography>
-            <Grid container spacing={3} alignItems="flex-end">
-              <Grid item xs={12} md={5}>
-                <TextField
-                  select
-                  label="Select a user"
-                  value={selectedUser}
-                  onChange={(e) => setSelectedUser(e.target.value)}
-                  fullWidth
-                  SelectProps={{ native: true }}
-                >
-                  <option value="">Select a user...</option>
-                  <option value="ALL">All Users</option>
-                  {users.map((user) => (
-                    <option key={user.user_email} value={user.user_email}>
-                      {user.first_name} {user.last_name} ({user.user_email})
-                    </option>
-                  ))}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <TextField
-                  type="number"
-                  label="Token Limit"
-                  value={tokenLimit}
-                  onChange={(e) => setTokenLimit(parseInt(e.target.value) || 0)}
-                  fullWidth
-                  inputProps={{ min: 1000, step: 1000 }}
-                />
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <Button
-                  variant="contained"
-                  onClick={updateUserTokenLimit}
-                  disabled={loading || !selectedUser}
-                  startIcon={<SaveIcon />}
-                  fullWidth
-                  sx={{
-                    py: 1.8,
-                    backgroundColor: "#10b981",
-                    "&:hover": { backgroundColor: "#059669" },
-                  }}
-                >
-                  Update Limit
-                </Button>
-              </Grid>
-            </Grid>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-              Set individual token limits for users or update all users at once.
-              Tokens are consumed by both text and voice interactions.
-            </Typography>
-          </CardContent>
-        </Card>
-      </TabPanel>
-
-      {/* ===== TAB 1: SYSTEM PROMPT ===== */}
-      <TabPanel value={activeTab} index={1}>
-        <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
-          <CardContent sx={{ p: 4 }}>
-            <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, color: "#1f2937" }}>
-              System Prompt Manager
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <ChatIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                System Prompt Manager
+              </Typography>
+            </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               This prompt controls how the AI behaves as a patient. Changes affect ALL simulation groups.
             </Typography>
@@ -695,6 +549,7 @@ Provide structured evaluation with detailed justifications for each score.
               placeholder="Enter the system prompt for the AI..."
               variant="outlined"
               sx={{ mb: 3 }}
+              inputProps={{ style: { textAlign: 'left' } }}
             />
             <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
               <Button
@@ -722,15 +577,84 @@ Provide structured evaluation with detailed justifications for each score.
             </Box>
           </CardContent>
         </Card>
+
+        {/* System Prompt History */}
+        <Card sx={{ mt: 3, boxShadow: 3, borderRadius: 2, width: "100%" }}>
+          <CardContent sx={{ p: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <HistoryIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                System Prompt History
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Browse earlier versions. Restore any version you want to use.
+            </Typography>
+            {promptHistory.length > 0 ? (
+              <>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", mb: 2 }}>
+                  <IconButton
+                    onClick={() => setHistoryIndex((p) => Math.max(0, p - 1))}
+                    disabled={historyIndex === 0}
+                  >
+                    <ArrowBackIosNewIcon />
+                  </IconButton>
+                  <Typography variant="body1" sx={{ mx: 2, fontWeight: 500 }}>
+                    Version {historyIndex + 1} of {promptHistory.length}
+                  </Typography>
+                  <IconButton
+                    onClick={() => setHistoryIndex((p) => Math.min(promptHistory.length - 1, p + 1))}
+                    disabled={historyIndex >= promptHistory.length - 1}
+                  >
+                    <ArrowForwardIosIcon />
+                  </IconButton>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2, textAlign: "center" }}>
+                  Saved: {formatDate(promptHistory[historyIndex]?.created_at)}
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={8}
+                  maxRows={12}
+                  value={promptHistory[historyIndex]?.prompt_content || ""}
+                  InputProps={{ readOnly: true }}
+                  variant="outlined"
+                  sx={{ mb: 2 }}
+                />
+                <Button
+                  startIcon={<RestoreIcon />}
+                  onClick={() => restorePrompt(promptHistory[historyIndex].history_id)}
+                  disabled={loading}
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    backgroundColor: "#10b981",
+                    "&:hover": { backgroundColor: "#059669" },
+                  }}
+                >
+                  Restore This Version
+                </Button>
+              </>
+            ) : (
+              <Box sx={{ textAlign: "center", py: 4 }}>
+                <Typography color="text.secondary">No history available</Typography>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
       </TabPanel>
 
-      {/* ===== TAB 2: EMPATHY PROMPT ===== */}
-      <TabPanel value={activeTab} index={2}>
-        <Card sx={{ boxShadow: 3, borderRadius: 2 }}>
+      {/* ===== TAB 1: EMPATHY PROMPT ===== */}
+      <TabPanel value={activeTab} index={1}>
+        <Card sx={{ mb: 4, boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, color: "#1f2937" }}>
-              Empathy Coach Prompt Manager
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <PsychologyIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                Empathy Coach Prompt Manager
+              </Typography>
+            </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               This prompt controls how the AI evaluates student empathy. Changes affect ALL users.
             </Typography>
@@ -751,6 +675,7 @@ Provide structured evaluation with detailed justifications for each score.
               placeholder="Enter the empathy evaluation prompt..."
               variant="outlined"
               sx={{ mb: 3 }}
+              inputProps={{ style: { textAlign: 'left' } }}
             />
             <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
               <Button
@@ -778,135 +703,72 @@ Provide structured evaluation with detailed justifications for each score.
             </Box>
           </CardContent>
         </Card>
-      </TabPanel>
 
-      {/* ===== TAB 3: PROMPT HISTORY ===== */}
-      <TabPanel value={activeTab} index={3}>
-        <Grid container spacing={3}>
-          {/* System Prompt History */}
-          <Grid item xs={12} lg={6}>
-            <Card sx={{ boxShadow: 3, borderRadius: 2, height: "100%" }}>
-              <CardContent sx={{ p: 4 }}>
-                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: "#1f2937" }}>
-                  System Prompt History
+        {/* Empathy Prompt History */}
+        <Card sx={{ mt: 3, boxShadow: 3, borderRadius: 2, width: "100%" }}>
+          <CardContent sx={{ p: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <HistoryIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                Empathy Prompt History
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Browse earlier versions. Restore any version you want to use.
+            </Typography>
+            {empathyPromptHistory.length > 0 ? (
+              <>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", mb: 2 }}>
+                  <IconButton
+                    onClick={() => setEmpathyHistoryIndex((p) => Math.max(0, p - 1))}
+                    disabled={empathyHistoryIndex === 0}
+                  >
+                    <ArrowBackIosNewIcon />
+                  </IconButton>
+                  <Typography variant="body1" sx={{ mx: 2, fontWeight: 500 }}>
+                    Version {empathyHistoryIndex + 1} of {empathyPromptHistory.length}
+                  </Typography>
+                  <IconButton
+                    onClick={() => setEmpathyHistoryIndex((p) => Math.min(empathyPromptHistory.length - 1, p + 1))}
+                    disabled={empathyHistoryIndex >= empathyPromptHistory.length - 1}
+                  >
+                    <ArrowForwardIosIcon />
+                  </IconButton>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2, textAlign: "center" }}>
+                  Saved: {formatDate(empathyPromptHistory[empathyHistoryIndex]?.created_at)}
                 </Typography>
-                {promptHistory.length > 0 ? (
-                  <>
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", mb: 2 }}>
-                      <IconButton
-                        onClick={() => setHistoryIndex((p) => Math.max(0, p - 1))}
-                        disabled={historyIndex === 0}
-                      >
-                        <ArrowBackIosNewIcon />
-                      </IconButton>
-                      <Typography variant="body1" sx={{ mx: 2, fontWeight: 500 }}>
-                        Version {historyIndex + 1} of {promptHistory.length}
-                      </Typography>
-                      <IconButton
-                        onClick={() => setHistoryIndex((p) => Math.min(promptHistory.length - 1, p + 1))}
-                        disabled={historyIndex >= promptHistory.length - 1}
-                      >
-                        <ArrowForwardIosIcon />
-                      </IconButton>
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2, textAlign: "center" }}>
-                      Saved: {formatDate(promptHistory[historyIndex]?.created_at)}
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      multiline
-                      minRows={8}
-                      maxRows={12}
-                      value={promptHistory[historyIndex]?.prompt_content || ""}
-                      InputProps={{ readOnly: true }}
-                      variant="outlined"
-                      sx={{ mb: 2 }}
-                    />
-                    <Button
-                      startIcon={<RestoreIcon />}
-                      onClick={() => restorePrompt(promptHistory[historyIndex].history_id)}
-                      disabled={loading}
-                      variant="contained"
-                      fullWidth
-                      sx={{
-                        backgroundColor: "#10b981",
-                        "&:hover": { backgroundColor: "#059669" },
-                      }}
-                    >
-                      Restore This Version
-                    </Button>
-                  </>
-                ) : (
-                  <Box sx={{ textAlign: "center", py: 4 }}>
-                    <Typography color="text.secondary">No history available</Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Empathy Prompt History */}
-          <Grid item xs={12} lg={6}>
-            <Card sx={{ boxShadow: 3, borderRadius: 2, height: "100%" }}>
-              <CardContent sx={{ p: 4 }}>
-                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: "#1f2937" }}>
-                  Empathy Prompt History
-                </Typography>
-                {empathyPromptHistory.length > 0 ? (
-                  <>
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", mb: 2 }}>
-                      <IconButton
-                        onClick={() => setEmpathyHistoryIndex((p) => Math.max(0, p - 1))}
-                        disabled={empathyHistoryIndex === 0}
-                      >
-                        <ArrowBackIosNewIcon />
-                      </IconButton>
-                      <Typography variant="body1" sx={{ mx: 2, fontWeight: 500 }}>
-                        Version {empathyHistoryIndex + 1} of {empathyPromptHistory.length}
-                      </Typography>
-                      <IconButton
-                        onClick={() => setEmpathyHistoryIndex((p) => Math.min(empathyPromptHistory.length - 1, p + 1))}
-                        disabled={empathyHistoryIndex >= empathyPromptHistory.length - 1}
-                      >
-                        <ArrowForwardIosIcon />
-                      </IconButton>
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2, textAlign: "center" }}>
-                      Saved: {formatDate(empathyPromptHistory[empathyHistoryIndex]?.created_at)}
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      multiline
-                      minRows={8}
-                      maxRows={12}
-                      value={empathyPromptHistory[empathyHistoryIndex]?.prompt_content || ""}
-                      InputProps={{ readOnly: true }}
-                      variant="outlined"
-                      sx={{ mb: 2 }}
-                    />
-                    <Button
-                      startIcon={<RestoreIcon />}
-                      onClick={() => restoreEmpathyPrompt(empathyPromptHistory[empathyHistoryIndex].history_id)}
-                      disabled={loading}
-                      variant="contained"
-                      fullWidth
-                      sx={{
-                        backgroundColor: "#10b981",
-                        "&:hover": { backgroundColor: "#059669" },
-                      }}
-                    >
-                      Restore This Version
-                    </Button>
-                  </>
-                ) : (
-                  <Box sx={{ textAlign: "center", py: 4 }}>
-                    <Typography color="text.secondary">No history available</Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={8}
+                  maxRows={12}
+                  value={empathyPromptHistory[empathyHistoryIndex]?.prompt_content || ""}
+                  InputProps={{ readOnly: true }}
+                  variant="outlined"
+                  sx={{ mb: 2 }}
+                />
+                <Button
+                  startIcon={<RestoreIcon />}
+                  onClick={() => restoreEmpathyPrompt(empathyPromptHistory[empathyHistoryIndex].history_id)}
+                  disabled={loading}
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    backgroundColor: "#10b981",
+                    "&:hover": { backgroundColor: "#059669" },
+                  }}
+                >
+                  Restore This Version
+                </Button>
+              </>
+            ) : (
+              <Box sx={{ textAlign: "center", py: 4 }}>
+                <Typography color="text.secondary">No history available</Typography>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
       </TabPanel>
 
       {/* ===== CONFIRM DIALOG: SYSTEM PROMPT ===== */}

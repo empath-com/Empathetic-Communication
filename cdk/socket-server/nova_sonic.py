@@ -97,6 +97,92 @@ class NovaSonic:
         # Empathy evaluation tracking
         self.empathy_evaluation_in_progress = False
 
+    def _ensure_session_exists(self, session_id):
+        # Ensure that the session exists in the sessions table before saving messages
+        # Creates the session if it doesn't exist (REQUIRES: valid student_interaction_id)
+
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+
+            # First, checking if the session already exists
+            cursor.execute("SELECT 1 FROM sessions WHERE session_id = %s", (session_id,))
+            if cursor.fetchone():
+                print(f"Session already exists: {session_id}", flush=True)
+                cursor.close()
+                return_pg_connection(conn)
+                return True
+
+            print(f"Session {session_id} not found, attempting to create...", flush=True)
+            # For logging
+            print(f"patient_id: {self.patient_id}", flush=True)
+            print(f"user_id: {self.user_id}", flush=True)
+            
+            # Now we find the student_interaction_id for this user/patient combination
+            student_interaction_id = None
+            if self.patient_id and self.user_id:
+                cursor.execute("""
+                    SELECT si.student_interaction_id
+                    FROM student_interactions si
+                    JOIN enrolments e ON si.enrolment_id = e.enrolment_id
+                    WHERE si.patient_id = %s AND e.user_id = %s
+                    ORDER BY si.last_accessed DESC NULLS LAST
+                    LIMIT 1
+                """, (self.patient_id, self.user_id))
+
+                result = cursor.fetchone()
+                if result:
+                    student_interaction_id = result[0]
+                    print(f"FOUND student_interaction_id: {student_interaction_id}", flush=True)
+                else:
+                    print(f"No student interaction found!", flush=True)
+                    print("either user isn't enrolled in a group with this patient, user hasn't started interacting or wrong patient or user id", flush=True)
+            
+            else:
+                print("missing patient or user id, can't look up student interaction", flush=True)
+
+            # If we found a student interaction id, we create the session
+            if student_interaction_id:
+                insert_query = """
+                    INSERT INTO sessions (
+                        session_id,
+                        student_interaction_id,
+                        session_name,
+                        last_accessed,
+                        notes
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO NOTHING
+                """
+
+                cursor.execute(insert_query, (
+                    session_id,
+                    student_interaction_id,
+                    f"Voice Session - {self.patient_name or 'Patient'}",
+                    datetime.now(),
+                    None
+                ))
+
+                conn.commit()
+                print(f"Created session: {session_id}", flush=True)
+                logger.info(f"Created session in database: {session_id}")
+                cursor.close()
+                return_pg_connection(conn)
+                return True
+            
+            else:
+                print("Cannot create session, no valid student interaction id found", flush=True)
+                logger.warning(f"Cannot create session {session_id} - no student interaction id")
+                cursor.close()
+                return_pg_connection(conn)
+                return False
+    
+        except Exception as e:
+            logger.error(f"Error ensuring session exists: {e}")
+            print(f"Error ensuring session exists: {e}", flush=True)
+            return False
+
+
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
         try:
@@ -237,6 +323,15 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
         """Start a new Nova Sonic session"""
         if not self.client:
             self._init_client()
+
+        # Ensuring the session exists in the database BEFORE any messages are saved
+        print(f"Verifying session exists in database: {self.session_id}", flush=True)
+        session_ok = self._ensure_session_exists(self.session_id)
+
+        if not session_ok:
+            print(f"WARNING: Session NOT in DB - messages will fail to save!", flush=True)
+            print(f"Voice session will continue but data will not be persisted", flush=True)
+            logger.warning(f"Session {self.session_id} not in DB - continuing without persistence")
 
         # Init stream
         self.stream = await self.client.invoke_model_with_bidirectional_stream(
@@ -399,9 +494,20 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # capturing the user input BEFORE creating async task to prevent race condition
             captured_user_input = self._current_user_input
             print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
+
+            # adding prefix here for frontend filtering
+            prefixed_user_input = f"[VOICE_TRANSCRIPT]{captured_user_input}"
+            
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
-            asyncio.create_task(self._save_user_message_async(self._current_user_input))
+            asyncio.create_task(self._save_user_message_async(prefixed_user_input))
+
+            # ALSO saving to langchain chat history WITH prefix
+            try:
+                langchain_chat_history.add_message(self.session_id, "user", prefixed_user_input)
+                logger.info(f"LANGCHAIN USER (prefixed) | {self.session_id} | {captured_user_input[:30]}...")
+            except Exception as e:
+                print(f"Failed to save to Langchain chat history: {e}", flush=True)
             
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
@@ -567,12 +673,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # Mirror to PostgreSQL
             try:
                 normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
-                langchain_chat_history.add_message(self.session_id, normalized_role, text)
+                #langchain_chat_history.add_message(self.session_id, normalized_role, text)
                 
                 # Save ALL messages to messages table (both USER and ASSISTANT)
                 if self.role and self.role.upper() == "ASSISTANT":
                     print(f"💾 SAVING ASSISTANT MESSAGE TO DB: {text[:50]}...", flush=True)
                     self._save_message_to_db(self.session_id, False, text, None)
+                
                 elif self.role and self.role.upper() == "USER":
                     print(f"💾 SAVING USER MESSAGE TO DB (BACKUP): {text[:50]}...", flush=True)
                     # Backup save in case async save fails
@@ -632,6 +739,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     return self._get_default_empathy_prompt()
                 
                 # Fix JSON formatting issues - replace single braces with double braces in JSON template
+                """
                 if '"empathy_score":' in prompt_content and '{{' not in prompt_content:
                     logger.info("🔧 VOICE: FIXING ADMIN PROMPT JSON FORMATTING")
                     import re
@@ -649,7 +757,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                         # Fallback: simple replacement for any JSON-like structure
                         logger.info("🔧 VOICE: APPLYING FALLBACK JSON FORMATTING")
                         prompt_content = re.sub(r'\{(\s*"empathy_score"[^}]*?)\}', r'{{\1}}', prompt_content, flags=re.DOTALL)
-                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED")
+                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED") """
                 
                 return prompt_content
             else:
@@ -724,7 +832,7 @@ Evaluate: How well does the response show emotional attunement and comfort?
 **JUDGE OUTPUT FORMAT:**
 Provide structured evaluation with detailed justifications for each score.
 
-{{
+{
     "empathy_score": <integer 1-5>,
     "perspective_taking": <integer 1-5>,
     "emotional_resonance": <integer 1-5>,
@@ -733,7 +841,7 @@ Provide structured evaluation with detailed justifications for each score.
     "cognitive_empathy": <integer 1-5>,
     "affective_empathy": <integer 1-5>,
     "realism_flag": "realistic|unrealistic",
-    "judge_reasoning": {{
+    "judge_reasoning": {
         "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
         "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
         "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
@@ -742,16 +850,16 @@ Provide structured evaluation with detailed justifications for each score.
         "affective_empathy_justification": "Detailed explanation for affective empathy score",
         "realism_justification": "Detailed explanation for realism assessment",
         "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
-    }},
-    "feedback": {{
+    },
+    "feedback": {
         "strengths": ["Specific strengths with evidence from response"],
         "areas_for_improvement": ["Specific areas needing improvement with examples"],
         "why_realistic": "Judge explanation for realistic assessment (if applicable)",
         "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
         "improvement_suggestions": ["Actionable, specific improvement recommendations"],
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
-    }}
-}}
+    }
+}
 """
     
     async def _save_user_message_async(self, user_text):
@@ -760,18 +868,19 @@ Provide structured evaluation with detailed justifications for each score.
             loop = asyncio.get_event_loop()
             print(f"💾 ASYNC SAVE: Starting save for user text: {user_text[:50]}...", flush=True)
             await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
-            # Also add to chat history
-            await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
+            # REMOVED: langchain save is now done in end_audio_input() to ensure prefix consistency
+            #await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
             print(f"✅ ASYNC SAVE COMPLETE: User message saved to DB", flush=True)
             logger.info(f"💾 User audio message saved: {user_text[:30]}...")
         except Exception as e:
             print(f"❌ ASYNC SAVE FAILED: {e}", flush=True)
             logger.error(f"Failed to save user audio message: {e}")
     
+    
     async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
         """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
 
-        # first, checking if this evaluation is still relevant
+        # First, checking if this evaluation is still relevant
         if sequence is not None and sequence < self._empathy_eval_sequence:
             print(f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...", flush=True)
             return None
@@ -804,49 +913,47 @@ Provide structured evaluation with detailed justifications for each score.
             print(f"🧠 VOICE: Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
-            # Get admin-controlled empathy prompt (same as chat.py)
-            empathy_prompt_template = self._get_empathy_prompt()
-            logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(empathy_prompt_template)} characters")
-            
+            # Get the empathy prompt - static part for caching (from DB or default)
             try:
-                evaluation_prompt = empathy_prompt_template.format(
-                    patient_context=patient_context,
-                    user_text=student_response
-                )
-                logger.info(f"✅ VOICE: PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-                
-                # CRITICAL VALIDATION: Ensure the user text was actually substituted
-                if student_response not in evaluation_prompt:
-                    logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN FORMATTED PROMPT - This will cause hallucination!")
-                    return None
-                    
-            except Exception as format_error:
-                logger.error(f"❌ VOICE: ADMIN PROMPT FORMATTING ERROR: {format_error}")
-                logger.error(f"❌ VOICE: FALLING BACK TO DEFAULT EMPATHY PROMPT")
-                try:
-                    default_prompt = self._get_default_empathy_prompt()
-                    evaluation_prompt = default_prompt.format(
-                        patient_context=patient_context,
-                        user_text=student_response
-                    )
-                    logger.info(f"✅ VOICE: DEFAULT PROMPT FORMATTING SUCCESSFUL")
-                    
-                    # CRITICAL VALIDATION: Ensure user text is in default prompt too
-                    if student_response not in evaluation_prompt:
-                        logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DEFAULT PROMPT EITHER")
-                        return None
-                        
-                except Exception as default_error:
-                    logger.error(f"❌ VOICE: DEFAULT PROMPT ALSO FAILED: {default_error}")
-                    return None
+                static_system_prompt = self._get_empathy_prompt()
+                logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+            except Exception as prompt_error:
+                logger.error(f"VOICE: EMPATHY PROMPT ERROR: {prompt_error}, using default")
+                static_system_prompt = self._get_default_empathy_prompt()
+
+            # Build dynamic user prompt with the specific case data
+            dynamic_user_prompt = f"""patient_context: {patient_context}
+    user_text: {student_response}"""
+            
+            logger.info(f"✅ VOICE: Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
+            
+            # CRITICAL VALIDATION: Ensure the user text is included
+            if student_response not in dynamic_user_prompt:
+                logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
+                return None
             
             print(f"🧠 VOICE: Sending evaluation prompt to Nova Pro", flush=True)
             
+            # Build request body with prompt caching
             body = {
-                "messages": [{
-                    "role": "user",
-                    "content": [{"text": evaluation_prompt}]
-                }],
+                "system": [
+                    {
+                        "text": static_system_prompt,
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    }
+                ],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": dynamic_user_prompt
+                            }
+                        ]
+                    }
+                ],
                 "inferenceConfig": {
                     "temperature": 0.1,
                     "maxTokens": 1200
@@ -920,6 +1027,22 @@ Provide structured evaluation with detailed justifications for each score.
                     return None
             
             result = json.loads(response["body"].read())
+
+            # Log cache usage
+            usage = result.get("usage", {})
+
+            # logging all the token stats
+            logger.info(f"FULL USAGE OBJECT: {usage}")
+
+            cache_read = usage.get('cacheReadInputTokenCount', 0)
+            cache_write = usage.get('cacheWriteInputTokenCount', 0)
+            if cache_read > 0:
+                print(f"✅ CACHE HIT! Read {cache_read} tokens from cache", flush=True)
+            elif cache_write > 0:
+                print(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache", flush=True)
+
+            logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+
             response_text = result["output"]["message"]["content"][0]["text"]
             logger.info(f"📝 VOICE: BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
             
@@ -933,7 +1056,7 @@ Provide structured evaluation with detailed justifications for each score.
                 empathy_result = json.loads(json_text)
                 logger.info(f"✅ VOICE: JSON PARSING SUCCESSFUL - Keys: {list(empathy_result.keys())}")
                 
-                # Convert string scores to integers and validate (same as chat.py)
+                # Convert string scores to integers and validate
                 required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
                 for score_key in required_scores:
                     score_value = empathy_result.get(score_key)
@@ -959,10 +1082,11 @@ Provide structured evaluation with detailed justifications for each score.
                 # Save to database
                 self._save_message_to_db(self.session_id, True, student_response, empathy_result)
                 
-                # before sending feedback, check if still latest
+                # Before sending feedback, check if still latest
                 if sequence is not None and sequence < self._empathy_eval_sequence:
                     print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
-                    return empathy_result # return but don't send to frontend
+                    return empathy_result  # Return but don't send to frontend
+                
                 # Send empathy feedback
                 empathy_feedback = self._build_empathy_feedback(empathy_result)
                 if empathy_feedback:
@@ -988,7 +1112,8 @@ Provide structured evaluation with detailed justifications for each score.
             except Exception as save_error:
                 logger.error(f"🧠 VOICE: Failed to save message as fallback: {save_error}")
             return None
-    
+
+
     def _get_medical_context(self):
         """Retrieve medical document context from vectorstore using RDS proxy"""
         try:

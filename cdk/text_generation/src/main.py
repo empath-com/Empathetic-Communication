@@ -3,34 +3,16 @@ import json
 import boto3
 import logging
 import psycopg2
-import time
+from psycopg2 import extensions
 from langchain_aws import BedrockEmbeddings
-from botocore.exceptions import ConnectTimeoutError, ReadTimeoutError
 
 from helpers.vectorstore import get_vectorstore_retriever
-from helpers.chat import (
-    get_bedrock_llm,
-    get_initial_student_query,
-    get_student_query,
-    create_dynamodb_history_table,
-    get_response,
-    update_session_name,
-    evaluate_empathy,
-    build_empathy_feedback,
-)
-from helpers.resilience import (
-    retry_with_backoff,
-    bedrock_circuit_breaker,
-    db_circuit_breaker,
-    CircuitBreakerOpenError,
-)
+from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-# Version: 2026-01-12 - Add text generation timeout protection
 
 # Environment variables
 DB_SECRET_NAME = os.environ["SM_DB_CREDENTIALS"]
@@ -40,23 +22,16 @@ BEDROCK_LLM_PARAM = os.environ["BEDROCK_LLM_PARAM"]
 EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 TABLE_NAME_PARAM = os.environ["TABLE_NAME_PARAM"]
 APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
-BEDROCK_TIMEOUT_SECONDS = int(os.environ.get("BEDROCK_TIMEOUT_SECONDS", "15"))  # 🔴 CRITICAL: Timeout for Bedrock API
 
-# AWS Clients with timeout configuration
-# 🔴 CRITICAL: Add connection timeout to prevent hanging on slow Bedrock responses
-config = boto3.session.Config(
-    connect_timeout=5,
-    read_timeout=BEDROCK_TIMEOUT_SECONDS,
-    retries={'max_attempts': 1}  # No retries to fail fast
-)
-
-secrets_manager_client = boto3.client("secretsmanager", config=config)
-ssm_client = boto3.client("ssm", region_name=REGION, config=config)
-bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION, config=config)
+# AWS Clients
+secrets_manager_client = boto3.client("secretsmanager")
+ssm_client = boto3.client("ssm", region_name=REGION)
+bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
 
 # Cached resources
 connection = None
 db_secret = None
+db_secret_version = None # tracking secret version for rotation detection
 BEDROCK_LLM_ID = None
 EMBEDDING_MODEL_ID = None
 TABLE_NAME = None
@@ -64,50 +39,33 @@ TABLE_NAME = None
 # Cached embeddings instance
 embeddings = None
 
-# ─── Text Generation Connection Pool (Prevent Exhaustion) ──────────────────────
-# 🔴 CRITICAL: Use connection pool to prevent creating new connection per request
-db_connection_pool = None
-
-def get_secret(secret_name):
-    """Retrieve a secret from AWS Secrets Manager"""
-    global db_secret
-    if db_secret is None:
+def get_secret(secret_name, expect_json=True, force_refresh = False):
+    global db_secret, db_secret_version
+    if db_secret is None or force_refresh:
         try:
-            response = secrets_manager_client.get_secret_value(SecretId=secret_name)["SecretString"]
-            db_secret = json.loads(response)
+            response = secrets_manager_client.get_secret_value(SecretId=secret_name)
+            new_version = response.get("VersionId")
+
+            # rotation detection
+            if db_secret_version and new_version != db_secret_version:
+                logger.info(f"🔄 Secret rotation detected: {db_secret_version} -> {new_version}")
+                global connection
+                if connection:
+                    try:
+                        connection.close()
+                    except:
+                        pass
+                    connection = None
+
+            db_secret_version = new_version
+            db_secret = json.loads(response["SecretString"]) if expect_json else response["SecretString"]
+            logger.info(f"Secret loaded - version: {db_secret_version}")
+        
         except json.JSONDecodeError as e:
             raise ValueError(f"Secret {secret_name} is not properly formatted as JSON.")
         except Exception as e:
             raise
     return db_secret
-
-def get_connection_pool():
-    """Get or create a connection pool for text generation"""
-    global db_connection_pool
-    if db_connection_pool is None:
-        try:
-            secret = get_secret(DB_SECRET_NAME)
-            connection_params = {
-                'dbname': secret["dbname"],
-                'user': secret["username"],
-                'password': secret["password"],
-                'host': RDS_PROXY_ENDPOINT,
-                'port': secret["port"],
-                'connect_timeout': 5,
-            }
-            
-            # Create a larger pool for text generation (10-50 connections)
-            db_connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=5,
-                maxconn=50,  # Increased from 10 to handle concurrent text generation
-                **connection_params
-            )
-            logger.info(f"✅ TEXT_GEN: Connection pool created with min=5, max=50")
-        except Exception as e:
-            logger.error(f"❌ TEXT_GEN: Failed to create connection pool: {e}")
-            raise
-    
-    return db_connection_pool
 
 
 def get_parameter(param_name, cached_var):
@@ -138,68 +96,106 @@ def initialize_constants():
     
     create_dynamodb_history_table(TABLE_NAME)
 
-def get_db_connection():
-    """Get a connection from the pool with context manager support and retry logic"""
-    @retry_with_backoff(max_retries=2, base_delay=0.5, max_delay=5.0)
-    def _get_connection():
-        try:
-            pool = get_connection_pool()
-            conn = pool.getconn()
-            logger.info("🔌 TEXT_GEN: Got connection from pool")
-            return conn
-        except Exception as e:
-            logger.error(f"❌ TEXT_GEN: Failed to get connection from pool: {e}")
-            raise
-    
+def is_connection_alive(conn):
+    # To test if the connection is actually usable
+    if conn is None:
+        return False
     try:
-        return db_circuit_breaker.call(_get_connection)
-    except CircuitBreakerOpenError as e:
-        logger.error(f"🔴 TEXT_GEN: Circuit breaker open - database unavailable: {e}")
-        raise
+        if conn.closed:
+            logger.info("Connection marked as closed")
+            return False
 
+        # checking transaction status - if in failed transaction, connection is bad
+        if conn.status != extensions.STATUS_READY:
+            logger.warning(f"Connection in bad state: {conn.status}")
+            return False
+        
+        # Testing a simple query
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
+        return True
 
-def return_db_connection(conn):
-    """Return connection to the pool"""
-    if conn and db_connection_pool:
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+        logger.warning(f"⚠️ Connection health check failed (network issue): {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"⚠️ Connection health check failed (unexpected): {e}")
+        return False
+
+def get_db_connection():
+    # Get or create a database connection through RDS Proxy with health check
+    global connection
+
+    # checking if the existing connection is alive
+    if connection and is_connection_alive(connection):
+        logger.info("Reusing existing connection")
+        return connection
+    
+    # Close the dead connection if it exists
+    if connection:
         try:
-            db_connection_pool.putconn(conn)
-            logger.info("🔌 TEXT_GEN: Returned connection to pool")
-        except Exception as e:
-            logger.warning(f"⚠️ TEXT_GEN: Failed to return connection to pool: {e}")
-
-def close_db_connection(conn):
-    """Close and return connection to pool, even if in error state"""
-    if conn:
-        try:
-            conn.rollback()  # Rollback any pending transaction
+            logger.warning("Closing dead connection...")
+            connection.close()
         except:
             pass
-        return_db_connection(conn)
 
-def get_last_student_message(session_id: str):
-    """Fetch the latest student message for a given session."""
-    conn = None
+        connection = None
+    
+    # Try to create new connection with fresh credentials
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # Force refresh secret on retry (in case of rotation)
+            force_refresh = (attempt > 0)
+            secret = get_secret(DB_SECRET_NAME, force_refresh=force_refresh)
+            
+            logger.info(f"🔌 Creating new connection to RDS Proxy (attempt {attempt + 1}/{max_retries})")
+            connection = psycopg2.connect(
+                dbname=secret["dbname"],
+                user=secret["username"],
+                password=secret["password"],
+                host=RDS_PROXY_ENDPOINT,
+                port=secret["port"],
+                connect_timeout=5
+            )
+            
+            # ✅ CRITICAL: Enable autocommit to prevent transaction issues
+            connection.autocommit = True
+            
+            logger.info("✅ Connected to database via RDS Proxy with autocommit enabled")
+            return connection
+            
+        except psycopg2.OperationalError as e:
+            error_msg = str(e).lower()
+            
+            # Check if it's an authentication error (possible rotation)
+            if 'password' in error_msg or 'authentication' in error_msg:
+                logger.warning(f"⚠️ Auth error on attempt {attempt + 1}, may be rotation: {e}")
+                if attempt < max_retries - 1:
+                    continue  # Retry with fresh credentials
+            
+            logger.error(f"❌ Failed to connect to database (attempt {attempt + 1}): {e}")
+            connection = None
+            
+            if attempt == max_retries - 1:
+                raise
+                
+        except Exception as e:
+            logger.error(f"❌ Unexpected error connecting to database: {e}")
+            connection = None
+            raise
+    
+    raise Exception("Failed to establish database connection after all retries")
+
+
+def get_system_prompt(simulation_group_id):
+    # Fetch system prompt using shared connection
+    cur = None
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            'SELECT message_content FROM "messages" WHERE session_id = %s AND student_sent = TRUE ORDER BY time_sent DESC LIMIT 1',
-            (session_id,)
-        )
-        row = cur.fetchone()
-        cur.close()
-        return row[0] if row else None
-    except Exception as e:
-        logger.error(f"Error fetching last student message: {e}")
-        return None
-    finally:
-        close_db_connection(conn)
-
-def get_system_prompt(simulation_group_id):
-    connection = None
-    try:
-        connection = get_db_connection()
-        cur = connection.cursor()
         
         cur.execute("""
             SELECT system_prompt
@@ -211,8 +207,6 @@ def get_system_prompt(simulation_group_id):
         logger.info(f"Query result: {result}")
         system_prompt = result[0] if result else None
 
-        cur.close()
-
         if system_prompt:
             logger.info(f"System prompt for simulation_group_id {simulation_group_id} found: {system_prompt}")
         else:
@@ -222,16 +216,26 @@ def get_system_prompt(simulation_group_id):
 
     except Exception as e:
         logger.error(f"Error fetching system prompt: {e}")
+        # marking connection as bad so that it gets recreated
+        global connection
+        connection = None
         return None
+    
     finally:
-        close_db_connection(connection)
+        if cur:
+            try:
+                cur.close()
+            except:
+                pass
 
 
 def get_patient_details(patient_id):
-    connection = None
+    # Fetching patient details using shared connection
+    cur = None
+
     try:
-        connection = get_db_connection()
-        cur = connection.cursor()
+        conn = get_db_connection()
+        cur = conn.cursor()
         logger.info("Connected to RDS instance!")
         cur.execute("""
             SELECT patient_name, patient_age, patient_prompt, llm_completion
@@ -242,219 +246,46 @@ def get_patient_details(patient_id):
         result = cur.fetchone()
         logger.info(f"Query result: {result}")
 
-        cur.close()
-
         if result:
             patient_name, patient_age, patient_prompt, llm_completion = result
+            logger.info(f"✅ Patient details found for patient_id {patient_id}")
             return patient_name, patient_age, patient_prompt, llm_completion
         else:
+            logger.warning(f"⚠️ No patient found for patient_id {patient_id}")
             return None, None, None, None
 
     except Exception as e:
         logger.error(f"Error fetching patient details: {e}")
-        return None, None, None, None
+        # mark connection as bad so it gets recreated
+        global connection
+        connection = None
+        return None, None, None
+    
     finally:
-        close_db_connection(connection)
+        if cur:
+            try:
+                cur.close()
+            except:
+                pass
 
 
 
 
 def handler(event, context):
-    # Version: 2026-01-12 - Add timeout protection and connection pooling
-    # Version: 2026-01-13 - Offload long work to async worker for AppSync streaming
-    # Version: 2026-01-21 - Remove warm-up path; run fully on-demand
-
-    # Route empathy evaluation requests to a dedicated handler
-    try:
-        request_path = event.get("path") or event.get("requestContext", {}).get("resourcePath") or ""
-    except Exception:
-        request_path = ""
-
-    if request_path.endswith("/student/empathy_evaluation"):
-        logger.info("🧠 Empathy evaluation endpoint called")
-        try:
-            initialize_constants()
-            query_params = event.get("queryStringParameters", {})
-            session_id = query_params.get("session_id", "")
-            patient_id = query_params.get("patient_id", "")
-            simulation_group_id = query_params.get("simulation_group_id", "")
-
-            body = {} if event.get("body") is None else json.loads(event.get("body"))
-            explicit_message = body.get("message_content") if isinstance(body, dict) else None
-
-            if not session_id or not patient_id or not simulation_group_id:
-                return {
-                    "statusCode": 400,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Headers": "*",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "*",
-                    },
-                    "body": json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id"),
-                }
-
-            patient_name, patient_age, patient_prompt, _ = get_patient_details(patient_id)
-            if patient_name is None:
-                return {
-                    "statusCode": 400,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Headers": "*",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "*",
-                    },
-                    "body": json.dumps("Error fetching patient details"),
-                }
-
-            message_to_evaluate = explicit_message or get_last_student_message(session_id)
-            if not message_to_evaluate:
-                return {
-                    "statusCode": 404,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Headers": "*",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "*",
-                    },
-                    "body": json.dumps({"error": "No student message found to evaluate"}),
-                }
-
-            deployment_region = os.environ.get("AWS_REGION", "us-east-1")
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0",
-            }
-
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            evaluation = evaluate_empathy(message_to_evaluate, patient_context, nova_client)
-
-            # Persist evaluation with the message
-            from helpers.chat import save_message_to_db
-            try:
-                save_message_to_db(session_id, True, message_to_evaluate, evaluation)
-            except Exception as e:
-                logger.warning(f"Failed to save evaluation to DB: {e}")
-
-            summary_payload = {}
-            if evaluation:
-                feedback = evaluation.get("feedback", {}) if isinstance(evaluation.get("feedback"), dict) else {}
-                judge_reasoning = evaluation.get("judge_reasoning", {}) if isinstance(evaluation.get("judge_reasoning"), dict) else {}
-                summary_payload = {
-                    "overall_score": evaluation.get("empathy_score", 0),
-                    "overall_level": "",
-                    "total_interactions": 1,
-                    "empathy_interactions": 1,
-                    "avg_perspective_taking": evaluation.get("perspective_taking", 0),
-                    "avg_emotional_resonance": evaluation.get("emotional_resonance", 0),
-                    "avg_acknowledgment": evaluation.get("acknowledgment", 0),
-                    "avg_language_communication": evaluation.get("language_communication", 0),
-                    "avg_cognitive_empathy": evaluation.get("cognitive_empathy", 0),
-                    "avg_affective_empathy": evaluation.get("affective_empathy", 0),
-                    "realism_assessment": "Your response is realistic" if evaluation.get("realism_flag") != "unrealistic" else "Your response is unrealistic",
-                    "realism_explanation": judge_reasoning.get("realism_justification", ""),
-                    "coach_assessment": judge_reasoning.get("overall_assessment", ""),
-                    "strengths": feedback.get("strengths", []) or [],
-                    "areas_for_improvement": feedback.get("areas_for_improvement", []) or [],
-                    "recommendations": feedback.get("improvement_suggestions", []) or [],
-                    "recommended_approach": feedback.get("alternative_phrasing", "") or "",
-                }
-
-            return {
-                "statusCode": 200,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                "body": json.dumps({
-                    "empathy_evaluation": evaluation,
-                    "summary": summary_payload,
-                    "empathy_feedback_markdown": build_empathy_feedback(evaluation) if evaluation else "",
-                }),
-            }
-        except Exception as e:
-            logger.error(f"❌ Empathy evaluation endpoint error: {e}")
-            logger.exception("Full traceback:")
-            return {
-                "statusCode": 500,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                "body": json.dumps("Internal server error"),
-            }
-
-    # Fast-path: fire-and-forget a background invocation for non-streaming requests
-    # For streaming requests, process immediately in the first invocation
-    query_params = event.get("queryStringParameters", {})
-    stream_requested = query_params.get("stream", "false").lower() == "true"
-    
-    if not event.get("async_worker") and not stream_requested:
-        try:
-            lambda_client = boto3.client("lambda")
-            async_payload = dict(event)
-            async_payload["async_worker"] = True
-            lambda_client.invoke(
-                FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"],
-                InvocationType="Event",  # async
-                Payload=json.dumps(async_payload),
-            )
-            return {
-                "statusCode": 202,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                "body": json.dumps({"message": "Processing asynchronously; stream over AppSync"}),
-            }
-        except Exception as e:
-            logger.error(f"❌ Failed to trigger async worker: {e}")
-            return {
-                "statusCode": 500,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                "body": json.dumps("Failed to start async processing"),
-            }
-    
-    # For streaming requests, continue processing in first invocation
-    logger.info(f"🌊 Streaming request detected, processing synchronously in first invocation")
-
-    # 🔴 CRITICAL: Wrap entire handler in try-finally to return connection to pool
-    connection_obj = None
+    # Main Lambda handler with proper initialization and error handling
+    # Version: 2026-02-04-rds-proxy-autocommit-fix
+    logger.info("🚀 STREAMING FUNCTION STARTED - Text Generation Lambda function is called!")
+    logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
+    logger.info(f"📝 Event headers: {event.get('headers', {})}")
+    logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
+    initialize_constants()
     
     try:
-        start_time = time.time()
-        logger.info("🚀 STREAMING FUNCTION STARTED - Text Generation Lambda function is called!")
-        logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
-        logger.info(f"📝 Event headers: {event.get('headers', {})}")
-        logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
+        # initialize all cached resources ONCE per container (not per invocation)
         initialize_constants()
-        
-        # 🔴 CRITICAL: Get connection from pool at start
-        connection_obj = get_db_connection()
-        if connection_obj is None:
-            logger.error("❌ TEXT_GEN: Failed to get database connection")
-            return {
-                'statusCode': 500,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Database connection failed')
-            }
-        
+        # ensure we have a working database connection, this will reuse existing conn or create new one if needed
+        get_db_connection()
+
         # Extract the user's Cognito token from the API Gateway event
         auth_token = None
         if 'headers' in event:
@@ -540,62 +371,14 @@ def handler(event, context):
         logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
         
 
+
         # Check if streaming is requested
         query_params = event.get("queryStringParameters", {})
         stream = query_params.get("stream", "false").lower() == "true"
         
-        # ⏱️ CRITICAL: Check remaining time - abort if <10 seconds left
-        elapsed = time.time() - start_time
-        remaining = context.get_remaining_time_in_millis() / 1000 if hasattr(context, 'get_remaining_time_in_millis') else 30
-        if remaining < 10:
-            logger.error(f"⏱️ TEXT_GEN: Not enough time remaining ({remaining}s), aborting")
-            return {
-                'statusCode': 504,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Request timeout - insufficient time remaining')
-            }
-        
         try:
             logger.info("Creating Bedrock LLM instance.")
-            
-            @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=10.0)
-            def _create_llm():
-                return bedrock_circuit_breaker.call(
-                    get_bedrock_llm,
-                    bedrock_llm_id=BEDROCK_LLM_ID,
-                    streaming=stream
-                )
-            
-            llm = _create_llm()
-        except CircuitBreakerOpenError as e:
-            logger.error(f"🔴 TEXT_GEN: Bedrock circuit breaker open - service unavailable: {e}")
-            return {
-                'statusCode': 503,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Bedrock service temporarily unavailable - please try again later')
-            }
-        except (ConnectTimeoutError, ReadTimeoutError) as e:
-            logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout: {e}")
-            return {
-                'statusCode': 504,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Bedrock API timeout - please try again')
-            }
+            llm = get_bedrock_llm(bedrock_llm_id=BEDROCK_LLM_ID, streaming=stream)
         except Exception as e:
             logger.error(f"Error getting LLM from Bedrock: {e}")
             return {
@@ -656,50 +439,21 @@ def handler(event, context):
 
         try:
             logger.info("Generating response from the LLM.")
+            
             logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
-            
-            @retry_with_backoff(max_retries=1, base_delay=2.0, max_delay=5.0)
-            def _get_response():
-                return bedrock_circuit_breaker.call(
-                    get_response,
-                    query=student_query,
-                    patient_name=patient_name,
-                    llm=llm,
-                    history_aware_retriever=history_aware_retriever,
-                    table_name=TABLE_NAME,
-                    session_id=session_id,
-                    system_prompt=system_prompt,
-                    patient_age=patient_age,
-                    patient_prompt=patient_prompt,
-                    llm_completion=llm_completion,
-                    stream=stream
-                )
-            
-            response = _get_response()
-        except CircuitBreakerOpenError as e:
-            logger.error(f"🔴 TEXT_GEN: Circuit breaker open during response generation: {e}")
-            return {
-                'statusCode': 503,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('LLM service temporarily unavailable - please try again later')
-            }
-        except (ConnectTimeoutError, ReadTimeoutError) as e:
-            logger.error(f"⏱️ TEXT_GEN: Bedrock API timeout during response generation: {e}")
-            return {
-                'statusCode': 504,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Response generation timeout - please try again')
-            }
+            response = get_response(
+                query=student_query,
+                patient_name=patient_name,
+                llm=llm,
+                history_aware_retriever=history_aware_retriever,
+                table_name=TABLE_NAME,
+                session_id=session_id,
+                system_prompt=system_prompt,
+                patient_age=patient_age,
+                patient_prompt=patient_prompt,
+                llm_completion=llm_completion,
+                stream=stream
+            )
         except Exception as e:
             logger.error(f"Error getting response: {e}")
             logger.exception("Full error details:")
@@ -727,6 +481,7 @@ def handler(event, context):
             logger.error(f"Error updating session name: {e}")
             session_name = "New Chat"
         
+
 
         if stream:
             logger.info("Returning streaming response.")
@@ -762,20 +517,19 @@ def handler(event, context):
                     "empathy_evaluation": response.get("empathy_evaluation", None)
                 })
             }
+    
     except Exception as e:
-        logger.error(f"❌ TEXT_GEN: Unhandled exception in handler: {e}")
-        logger.exception("Full traceback:")
+        logger.error(f"Unhandled error in text generation handler: {e}")
+        logger.exception("Full traceback: ")
         return {
-            'statusCode': 500,
+            "statusCode": 500,
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Headers": "*",
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Methods": "*"
             },
-            'body': json.dumps('Internal server error')
+            "body": json.dumps(
+                f'Internal Server Error: {str(e)}'
+            )  
         }
-    finally:
-        # 🔴 CRITICAL: Always return connection to the pool, even if error
-        if connection_obj:
-            close_db_connection(connection_obj)

@@ -39,11 +39,13 @@ const formatMessagesForPDF = (messages, studentName, patientName) => {
   const seen = new Set();
   const uniqueMessages = messages.filter(msg => {
     const key = msg.message_content.trim();
+
+    if (key.includes("Begin the conversation as the patient")) return false;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  
+
   return uniqueMessages
     .map(
       (msg) =>
@@ -73,11 +75,12 @@ const formatMessages = (messages, studentName, patientName) => {
   const seen = new Set();
   const uniqueMessages = messages.filter(message => {
     const key = message.message_content.trim();
+    if (key.includes("Begin the conversation as the patient")) return false;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  
+
   const groupedMessages = uniqueMessages.reduce((acc, message) => {
     const date = formatDate(message.time_sent);
     if (!acc[date]) {
@@ -133,8 +136,7 @@ const formatNotes = (noteText) => (
 );
 
 const StudentDetails = () => {
-  const { studentId } = useParams();
-  const simulation_group_id = localStorage.getItem("selectedGroupId");
+  const { simulationGroupId: simulation_group_id, studentId } = useParams();
   const student = JSON.parse(localStorage.getItem("selectedStudent"));
   const [tabs, setTabs] = useState([]);
   const [sessions, setSessions] = useState({});
@@ -145,7 +147,7 @@ const StudentDetails = () => {
   const [empathyDialogOpen, setEmpathyDialogOpen] = useState(false);
   const [patientIds, setPatientIds] = useState({});
   const sessionRefs = useRef({});
-  
+
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -153,8 +155,7 @@ const StudentDetails = () => {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/student_patients_messages?simulation_group_id=${encodeURIComponent(
             simulation_group_id
           )}&student_email=${encodeURIComponent(student.email)}`,
@@ -170,7 +171,7 @@ const StudentDetails = () => {
           const data = await response.json();
           setSessions(data);
           setTabs(Object.keys(data)); // Tabs will represent patient names
-          
+
           // Fetch patient IDs directly
           const patientsResponse = await fetch(
             `${import.meta.env.VITE_API_ENDPOINT}instructor/view_patients?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
@@ -182,17 +183,17 @@ const StudentDetails = () => {
               },
             }
           );
-          
+
           if (patientsResponse.ok) {
             const patientsData = await patientsResponse.json();
             console.log('Patients data:', patientsData);
-            
+
             // Create mapping of patient names to IDs
             const patientIdMap = {};
             patientsData.forEach(patient => {
               patientIdMap[patient.patient_name] = patient.patient_id;
             });
-            
+
             console.log('Patient ID mapping:', patientIdMap);
             setPatientIds(patientIdMap);
           }
@@ -213,7 +214,7 @@ const StudentDetails = () => {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT            
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/get_completion_status?simulation_group_id=${encodeURIComponent(
             simulation_group_id
           )}&student_email=${encodeURIComponent(student.email)}`,
@@ -225,7 +226,7 @@ const StudentDetails = () => {
             },
           }
         );
-  
+
         if (response.ok) {
           const data = await response.json();
           console.log('Completion statuses:', data);
@@ -237,7 +238,7 @@ const StudentDetails = () => {
         console.error("Error fetching completion statuses:", error);
       }
     };
-  
+
     fetchCompletionStatuses();
   }, [simulation_group_id, student.email]);
 
@@ -246,7 +247,7 @@ const StudentDetails = () => {
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT          
+        `${import.meta.env.VITE_API_ENDPOINT
         }instructor/toggle_completion?student_interaction_id=${studentInteractionId}`,
         {
           method: "PUT",
@@ -256,7 +257,7 @@ const StudentDetails = () => {
           },
         }
       );
-  
+
       if (response.ok) {
         const data = await response.json();
         setCompletionStatuses((prevStatuses) =>
@@ -296,8 +297,7 @@ const StudentDetails = () => {
       const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }instructor/delete_student?simulation_group_id=${encodeURIComponent(
           simulation_group_id
         )}&user_email=${encodeURIComponent(
@@ -404,15 +404,15 @@ const StudentDetails = () => {
     try {
       console.log('fetchEmpathySummary called with patientId:', patientId);
       console.log('Current patientIds mapping:', patientIds);
-      
+
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
-      
+
       // Build the URL with required parameters
       let url = `${import.meta.env.VITE_API_ENDPOINT}instructor/empathy_summary?session_id=default&simulation_group_id=${encodeURIComponent(
         simulation_group_id
       )}&student_email=${encodeURIComponent(student.email)}`;
-      
+
       // Add patient_id if provided
       if (patientId) {
         url += `&patient_id=${encodeURIComponent(patientId)}`;
@@ -420,9 +420,9 @@ const StudentDetails = () => {
       } else {
         console.log('Fetching overall empathy summary');
       }
-      
+
       console.log('Empathy summary URL:', url);
-      
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -430,7 +430,7 @@ const StudentDetails = () => {
           "Content-Type": "application/json",
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log('Empathy summary response:', data);
@@ -452,8 +452,8 @@ const StudentDetails = () => {
     }
   };
 
-  
-  
+
+
 
   return (
     <>
@@ -544,7 +544,7 @@ const StudentDetails = () => {
                     </Typography>
                     <Box sx={{ mb: 3 }}>
                       <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Average Empathy Score:</strong> {empathySummary.overall_score}/5 
+                        <strong>Average Empathy Score:</strong> {empathySummary.overall_score}/5
                         ({empathySummary.overall_level})
                       </Typography>
                       <Typography variant="body1" sx={{ mb: 1 }}>
@@ -554,7 +554,7 @@ const StudentDetails = () => {
                         <strong>Interactions with Empathy Feedback:</strong> {empathySummary.empathy_interactions}
                       </Typography>
                     </Box>
-                    
+
                     <Typography variant="h6" sx={{ mb: 2 }}>
                       Category Breakdown
                     </Typography>
@@ -629,7 +629,7 @@ const StudentDetails = () => {
                       {formatMessages(session.messages, studentId, tabs[activeTab])}
                       {formatNotes(session.notes)}
                     </Box>
-                    
+
                     {/* Button for downloading only the chat responses */}
                     <Button
                       onClick={() => handleDownloadChatPDF(session, tabs[activeTab])}
@@ -649,7 +649,7 @@ const StudentDetails = () => {
                     >
                       Download Notes PDF
                     </Button>
-                    
+
                     {/* Button for viewing patient-specific empathy summary */}
                     <Button
                       onClick={() => {
@@ -657,11 +657,11 @@ const StudentDetails = () => {
                         const patientName = tabs[activeTab];
                         console.log(`Current tab: ${activeTab}, Patient name: ${patientName}`);
                         console.log('All patient IDs:', patientIds);
-                        
+
                         // Get the patient ID from our mapping
                         const patientId = patientIds[patientName];
                         console.log(`Looking up patient ID for ${patientName}: ${patientId}`);
-                        
+
                         if (patientId) {
                           console.log(`Calling fetchEmpathySummary with patientId: ${patientId}`);
                           fetchEmpathySummary(patientId);
