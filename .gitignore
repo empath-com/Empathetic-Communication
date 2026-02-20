@@ -133,3 +133,4 @@ dist
 venv/
 .env/
 .github/AI_DEVELOPMENT_GUIDE.md
+.claude/settings.local.json

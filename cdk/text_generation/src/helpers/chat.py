@@ -15,7 +15,6 @@ from langchain.chains import create_retrieval_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
 from pydantic import BaseModel, Field
-from threading import Thread
 
 class LLM_evaluation(BaseModel):
     response: str = Field(description="Assessment of the student's answer with a follow-up question.")
@@ -691,6 +690,12 @@ def get_response(
                 patient_age,
                 patient_prompt
             )
+            # For streaming, response is saved directly via AppSync
+            # Return immediately with status message
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_name = f"{patient_name}_{timestamp}"
+            return {"llm_output": response, "session_name": session_name, "llm_verdict": False}
         else:
             response = generate_response(
                 conversational_rag_chain,
@@ -703,13 +708,6 @@ def get_response(
     except Exception as e:
         logger.error(f"Response generation error: {e}")
         response = "I'm sorry, I cannot provide a response to that query."
-    
-    if stream:
-        save_message_to_db(session_id, False, response, None)
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_name = f"{patient_name}_{timestamp}"
-        return {"llm_output": response, "session_name": session_name, "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion, empathy_feedback)
     
@@ -741,40 +739,15 @@ def generate_streaming_response(
     patient_prompt: str
 ) -> str:
     """
-    Streams an answer via AppSync as fast as possible.
+    Streams an answer via AppSync directly (no threading needed with self-invocation pattern).
+    The Lambda async invocation itself provides the asynchronous execution.
     """
     import time
-    from threading import Thread
-    
-    logger.info(f"🚀 STREAMING FUNCTION STARTED with query: '{query}' - DEPLOYMENT TEST v2")
-
-    def empathy_async():
-        try:
-            logger.info(f"🧠 ASYNC EMPATHY THREAD STARTED for query: {query[:50]}...")
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0"
-            }
-            logger.info(f"🧠 CALLING evaluate_empathy function...")
-            evaluation = evaluate_empathy(query, patient_context, nova_client)
-            logger.info(f"🧠 ASYNC EMPATHY EVALUATION RESULT: {evaluation is not None}")
-            
-            save_message_to_db(session_id, True, query, evaluation)
-            
-            if evaluation:
-                logger.info("🧠 Publishing empathy data to AppSync")
-                # empathy_feedback = build_empathy_feedback(evaluation)
-                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
-            else:
-                logger.warning("🧠 No empathy evaluation to publish")
-        except Exception as e:
-            logger.exception("Async empathy publish failed")
-            save_message_to_db(session_id, True, query, None)
 
     try:
-        logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")
+        logger.info(f"🔄 STREAMING STARTED for session: {session_id}")
+        
+        logger.info(f"🔍 STREAMING QUERY CHECK: '{query}' (length: {len(query.strip())})")  
         is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
         should_evaluate = len(query.strip()) > 0 and not is_greeting
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
@@ -782,12 +755,14 @@ def generate_streaming_response(
         # Always skip empathy evaluation during streaming
         logger.info(f"❌ STREAMING: Empathy evaluation disabled - Query: '{query}'")
         save_message_to_db(session_id, True, query, None)
-
+        
+        # Publish start event
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 
         full_response = ""
 
         try:
+            # Stream chunks to AppSync
             for chunk in conversational_rag_chain.stream(
                 {"input": query},
                 config={"configurable": {"session_id": session_id}},
@@ -817,24 +792,35 @@ def generate_streaming_response(
                 config={"configurable": {"session_id": session_id}},
             )
             full_response = result.get("answer", str(result))
+            # Simulate streaming by breaking into chunks
             words = full_response.split(" ")
             for i in range(0, len(words), 3):
                 chunk = " ".join(words[i : i + 3]) + " "
                 publish_to_appsync(session_id, {"type": "chunk", "content": chunk})
                 time.sleep(0.005)
 
+        # Publish end event
         publish_to_appsync(session_id, {"type": "end", "content": full_response})
         save_message_to_db(session_id, False, full_response, None)
-
-        return full_response
-
+        
+        logger.info(f"✅ STREAMING COMPLETED for session: {session_id}, length: {len(full_response)}")
+        
+        return "Streaming completed"
+        
     except Exception as e:
+        logger.error(f"❌ STREAMING ERROR: {e}")
+        logger.exception("Full streaming error:")
         error_msg = "I am sorry, I cannot provide a response to that query."
-        publish_to_appsync(session_id, {"type": "error", "content": error_msg})
+        try:
+            publish_to_appsync(session_id, {"type": "error", "content": error_msg})
+            save_message_to_db(session_id, False, error_msg, None)
+        except:
+            logger.error("Failed to publish error to AppSync")
         return error_msg
 
+
 def get_cognito_token():
-    """Get the current user's Cognito JWT token from the Lambda event context."""
+    """Get the current user's Cognito JWT token from storage."""
     token = getattr(get_cognito_token, 'current_token', None)
     if token:
         logger.info(f"✅ Found Cognito JWT token: {token[:20]}...")
@@ -891,9 +877,14 @@ def publish_to_appsync(session_id: str, data: dict):
         response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
         
         if response.status_code != 200:
-            logger.error(f"Request payload: {json.dumps(payload, indent=2)}")
+            logger.error(f"❌ APPSYNC ERROR - Status Code: {response.status_code}")
+            logger.error(f"❌ Response Headers: {dict(response.headers)}")
+            logger.error(f"❌ Response Body: {response.text}")
+            logger.error(f"❌ Request payload: {json.dumps(payload, indent=2)}")
+            logger.error(f"❌ Session ID: {session_id}")
+            logger.error(f"❌ Data type being sent: {data.get('type')}")
         else:
-            logger.info(f"📝 Response DEPLOYMENT TEST v3: {response.text[:200]}...")
+            logger.info(f"✅ AppSync success - Response: {response.text[:200]}...")
         
     except Exception as e:
         logger.error(f"Failed to publish to AppSync: {e}")

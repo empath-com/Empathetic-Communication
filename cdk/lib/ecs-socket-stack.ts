@@ -4,6 +4,7 @@ import { Construct } from "constructs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as elbv2targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { VpcStack } from "./vpc-stack";
@@ -11,7 +12,7 @@ import { DatabaseStack } from "./database-stack";
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
-  public readonly nlbDnsName?: string; // NLB temporarily disabled
+  public readonly nlbDnsName: string;
   public readonly albDnsName: string;
   public readonly albArn: string;
 
@@ -227,14 +228,13 @@ export class EcsSocketStack extends Stack {
     );
 
     // ============================================
-    // NETWORK LOAD BALANCER (TCP/UDP protocols)
+    // NETWORK LOAD BALANCER (in front of ALB)
     // ============================================
-    // TODO: NLB health checks are causing tasks to fail. Disabled temporarily.
-    // Will re-enable once ALB is working reliably.
-    /*
+    // NLB targets the ALB (not ECS tasks directly) to avoid deployment hangs.
+    // Cold-start health check failures are isolated to the ALB layer.
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
-      internetFacing: false, // Private NLB for VPC access only
+      internetFacing: false,
       vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
       loadBalancerName: `${id.replace(/Stack/g, "")}-socket-nlb`,
     });
@@ -244,22 +244,19 @@ export class EcsSocketStack extends Stack {
       protocol: elbv2.Protocol.TCP,
     });
 
-    nlbListener.addTargets("NlbEcsTargets", {
-      protocol: elbv2.Protocol.TCP,
+    // Target the ALB, not ECS tasks — prevents deployment hangs
+    // Note: deregistrationDelay is not supported for target type 'alb'
+    nlbListener.addTargets("NlbAlbTarget", {
       port: 80,
-      targets: [service],
+      targets: [new elbv2targets.AlbTarget(alb, 80)],
       healthCheck: {
-        protocol: elbv2.Protocol.HTTP, // Changed from TCP to HTTP for proper health checks
-        port: "80",
-        path: "/health", // HTTP health check needs a path
+        protocol: elbv2.Protocol.HTTP,
+        path: "/health",
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 10, // Increased from 5 to match ALB tolerance (300s before unhealthy)
+        unhealthyThresholdCount: 3,
         interval: Duration.seconds(30),
-        timeout: Duration.seconds(10), // Reduced from 30s since HTTP is deterministic
       },
-      deregistrationDelay: Duration.seconds(120),
     });
-    */
 
     // Add HTTP listener for WebSocket connections
     const httpListener = alb.addListener("HttpListener", {
@@ -293,12 +290,10 @@ export class EcsSocketStack extends Stack {
       "Allow HTTP to WebSocket ALB"
     );
 
-    // Note: NLB is temporarily disabled - was causing health check failures
-
     // ============================================
     // OUTPUTS FOR CROSS-ACCOUNT CONSUMPTION
     // ============================================
-    // this.nlbDnsName = nlb.loadBalancerDnsName;  // NLB disabled
+    this.nlbDnsName = nlb.loadBalancerDnsName;
     this.albDnsName = alb.loadBalancerDnsName;
     this.albArn = alb.loadBalancerArn;
     // Use custom domain if provided, otherwise use ALB DNS name
@@ -307,7 +302,7 @@ export class EcsSocketStack extends Stack {
     // WebSocket uses ws:// (HTTP) protocol. HTTPS/WSS must be configured externally via Route53 alias and CloudFront or similar
     this.socketUrl = `ws://${domainForUrl}`;
 
-    // Output ALB for HTTP/WebSocket access (removed NLB outputs since it's disabled)
+    // Output ALB and NLB DNS names for HTTP/WebSocket access
     new CfnOutput(this, "ApplicationLoadBalancerDnsName", {
       value: this.albDnsName,
       description: "ALB DNS Name for WebSocket connections within same VPC or via VPC peering",
@@ -318,6 +313,18 @@ export class EcsSocketStack extends Stack {
       value: this.albArn,
       description: "ALB ARN for cross-account access",
       exportName: `${id}-ALB-ARN`,
+    });
+
+    new CfnOutput(this, "NetworkLoadBalancerDnsName", {
+      value: this.nlbDnsName,
+      description: "NLB DNS Name (static IPs) — primary entry point for WebSocket connections",
+      exportName: `${id}-NLB-DNS`,
+    });
+
+    new CfnOutput(this, "NetworkLoadBalancerArn", {
+      value: nlb.loadBalancerArn,
+      description: "NLB ARN",
+      exportName: `${id}-NLB-ARN`,
     });
 
     // Output internal WebSocket URL

@@ -15,7 +15,7 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || "ca-central-1",
 };
 
-const StackPrefix = "Empathetic-Communication";   // instead of tryGetContext
+const StackPrefix = "EmpathAI";   // instead of tryGetContext
 const environment = "dev";                         // instead of tryGetContext
 const githubRepo = "Empathetic-Communication";    // instead of tryGetContext
 const githubBranch = "main";

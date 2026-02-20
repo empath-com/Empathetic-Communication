@@ -6,9 +6,6 @@ import logging
 from datetime import datetime, timezone
 from typing import NamedTuple
 
-from helpers.vectorstore import update_vectorstore
-from langchain_aws import BedrockEmbeddings
-
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -216,7 +213,8 @@ def parse_s3_file_path(file_key):
             "body": json.dumps("Error parsing S3 file path.")
         }
 
-def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name, file_category):    
+def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name, file_category):
+    global connection
     connection = connect_to_db()
     if connection is None:
         logger.error("No database connection available.")
@@ -235,8 +233,14 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
         AND filename = %s
         AND filetype = %s;
         """
-        cur.execute(select_query, (patient_id, file_name, file_type))
-        existing_file = cur.fetchone()
+        try:
+            cur.execute(select_query, (patient_id, file_name, file_type))
+            existing_file = cur.fetchone()
+        except Exception as select_error:
+            connection.rollback()
+            cur.close()
+            logger.error(f"Error executing SELECT query: {select_error}")
+            raise
 
         timestamp = datetime.now(timezone.utc)
         ingestion_status = "processing" if file_category == "documents" else "not processing"
@@ -253,10 +257,16 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
                 AND filename = %s
                 AND filetype = %s;
             """
-            cur.execute(update_query, (
-                bucket_name, file_path, timestamp, ingestion_status, patient_id, file_name, file_type
-            ))
-            logger.info(f"Successfully updated file in database, ingestion set to '{ingestion_status}'.")
+            try:
+                cur.execute(update_query, (
+                    bucket_name, file_path, timestamp, ingestion_status, patient_id, file_name, file_type
+                ))
+                logger.info(f"Successfully updated file in database, ingestion set to '{ingestion_status}'.")
+            except Exception as update_error:
+                connection.rollback()
+                cur.close()
+                logger.error(f"Error executing UPDATE query: {update_error}")
+                raise
         else:
             # Insert a new record
             insert_query = """
@@ -264,24 +274,29 @@ def insert_file_into_db(patient_id, file_name, file_type, file_path, bucket_name
                 (patient_id, filetype, s3_bucket_reference, filepath, filename, time_uploaded, metadata, ingestion_status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
             """
-            cur.execute(insert_query, (
-                patient_id, file_type, bucket_name, file_path, file_name, timestamp, "", ingestion_status
-            ))
-            logger.info(f"Successfully inserted new file {file_name}.{file_type}, ingestion set to '{ingestion_status}'.")
+            try:
+                cur.execute(insert_query, (
+                    patient_id, file_type, bucket_name, file_path, file_name, timestamp, "", ingestion_status
+                ))
+                logger.info(f"Successfully inserted new file {file_name}.{file_type}, ingestion set to '{ingestion_status}'.")
+            except Exception as insert_error:
+                connection.rollback()
+                cur.close()
+                logger.error(f"Error executing INSERT query: {insert_error}")
+                raise
 
         connection.commit()
         cur.close()
     except Exception as e:
-        if cur:
-            cur.close()
-        connection.rollback()
-        # Reset connection to clear aborted transaction state
-        global connection as global_connection
-        global_connection = None
+        connection = None
         logger.error(f"Error inserting file {file_name}.{file_type} into database: {e}")
         raise
 
 def update_vectorstore_from_s3(bucket, simulation_group_id, patient_id, file_path):
+    # Lazy import heavy dependencies only when needed
+    from langchain_aws import BedrockEmbeddings
+    from helpers.vectorstore import update_vectorstore
+    
     connection = connect_to_db()
     if connection is None:
         logger.error("Database connection failed. Unable to query embeddings.")

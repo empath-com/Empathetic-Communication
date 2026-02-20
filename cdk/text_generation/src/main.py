@@ -27,6 +27,7 @@ APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm", region_name=REGION)
 bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
+lambda_client = boto3.client("lambda", region_name=REGION)
 
 # Cached resources
 connection = None
@@ -273,12 +274,16 @@ def get_patient_details(patient_id):
 
 def handler(event, context):
     # Main Lambda handler with proper initialization and error handling
-    # Version: 2026-02-04-rds-proxy-autocommit-fix
+    # Version: 2026-02-18-self-invocation-pattern
     logger.info("🚀 STREAMING FUNCTION STARTED - Text Generation Lambda function is called!")
     logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
     logger.info(f"📝 Event headers: {event.get('headers', {})}")
     logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
     initialize_constants()
+    
+    # Check if this is an async self-invocation
+    is_async_invocation = event.get("asyncInvocation", False)
+    logger.info(f"🔍 Is async invocation: {is_async_invocation}")
     
     try:
         # initialize all cached resources ONCE per container (not per invocation)
@@ -286,9 +291,14 @@ def handler(event, context):
         # ensure we have a working database connection, this will reuse existing conn or create new one if needed
         get_db_connection()
 
-        # Extract the user's Cognito token from the API Gateway event
+        # Extract the user's Cognito token from the API Gateway event or async payload
         auth_token = None
-        if 'headers' in event:
+        
+        # For async invocations, token is passed in the payload
+        if is_async_invocation and 'cognitoToken' in event:
+            auth_token = event['cognitoToken']
+            logger.info(f"🎫 Retrieved Cognito token from async payload: {auth_token[:30]}...")
+        elif 'headers' in event:
             headers = event['headers']
             auth_token = headers.get('Authorization') or headers.get('authorization')
             logger.info(f"🔍 Found headers: {list(headers.keys())}")
@@ -301,18 +311,26 @@ def handler(event, context):
             else:
                 jwt_token = auth_token
             
-            # Store the JWT token for AppSync authentication
-            from helpers.chat import get_cognito_token
-            get_cognito_token.current_token = f"Bearer {jwt_token}"
+            # Store the JWT token for AppSync authentication (will be accessed in helpers.chat)
+            import helpers.chat
+            helpers.chat.get_cognito_token.current_token = f"Bearer {jwt_token}"
             logger.info(f"✅ Cognito JWT token extracted and stored: Bearer {jwt_token[:20]}...")
         else:
-            logger.warning(f"❌ No Authorization header found. Available headers: {list(headers.keys()) if 'headers' in locals() else 'No headers'}")
+            logger.warning(f"❌ No Authorization header found. Available headers: {list(event.get('headers', {}).keys()) if 'headers' in event else 'No headers'}")
 
-        query_params = event.get("queryStringParameters", {})
-        simulation_group_id = query_params.get("simulation_group_id", "")
-        session_id = query_params.get("session_id", "")
-        patient_id = query_params.get("patient_id", "")
-        session_name = query_params.get("session_name", "New Chat")
+        query_params = event.get("queryStringParameters", {}) if not is_async_invocation else {}
+        
+        # Extract parameters from async payload or query string
+        if is_async_invocation:
+            simulation_group_id = event.get("simulation_group_id", "")
+            session_id = event.get("session_id", "")
+            patient_id = event.get("patient_id", "")
+            session_name = event.get("session_name", "New Chat")
+        else:
+            simulation_group_id = query_params.get("simulation_group_id", "")
+            session_id = query_params.get("session_id", "")
+            patient_id = query_params.get("patient_id", "")
+            session_name = query_params.get("session_name", "New Chat")
 
         if not simulation_group_id or not session_id or not patient_id:
             return {
@@ -354,7 +372,13 @@ def handler(event, context):
                 'body': json.dumps('Error fetching patient details')
             }
 
-        body = {} if event.get("body") is None else json.loads(event.get("body"))
+        body = {}
+        if is_async_invocation:
+            # For async invocations, body fields are in the event directly
+            body = {"message_content": event.get("message_content", "")}
+        elif event.get("body") is not None:
+            body = json.loads(event.get("body"))
+        
         question = body.get("message_content", "")
         
         logger.info(f"🔍 RAW BODY: {event.get('body')}")
@@ -373,8 +397,71 @@ def handler(event, context):
 
 
         # Check if streaming is requested
-        query_params = event.get("queryStringParameters", {})
-        stream = query_params.get("stream", "false").lower() == "true"
+        if is_async_invocation:
+            # For async invocations, stream flag is in the event directly
+            stream = event.get("stream", False)
+        else:
+            query_params = event.get("queryStringParameters", {})
+            stream = query_params.get("stream", "false").lower() == "true"
+        
+        # If streaming is requested and this is the initial call (not async invocation),
+        # invoke ourselves asynchronously and return 200 immediately
+        if stream and not is_async_invocation:
+            logger.info("📤 SELF-INVOCATION: Invoking Lambda asynchronously for streaming")
+            
+            # Prepare payload for async invocation
+            async_payload = {
+                "asyncInvocation": True,
+                "cognitoToken": auth_token,
+                "simulation_group_id": simulation_group_id,
+                "session_id": session_id,
+                "patient_id": patient_id,
+                "session_name": session_name,
+                "message_content": question,
+                "stream": True
+            }
+            
+            # Get current function name
+            function_name = context.function_name
+            
+            try:
+                # Invoke Lambda asynchronously using Event invocation type
+                lambda_client.invoke(
+                    FunctionName=function_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps(async_payload)
+                )
+                logger.info(f"✅ SELF-INVOCATION: Successfully invoked {function_name} asynchronously")
+                
+                # Return 200 immediately to API Gateway
+                return {
+                    "statusCode": 200,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    "body": json.dumps({
+                        "message": "Streaming started",
+                        "session_id": session_id
+                    })
+                }
+            except Exception as e:
+                logger.error(f"❌ SELF-INVOCATION ERROR: Failed to invoke Lambda asynchronously: {e}")
+                return {
+                    'statusCode': 500,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    'body': json.dumps(f'Error starting streaming: {str(e)}')
+                }
+        
+        # Continue with normal processing (either non-streaming or async invocation handling streaming)
+        logger.info(f"🔄 CONTINUING NORMAL PROCESSING: stream={stream}, is_async={is_async_invocation}")
         
         try:
             logger.info("Creating Bedrock LLM instance.")
@@ -484,19 +571,19 @@ def handler(event, context):
 
 
         if stream:
-            logger.info("Returning streaming response.")
+            logger.info("✅ Streaming response completed via AppSync.")
+            # For async invocations handling streaming, we don't return to API Gateway
+            # The response was already streamed to AppSync
             return {
                 "statusCode": 200,
                 "headers": {
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
+                    "Content-Type": "application/json",
                 },
-                "body": json.dumps(response),
-                "isBase64Encoded": False
+                "body": json.dumps({
+                    "message": "Streaming completed",
+                    "session_id": session_id,
+                    "session_name": response.get("session_name", session_name)
+                })
             }
         else:
             logger.info("Returning the generated response.")
