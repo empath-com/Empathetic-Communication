@@ -2272,12 +2272,6 @@ paths:
           schema:
             type: string
         - in: query
-          name: patient_name
-          required: true
-          description: Name of the patient
-          schema:
-            type: string
-        - in: query
           name: file_type
           required: true
           description: Type of file

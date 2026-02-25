@@ -77,6 +77,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
 
   const [profilePicture, setProfilePicture] = useState(null);
   const [profilePicturePreview, setProfilePicturePreview] = useState(null);
+  const [profilePictureForCrop, setProfilePictureForCrop] = useState(null);
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -86,7 +87,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
   const handleProfilePictureChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setProfilePicture(URL.createObjectURL(file));
+      setProfilePictureForCrop(URL.createObjectURL(file));
       setIsCropDialogOpen(true); // Open cropping dialog
     }
   };
@@ -98,7 +99,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
 
   const handleCropImage = async () => {
     try {
-      const croppedFile = await getCroppedImg(profilePicture, croppedAreaPixels, `${patientName}_profile_pic.png`);
+      const croppedFile = await getCroppedImg(profilePictureForCrop, croppedAreaPixels, `${patientName}_profile_pic.png`);
       setProfilePicture(croppedFile);
       setProfilePicturePreview(URL.createObjectURL(croppedFile));
       setIsCropDialogOpen(false);
@@ -118,6 +119,8 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
         simulation_group_id
       )}&patient_id=${encodeURIComponent(
         patient.patient_id
+      )}&patient_name=${encodeURIComponent(
+        patientName
       )}&file_type=${encodeURIComponent(
         fileType
       )}&file_name=${encodeURIComponent(fileName)}&folder_type=profile_picture`,
@@ -569,10 +572,9 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       await uploadPatientFiles(newPatientFiles, token);
       await uploadAnswerKeyFiles(newAnswerKeyFiles, token);
 
-      // Upload profile picture and update the preview
+      // Upload profile picture
       if (profilePicture) {
         await uploadProfilePicture(profilePicture, token);
-        setProfilePicturePreview(URL.createObjectURL(profilePicture));
       }
 
       await Promise.all([
@@ -677,7 +679,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
             <Typography variant="h6">Crop Profile Picture</Typography>
             <Box position="relative" width="100%" height={300} mt={2}>
               <Cropper
-                image={profilePicture}
+                image={profilePictureForCrop}
                 crop={crop}
                 zoom={zoom}
                 aspect={1}

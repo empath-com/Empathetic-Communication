@@ -62,6 +62,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
 
   const [profilePicture, setProfilePicture] = useState(null); // For profile picture upload
   const [profilePicturePreview, setProfilePicturePreview] = useState(null); // For profile picture preview
+  const [profilePictureForCrop, setProfilePictureForCrop] = useState(null); // For profile picture cropping
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [patientName, setPatientName] = useState("");
@@ -103,7 +104,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const handleProfilePictureChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setProfilePicture(URL.createObjectURL(file));
+      setProfilePictureForCrop(URL.createObjectURL(file));
       setIsCropDialogOpen(true); // Open cropping dialog
     }
   };
@@ -114,7 +115,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
 
   const handleCropImage = async () => {
     try {
-      const croppedFile = await getCroppedImg(profilePicture, croppedAreaPixels, `${patientName}_profile_pic.png`);
+      const croppedFile = await getCroppedImg(profilePictureForCrop, croppedAreaPixels, `${patientName}_profile_pic.png`);
       setProfilePicture(croppedFile);
       setProfilePicturePreview(URL.createObjectURL(croppedFile));
       setIsCropDialogOpen(false);
@@ -134,6 +135,8 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
         simulation_group_id
       )}&patient_id=${encodeURIComponent(
         patientId
+      )}&patient_name=${encodeURIComponent(
+        patientName
       )}&file_type=${encodeURIComponent(
         fileType
       )}&file_name=${encodeURIComponent(fileName)}&folder_type=profile_picture`,
@@ -532,7 +535,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
             <Typography variant="h6">Crop Profile Picture</Typography>
             <Box position="relative" width="100%" height={300} mt={2}>
               <Cropper
-                image={profilePicture}
+                image={profilePictureForCrop}
                 crop={crop}
                 zoom={zoom}
                 aspect={1}
