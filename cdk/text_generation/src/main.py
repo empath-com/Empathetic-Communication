@@ -7,7 +7,7 @@ from psycopg2 import extensions
 from langchain_aws import BedrockEmbeddings
 
 from helpers.vectorstore import get_vectorstore_retriever
-from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name
+from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name, handle_empathy_evaluation
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -280,6 +280,126 @@ def handler(event, context):
     logger.info(f"📝 Event headers: {event.get('headers', {})}")
     logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
     initialize_constants()
+    
+    # Determine which endpoint is being called
+    path = event.get("path") or event.get("rawPath", "")
+    logger.info(f"🛣️ REQUEST PATH: {path}")
+    
+    # Check if this is the empathy evaluation endpoint
+    if "/empathy_evaluation" in path:
+        logger.info("📊 ROUTING TO EMPATHY EVALUATION ENDPOINT")
+        return handler_empathy_evaluation(event, context)
+    else:
+        logger.info("💬 ROUTING TO TEXT GENERATION ENDPOINT")
+        return handler_text_generation(event, context)
+
+def handler_empathy_evaluation(event, context):
+    """Handler for the /student/empathy_evaluation endpoint"""
+    logger.info("🧠 EMPATHY EVALUATION HANDLER STARTED")
+    
+    try:
+        initialize_constants()
+        get_db_connection()
+        
+        query_params = event.get("queryStringParameters", {}) or {}
+        
+        # Extract required parameters
+        simulation_group_id = query_params.get("simulation_group_id", "")
+        session_id = query_params.get("session_id", "")
+        patient_id = query_params.get("patient_id", "")
+        
+        if not all([simulation_group_id, session_id, patient_id]):
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps({"error": "Missing required parameters: simulation_group_id, session_id, patient_id"})
+            }
+        
+        # Get optional message_content from request body
+        message_content = ""
+        if event.get("body"):
+            try:
+                body = json.loads(event.get("body"))
+                message_content = body.get("message_content", "")
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse request body")
+        
+        # Get patient details for context
+        patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(patient_id)
+        if patient_name is None:
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps({"error": "Patient not found"})
+            }
+        
+        # Get bedrock client
+        bedrock_client = {
+            "client": bedrock_runtime,
+            "model_id": BEDROCK_LLM_ID
+        }
+        
+        # Call empathy evaluation handler
+        result = handle_empathy_evaluation(
+            session_id=session_id,
+            patient_id=patient_id,
+            message_content=message_content,
+            bedrock_client=bedrock_client,
+            patient_prompt=patient_prompt or ""
+        )
+        
+        if result.get("statusCode") != 200:
+            return {
+                'statusCode': result.get("statusCode", 500),
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': result.get("body")
+            }
+        
+        # Parse and return successful response
+        body_data = json.loads(result.get("body", "{}"))
+        return {
+            'statusCode': 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+            },
+            'body': json.dumps(body_data)
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ Error in empathy evaluation handler: {e}")
+        logger.exception("Full traceback:")
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*"
+            },
+            "body": json.dumps({"error": f"Internal Server Error: {str(e)}"})
+        }
+
+def handler_text_generation(event, context):
+    """Handler for the /student/text_generation endpoint"""
+    logger.info("💬 TEXT GENERATION HANDLER STARTED")
     
     # Check if this is an async self-invocation
     is_async_invocation = event.get("asyncInvocation", False)
@@ -598,7 +718,7 @@ def handler(event, context):
                     "Access-Control-Allow-Methods": "*",
                 },
                 "body": json.dumps({
-                    "session_name": session_name,
+                    "session_name": response.get("session_name", session_name),
                     "llm_output": response.get("llm_output", "LLM failed to create response"),
                     "llm_verdict": response.get("llm_verdict", "LLM failed to create verdict"),
                     "empathy_evaluation": response.get("empathy_evaluation", None)

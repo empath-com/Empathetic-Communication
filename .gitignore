@@ -134,3 +134,5 @@ venv/
 .env/
 .github/AI_DEVELOPMENT_GUIDE.md
 .claude/settings.local.json
+cdk/text_generation/src/helpers/__pycache__
+cdk/text_generation/src/__pycache__

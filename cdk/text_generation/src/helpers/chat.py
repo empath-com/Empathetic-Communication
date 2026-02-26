@@ -890,6 +890,140 @@ def publish_to_appsync(session_id: str, data: dict):
         logger.error(f"Failed to publish to AppSync: {e}")
         logger.exception("Full AppSync error:")
 
+def get_conversation_history(session_id: str) -> list:
+    """
+    Retrieve conversation history for a session from PostgreSQL.
+    Returns list of messages in chronological order: [{"student_sent": bool, "message_content": str}, ...]
+    """
+    try:
+        logger.info(f"📖 Retrieving conversation history for session: {session_id}")
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                'SELECT student_sent, message_content, time_sent FROM "messages" WHERE session_id = %s ORDER BY time_sent ASC',
+                (session_id,)
+            )
+            rows = cursor.fetchall()
+            
+            messages = []
+            for row in rows:
+                student_sent, message_content, time_sent = row
+                messages.append({
+                    "student_sent": student_sent,
+                    "message_content": message_content,
+                    "time_sent": time_sent
+                })
+            
+            logger.info(f"📖 Retrieved {len(messages)} messages from conversation history")
+            return messages
+    except Exception as e:
+        logger.error(f"Error retrieving conversation history: {e}")
+        return []
+
+def build_conversation_context(messages: list) -> str:
+    """
+    Build a formatted conversation context string from message history.
+    """
+    if not messages:
+        return ""
+    
+    context = "CONVERSATION HISTORY:\n"
+    for msg in messages:
+        role = "Student" if msg.get("student_sent") else "AI Patient"
+        content = msg.get("message_content", "")
+        context += f"\n{role}: {content}"
+    
+    context += "\n\n"
+    logger.info(f"✅ Built conversation context of {len(context)} characters")
+    return context
+
+def handle_empathy_evaluation(
+    session_id: str,
+    patient_id: str,
+    message_content: str,
+    bedrock_client,
+    patient_prompt: str = ""
+) -> dict:
+    """
+    Handle the empathy evaluation endpoint.
+    Retrieves conversation history and evaluates empathy for the specified message.
+    """
+    logger.info(f"🧠 EMPATHY EVALUATION ENDPOINT CALLED for session: {session_id}")
+    
+    try:
+        # Get conversation history
+        messages = get_conversation_history(session_id)
+        
+        if not messages:
+            logger.warning(f"⚠️ No conversation history found for session {session_id}")
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "No conversation history found for this session"})
+            }
+        
+        # Build conversation context
+        conversation_context = build_conversation_context(messages)
+        
+        # If no specific message provided, use the latest student message
+        if not message_content:
+            for msg in reversed(messages):
+                if msg.get("student_sent"):
+                    message_content = msg.get("message_content", "")
+                    logger.info(f"📝 Using latest student message: {message_content[:100]}...")
+                    break
+        
+        if not message_content:
+            logger.error("❌ No student message found to evaluate")
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "No student message found to evaluate"})
+            }
+        
+        # Construct patient context with conversation history
+        patient_context = f"""{conversation_context}
+Additional patient context:
+{patient_prompt}"""
+        
+        # Evaluate empathy for the message
+        logger.info(f"🎯 Evaluating empathy for: {message_content[:100]}...")
+        empathy_evaluation = evaluate_empathy(message_content, patient_context, bedrock_client)
+        
+        if not empathy_evaluation:
+            logger.error("❌ Empathy evaluation failed")
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "Failed to evaluate empathy"})
+            }
+        
+        # Build feedback
+        empathy_feedback = build_empathy_feedback(empathy_evaluation)
+        
+        logger.info(f"✅ Empathy evaluation completed successfully")
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "empathy_evaluation": empathy_evaluation,
+                "summary": {
+                    "overall_score": round((
+                        empathy_evaluation.get('perspective_taking', 3) +
+                        empathy_evaluation.get('emotional_resonance', 3) +
+                        empathy_evaluation.get('acknowledgment', 3) +
+                        empathy_evaluation.get('language_communication', 3) +
+                        empathy_evaluation.get('cognitive_empathy', 3) +
+                        empathy_evaluation.get('affective_empathy', 3)
+                    ) / 6)
+                },
+                "empathy_feedback_markdown": empathy_feedback
+            })
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in empathy evaluation handler: {e}")
+        logger.exception("Full traceback:")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
+
 def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
     """Save message with empathy evaluation to PostgreSQL messages table using centralized connection manager."""
     try:
