@@ -230,6 +230,22 @@ def get_system_prompt(simulation_group_id):
                 pass
 
 
+def get_empathy_enabled(simulation_group_id: str) -> bool:
+    """Check if empathy evaluation is enabled for a simulation group."""
+    try:
+        from helpers.db_connection_manager import get_db_cursor
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                'SELECT empathy_enabled FROM "simulation_groups" WHERE simulation_group_id = %s',
+                (simulation_group_id,)
+            )
+            row = cursor.fetchone()
+            return bool(row[0]) if row else False
+    except Exception as e:
+        logger.error(f"Error fetching empathy_enabled for {simulation_group_id}: {e}")
+        return False
+
+
 def get_patient_details(patient_id):
     # Fetching patient details using shared connection
     cur = None
@@ -307,7 +323,9 @@ def handler_empathy_evaluation(event, context):
         simulation_group_id = query_params.get("simulation_group_id", "")
         session_id = query_params.get("session_id", "")
         patient_id = query_params.get("patient_id", "")
-        
+        # Optional: when provided, the evaluation result is persisted to that message row
+        message_id = query_params.get("message_id") or None
+
         if not all([simulation_group_id, session_id, patient_id]):
             return {
                 'statusCode': 400,
@@ -355,7 +373,8 @@ def handler_empathy_evaluation(event, context):
             patient_id=patient_id,
             message_content=message_content,
             bedrock_client=bedrock_client,
-            patient_prompt=patient_prompt or ""
+            patient_prompt=patient_prompt or "",
+            message_id=message_id
         )
         
         if result.get("statusCode") != 200:
@@ -648,6 +667,8 @@ def handler_text_generation(event, context):
             logger.info("Generating response from the LLM.")
             
             logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
+            bedrock_client = {"client": bedrock_runtime, "model_id": BEDROCK_LLM_ID}
+            empathy_enabled = get_empathy_enabled(simulation_group_id)
             response = get_response(
                 query=student_query,
                 patient_name=patient_name,
@@ -659,7 +680,9 @@ def handler_text_generation(event, context):
                 patient_age=patient_age,
                 patient_prompt=patient_prompt,
                 llm_completion=llm_completion,
-                stream=stream
+                stream=stream,
+                bedrock_client=bedrock_client,
+                empathy_enabled=empathy_enabled,
             )
         except Exception as e:
             logger.error(f"Error getting response: {e}")

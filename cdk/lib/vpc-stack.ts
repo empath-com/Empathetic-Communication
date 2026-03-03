@@ -1,6 +1,9 @@
 import { Stack, StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cdk from "aws-cdk-lib";
 import { Fn } from "aws-cdk-lib";
@@ -365,6 +368,21 @@ export class VpcStack extends Stack {
         securityGroups: [endpointSecurityGroup],
       });
 
+      // SSM Session Manager requires two additional endpoints beyond the base SSM endpoint
+      this.vpc.addInterfaceEndpoint("SSM Messages Endpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.SSM_MESSAGES,
+        subnets: subnetSelection,
+        privateDnsEnabled: true,
+        securityGroups: [endpointSecurityGroup],
+      });
+
+      this.vpc.addInterfaceEndpoint("EC2 Messages Endpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.EC2_MESSAGES,
+        subnets: subnetSelection,
+        privateDnsEnabled: true,
+        securityGroups: [endpointSecurityGroup],
+      });
+
       // Only add gateway endpoints if NOT using specific subnets
       // (existing VPC likely already has them, and they cause route table duplicate issues)
       if (!useSpecificSubnets) {
@@ -382,6 +400,54 @@ export class VpcStack extends Stack {
       }
 
       this.vpc.addFlowLog(`${id}-vpcFlowLog`);
+
+      // ── Bastion host ─────────────────────────────────────────────────────────
+      // t4g.nano (ARM Graviton2) in the first front subnet.
+      // Access is exclusively via AWS SSM Session Manager — no key pair, no open
+      // inbound ports.  SSH tunnelling is done through SSM port forwarding:
+      //   aws ssm start-session --target <instance-id> \
+      //     --document-name AWS-StartSSHSession --parameters portNumber=22
+      const bastionRole = new iam.Role(this, `${id}-BastionRole`, {
+        assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
+        ],
+      });
+
+      const bastionSg = new ec2.SecurityGroup(this, `${id}-BastionSg`, {
+        vpc: this.vpc,
+        description: "Bastion host — SSM Session Manager only, no inbound ports required",
+        allowAllOutbound: true,
+      });
+
+      const bastion = new ec2.Instance(this, `${id}-Bastion`, {
+        vpc: this.vpc,
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
+        machineImage: ec2.MachineImage.latestAmazonLinux2023({
+          cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+        }),
+        securityGroup: bastionSg,
+        vpcSubnets: { subnets: [this.frontPrivateSubnets[0]] },
+        role: bastionRole,
+        // No keyName — use SSM Session Manager instead of direct SSH key auth
+      });
+      cdk.Tags.of(bastion).add("Name", "bastion");
+
+      // Auto-stop bastion every night at 08:00 UTC (3 AM Eastern / midnight Pacific)
+      const stopBastionRule = new events.Rule(this, `${id}-StopBastionNightly`, {
+        schedule: events.Schedule.cron({ hour: "8", minute: "0" }),
+        description: "Stop bastion host nightly at 08:00 UTC (3 AM ET / midnight PT)",
+      });
+      stopBastionRule.addTarget(new targets.AwsApi({
+        service: "EC2",
+        action: "stopInstances",
+        parameters: { InstanceIds: [bastion.instanceId] },
+        policyStatement: new iam.PolicyStatement({
+          actions: ["ec2:StopInstances"],
+          resources: [`arn:${this.partition}:ec2:${this.region}:${this.account}:instance/${bastion.instanceId}`],
+        }),
+      }));
+      // ─────────────────────────────────────────────────────────────────────────
 
       // Get default security group for VPC
       const defaultSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(

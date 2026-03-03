@@ -716,7 +716,7 @@ export class ApiServiceStack extends cdk.Stack {
           CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-studentFunction`,
-        memorySize: 1024,
+        memorySize: 512,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -750,7 +750,7 @@ export class ApiServiceStack extends cdk.Stack {
           CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-instructorFunction`,
-        memorySize: 1024,
+        memorySize: 512,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -783,7 +783,7 @@ export class ApiServiceStack extends cdk.Stack {
           CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         },
         functionName: `${id}-adminFunction`,
-        memorySize: 1024,
+        memorySize: 512,
         layers: [postgres],
         role: lambdaRole,
       }
@@ -965,7 +965,7 @@ export class ApiServiceStack extends cdk.Stack {
       vpc: vpcStack.vpc,
       securityGroups: [db.lambdaSecurityGroup],
       functionName: `${id}-adjustUserRoles`,
-      memorySize: 1024,
+      memorySize: 512,
       layers: [postgres],
       role: coglambdaRole,
     });
@@ -1025,7 +1025,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-adminLambdaAuthorizer`,
-        memorySize: 1024,
+        memorySize: 256,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -1058,7 +1058,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-studentLambdaAuthorizer`,
-        memorySize: 1024,
+        memorySize: 256,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -1093,7 +1093,7 @@ export class ApiServiceStack extends cdk.Stack {
           SM_COGNITO_CREDENTIALS: this.secret.secretName,
         },
         functionName: `${id}-instructorLambdaAuthorizer`,
-        memorySize: 1024,
+        memorySize: 256,
         layers: [jwt],
         role: lambdaRole,
       }
@@ -1408,6 +1408,20 @@ export class ApiServiceStack extends cdk.Stack {
           this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream",
         ],
       })
+    );
+
+    // Allow the student Lambda to invoke the text gen Lambda for empathy backfill
+    lambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [textGenLambdaDockerFunc.functionArn],
+      })
+    );
+
+    // Pass the text gen function name so the student Lambda can invoke it for backfill
+    lambdaStudentFunction.addEnvironment(
+      "TEXT_GEN_FUNCTION_NAME",
+      textGenLambdaDockerFunc.functionName
     );
 
     // Create S3 Bucket to handle documents for each simulation group

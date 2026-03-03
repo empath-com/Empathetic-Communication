@@ -95,12 +95,12 @@ export class DatabaseStack extends Stack {
             }),
             instanceType: ec2.InstanceType.of(
                 ec2.InstanceClass.BURSTABLE4_GRAVITON,
-                ec2.InstanceSize.MEDIUM
+                ec2.InstanceSize.SMALL
             ),
             credentials: rds.Credentials.fromUsername(secret.secretValueFromJson("DB_Username").unsafeUnwrap(), {
                 secretName: this.secretPathAdminName,
             }),
-            multiAz: true,
+            multiAz: false, // cost optimization: single-AZ sufficient for low-usage deployment
             allocatedStorage: 100,
             maxAllocatedStorage: 115,
             allowMajorVersionUpgrade: false,

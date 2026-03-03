@@ -63,7 +63,84 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     }
 
     console.log("[studentEmpathySummary] userId:", userId, "simulation_group_id:", simulation_group_id, "patient_id:", patient_id);
-    
+
+    // ── BACKFILL: evaluate messages that have no empathy score yet ──────────
+    // TEXT_GEN_FUNCTION_NAME is set by CDK; fall back to naming convention
+    // (e.g. "EmpathAI-studentFunction" → "EmpathAI-TextGenLambdaDockerFunction")
+    const textGenFunctionName =
+      process.env.TEXT_GEN_FUNCTION_NAME ||
+      (process.env.AWS_LAMBDA_FUNCTION_NAME || "").replace(
+        "-studentFunction",
+        "-TextGenLambdaDockerFunction"
+      );
+    if (textGenFunctionName) {
+      try {
+        const unevaluatedMessages = patient_id
+          ? await sqlConnection`
+              SELECT m.message_id, m.message_content, m.session_id, si.patient_id
+              FROM "messages" m
+              JOIN "sessions" s ON m.session_id = s.session_id
+              JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+              JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+              WHERE e.user_id = ${userId}
+                AND e.simulation_group_id = ${simulation_group_id}
+                AND si.patient_id = ${patient_id}
+                AND m.student_sent = true
+                AND (m.empathy_evaluation IS NULL OR m.empathy_evaluation = '{}'::jsonb)
+              ORDER BY m.time_sent ASC
+              LIMIT 10`
+          : await sqlConnection`
+              SELECT m.message_id, m.message_content, m.session_id, si.patient_id
+              FROM "messages" m
+              JOIN "sessions" s ON m.session_id = s.session_id
+              JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+              JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+              WHERE e.user_id = ${userId}
+                AND e.simulation_group_id = ${simulation_group_id}
+                AND m.student_sent = true
+                AND (m.empathy_evaluation IS NULL OR m.empathy_evaluation = '{}'::jsonb)
+              ORDER BY m.time_sent ASC
+              LIMIT 10`;
+
+        if (unevaluatedMessages && unevaluatedMessages.length > 0) {
+          console.log(`[studentEmpathySummary] Backfilling ${unevaluatedMessages.length} unevaluated messages`);
+          const { LambdaClient, InvokeCommand } = require("@aws-sdk/client-lambda");
+          const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION });
+
+          await Promise.all(
+            unevaluatedMessages.map(async (msg) => {
+              const eventPayload = {
+                path: "/student/empathy_evaluation",
+                queryStringParameters: {
+                  simulation_group_id,
+                  session_id: msg.session_id,
+                  patient_id: msg.patient_id,
+                  message_id: msg.message_id,
+                },
+                body: JSON.stringify({ message_content: msg.message_content }),
+              };
+              try {
+                await lambdaClient.send(
+                  new InvokeCommand({
+                    FunctionName: textGenFunctionName,
+                    InvocationType: "RequestResponse",
+                    Payload: Buffer.from(JSON.stringify(eventPayload)),
+                  })
+                );
+                console.log(`[studentEmpathySummary] Backfilled message ${msg.message_id}`);
+              } catch (invErr) {
+                console.error(`[studentEmpathySummary] Failed to backfill message ${msg.message_id}: ${invErr.message}`);
+              }
+            })
+          );
+        }
+      } catch (backfillErr) {
+        // Non-fatal — log and continue to return whatever data we already have
+        console.error(`[studentEmpathySummary] Backfill error (non-fatal): ${backfillErr.message}`);
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     // Get ALL empathy evaluations for score calculation
     let allEmpathyData;
     try {
@@ -80,6 +157,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
             AND si.patient_id = ${patient_id}
             AND m.student_sent = true
             AND m.empathy_evaluation IS NOT NULL
+            AND m.empathy_evaluation != '{}'::jsonb
           ORDER BY m.time_sent DESC;
         `;
       } else {
@@ -94,6 +172,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
             AND e.simulation_group_id = ${simulation_group_id}
             AND m.student_sent = true
             AND m.empathy_evaluation IS NOT NULL
+            AND m.empathy_evaluation != '{}'::jsonb
           ORDER BY m.time_sent DESC;
         `;
       }
@@ -325,7 +404,8 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         AND e.simulation_group_id = ${simulation_group_id}
         AND si.patient_id = ${patient_id}
         AND m.student_sent = true
-        AND m.empathy_evaluation IS NOT NULL;
+        AND m.empathy_evaluation IS NOT NULL
+        AND m.empathy_evaluation != '{}'::jsonb;
       `;
     } else {
       totalInteractions = await sqlConnection`
@@ -337,7 +417,8 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         WHERE e.user_id = ${userId}
         AND e.simulation_group_id = ${simulation_group_id}
         AND m.student_sent = true
-        AND m.empathy_evaluation IS NOT NULL;
+        AND m.empathy_evaluation IS NOT NULL
+        AND m.empathy_evaluation != '{}'::jsonb;
       `;
     }
 

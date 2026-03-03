@@ -600,7 +600,9 @@ def get_response(
     patient_age: str,
     patient_prompt: str,
     llm_completion: bool,
-    stream: bool = False
+    stream: bool = False,
+    bedrock_client=None,
+    empathy_enabled: bool = False
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -688,7 +690,9 @@ def get_response(
                 session_id,
                 patient_name,
                 patient_age,
-                patient_prompt
+                patient_prompt,
+                bedrock_client=bedrock_client,
+                empathy_enabled=empathy_enabled,
             )
             # For streaming, response is saved directly via AppSync
             # Return immediately with status message
@@ -736,7 +740,9 @@ def generate_streaming_response(
     session_id: str,
     patient_name: str,
     patient_age: str,
-    patient_prompt: str
+    patient_prompt: str,
+    bedrock_client=None,
+    empathy_enabled: bool = False
 ) -> str:
     """
     Streams an answer via AppSync directly (no threading needed with self-invocation pattern).
@@ -752,9 +758,7 @@ def generate_streaming_response(
         should_evaluate = len(query.strip()) > 0 and not is_greeting
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
         
-        # Always skip empathy evaluation during streaming
-        logger.info(f"❌ STREAMING: Empathy evaluation disabled - Query: '{query}'")
-        save_message_to_db(session_id, True, query, None)
+        student_message_id = save_message_to_db(session_id, True, query, None)
         
         # Publish start event
         publish_to_appsync(session_id, {"type": "start", "content": ""})
@@ -802,7 +806,17 @@ def generate_streaming_response(
         # Publish end event
         publish_to_appsync(session_id, {"type": "end", "content": full_response})
         save_message_to_db(session_id, False, full_response, None)
-        
+
+        # Evaluate empathy on the student's message now that the full exchange is complete
+        if True and bedrock_client and should_evaluate and student_message_id:
+            try:
+                logger.info(f"🧠 POST-STREAM: Evaluating empathy for message {student_message_id}")
+                empathy_result = evaluate_empathy(query, patient_prompt, bedrock_client)
+                if empathy_result:
+                    update_message_empathy(student_message_id, empathy_result)
+            except Exception as e:
+                logger.error(f"Post-stream empathy evaluation failed (non-fatal): {e}")
+
         logger.info(f"✅ STREAMING COMPLETED for session: {session_id}, length: {len(full_response)}")
         
         return "Streaming completed"
@@ -941,11 +955,13 @@ def handle_empathy_evaluation(
     patient_id: str,
     message_content: str,
     bedrock_client,
-    patient_prompt: str = ""
+    patient_prompt: str = "",
+    message_id: str = None
 ) -> dict:
     """
     Handle the empathy evaluation endpoint.
     Retrieves conversation history and evaluates empathy for the specified message.
+    If message_id is provided, the result is also persisted to that message row in the DB.
     """
     logger.info(f"🧠 EMPATHY EVALUATION ENDPOINT CALLED for session: {session_id}")
     
@@ -994,11 +1010,16 @@ Additional patient context:
                 "body": json.dumps({"error": "Failed to evaluate empathy"})
             }
         
+        # Persist to DB if a specific message_id was supplied (backfill path)
+        if message_id:
+            update_message_empathy(message_id, empathy_evaluation)
+            logger.info(f"✅ Backfill: empathy evaluation saved for message {message_id}")
+
         # Build feedback
         empathy_feedback = build_empathy_feedback(empathy_evaluation)
-        
+
         logger.info(f"✅ Empathy evaluation completed successfully")
-        
+
         return {
             "statusCode": 200,
             "body": json.dumps({
@@ -1025,31 +1046,51 @@ Additional patient context:
         }
 
 def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
-    """Save message with empathy evaluation to PostgreSQL messages table using centralized connection manager."""
+    """Save message with empathy evaluation to PostgreSQL messages table using centralized connection manager.
+    Returns the generated message_id (uuid string) or None on failure."""
     try:
         logger.info("🔗 DB_SAVE_MESSAGE: Using centralized connection manager")
-        
+
         empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
         if empathy_evaluation:
             logger.info(f"💾 Empathy JSON being saved: {empathy_json[:500]}...")
             logger.info(f"💾 Empathy evaluation keys: {list(empathy_evaluation.keys())}")
             logger.info(f"💾 Perspective taking in DB save: {empathy_evaluation.get('perspective_taking')}")
             logger.info(f"💾 Emotional resonance in DB save: {empathy_evaluation.get('emotional_resonance')}")
-        
+
+        message_id = None
         with get_db_cursor() as cursor:
             cursor.execute(
-                'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
+                'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW()) RETURNING message_id',
                 (session_id, student_sent, message_content, empathy_json)
             )
-        
+            row = cursor.fetchone()
+            message_id = str(row[0]) if row else None
+
         if empathy_evaluation:
             logger.info(f"🧠 Empathy data saved: {json.dumps(empathy_evaluation)[:100]}...")
             logger.info(f"🧠 Saved empathy scores - PT: {empathy_evaluation.get('perspective_taking')}, ER: {empathy_evaluation.get('emotional_resonance')}")
-        
-        logger.info("🔗 DB_MESSAGE_SAVED: Message successfully saved using connection manager")
-        
+
+        logger.info(f"🔗 DB_MESSAGE_SAVED: Message {message_id} successfully saved using connection manager")
+        return message_id
+
     except Exception as e:
         logger.error(f"Error saving message to database: {e}")
+        return None
+
+def update_message_empathy(message_id: str, empathy_evaluation: dict) -> None:
+    """Update an existing message row with its empathy evaluation after streaming completes."""
+    try:
+        empathy_json = json.dumps(empathy_evaluation)
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                'UPDATE "messages" SET empathy_evaluation = %s WHERE message_id = %s',
+                (empathy_json, message_id)
+            )
+        logger.info(f"✅ Empathy evaluation saved for message {message_id}")
+    except Exception as e:
+        logger.error(f"Failed to update empathy evaluation for message {message_id}: {e}")
+
 
 def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = "") -> dict:
     """

@@ -7,6 +7,7 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as elbv2targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 
@@ -132,8 +133,8 @@ export class EcsSocketStack extends Stack {
 
     // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
-      cpu: 2048,
-      memoryLimitMiB: 4096,
+      cpu: 1024,
+      memoryLimitMiB: 2048,
       taskRole,
       executionRole: taskRole,
       runtimePlatform: {
@@ -186,9 +187,10 @@ export class EcsSocketStack extends Stack {
       maxHealthyPercent: 200,
     });
 
-    // Auto-scaling configuration - starts from 1 task, scales up based on metrics
+    // Auto-scaling configuration
+    // minCapacity is 0 to allow scheduled scale-to-zero during off-hours
     const scaling = service.autoScaleTaskCount({
-      minCapacity: 1,
+      minCapacity: 0,
       maxCapacity: 10,
     });
 
@@ -200,6 +202,24 @@ export class EcsSocketStack extends Stack {
 
     scaling.scaleOnMemoryUtilization("MemoryScaling", {
       targetUtilizationPercent: 80,
+    });
+
+    // Scheduled scaling: socket/voice server off during off-hours to reduce costs.
+    // Core app (API Gateway + Lambda + RDS) remains available 24/7.
+    // Active window: Mon–Fri 7 AM–10 PM Pacific (UTC-8/UTC-7).
+    // UTC times are conservative to cover both PST and PDT transitions.
+    scaling.scaleOnSchedule("ScaleDownNightly", {
+      // 10 PM PST (06:00 UTC) / 11 PM PDT — runs every night including weekends
+      schedule: appscaling.Schedule.cron({ hour: "6", minute: "0" }),
+      minCapacity: 0,
+      maxCapacity: 0,
+    });
+
+    scaling.scaleOnSchedule("ScaleUpWeekdayMorning", {
+      // 7 AM PST (15:00 UTC) / 8 AM PDT — Mon–Fri only
+      schedule: appscaling.Schedule.cron({ hour: "15", minute: "0", weekDay: "MON-FRI" }),
+      minCapacity: 1,
+      maxCapacity: 10,
     });
 
     // ============================================

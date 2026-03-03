@@ -672,8 +672,8 @@ exports.handler = async (event) => {
           try {
             // Insert the new message into the Messages table with a generated UUID for message_id
             const messageData = await sqlConnection`
-                      INSERT INTO "messages" (message_id, session_id, student_sent, message_content, time_sent)
-                      VALUES (uuid_generate_v4(), ${sessionId}, true, ${message_content}, CURRENT_TIMESTAMP)
+                      INSERT INTO "messages" (message_id, session_id, student_sent, message_content, empathy_evaluation, time_sent)
+                      VALUES (uuid_generate_v4(), ${sessionId}, true, ${message_content}, NULL, CURRENT_TIMESTAMP)
                       RETURNING *;
                   `;
 
@@ -753,8 +753,8 @@ exports.handler = async (event) => {
           try {
             // Insert the new AI message into the Messages table with a generated UUID for message_id
             const messageData = await sqlConnection`
-                      INSERT INTO "messages" (message_id, session_id, student_sent, message_content, time_sent)
-                      VALUES (uuid_generate_v4(), ${sessionId}, false, ${message_content}, CURRENT_TIMESTAMP)
+                      INSERT INTO "messages" (message_id, session_id, student_sent, message_content, empathy_evaluation, time_sent)
+                      VALUES (uuid_generate_v4(), ${sessionId}, false, ${message_content}, NULL, CURRENT_TIMESTAMP)
                       RETURNING *;
                   `;
 

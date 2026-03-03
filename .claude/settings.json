@@ -46,7 +46,18 @@
       "Bash(aws secretsmanager describe-secret:*)",
       "Bash(cdk diff:*)",
       "Bash(cdk synth:*)",
-      "Bash(cdk ls:*)"
+      "Bash(cdk ls:*)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output text)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs get-log-events --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --log-stream-name '2026/03/03/[$LATEST]f887132e86ae446eb963a34b66b74c0f' --region ca-central-1 --profile empath-staging --limit 80 --query 'events[*].message' --output text)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 5 --query 'logStreams[*].[logStreamName,lastEventTimestamp]' --output text)",
+      "Bash(for stream in '2026/03/03/[$LATEST]f887132e86ae446eb963a34b66b74c0f' '2026/03/03/[$LATEST]2eba11697d1f44c9b0c978d218d28c32' '2026/03/03/[$LATEST]255d550af3ed4bc5a0d89444a8341060')",
+      "Bash(do)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs get-log-events --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --log-stream-name \"$stream\" --region ca-central-1 --profile empath-staging --limit 60 --query 'events[*].message' --output text)",
+      "Bash(done)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs get-log-events --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --log-stream-name '2026/03/03/[$LATEST]2eba11697d1f44c9b0c978d218d28c32' --region ca-central-1 --profile empath-staging --limit 60 --query 'events[*].message' --output text)",
+      "Bash(python3 -c \"import sys; print\\(sys.stdin.buffer.read\\(\\).decode\\(''utf-8'', errors=''replace''\\)\\)\")",
+      "Bash(set PYTHONIOENCODING=UTF-8)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output json)"
     ],
     "deny": [
       "Bash(cdk deploy:*)",
