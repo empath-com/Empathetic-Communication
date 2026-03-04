@@ -190,8 +190,8 @@ def get_db_connection():
     raise Exception("Failed to establish database connection after all retries")
 
 
-def get_system_prompt(simulation_group_id):
-    # Fetch system prompt using shared connection
+def get_group_prompt(simulation_group_id):
+    # Fetch group prompt using shared connection
     cur = None
 
     try:
@@ -483,9 +483,9 @@ def handler_text_generation(event, context):
                 'body': json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id")
             }
 
-        system_prompt = get_system_prompt(simulation_group_id)
-        if system_prompt is None:
-            logger.error(f"Error fetching system prompt for simulation_group_id: {simulation_group_id}")
+        group_prompt = get_group_prompt(simulation_group_id)
+        if group_prompt is None:
+            logger.error(f"Error fetching group prompt for simulation_group_id: {simulation_group_id}")
             return {
                 'statusCode': 400,
                 "headers": {
@@ -494,7 +494,7 @@ def handler_text_generation(event, context):
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "*",
                 },
-                'body': json.dumps('Error fetching system prompt')
+                'body': json.dumps('Error fetching group prompt')
             }
 
         patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(
@@ -676,7 +676,7 @@ def handler_text_generation(event, context):
                 history_aware_retriever=history_aware_retriever,
                 table_name=TABLE_NAME,
                 session_id=session_id,
-                system_prompt=system_prompt,
+                group_prompt=group_prompt,
                 patient_age=patient_age,
                 patient_prompt=patient_prompt,
                 llm_completion=llm_completion,

@@ -21,7 +21,7 @@ EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm")
-bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
+bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")  # Bedrock is currently only available in us-east-1
 
 # Cached resources
 connection = None

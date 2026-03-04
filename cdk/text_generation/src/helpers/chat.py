@@ -606,7 +606,7 @@ def get_response(
     history_aware_retriever,
     table_name: str,
     session_id: str,
-    system_prompt: str,
+    group_prompt: str,
     patient_age: str,
     patient_prompt: str,
     llm_completion: bool,
@@ -639,9 +639,7 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    if not system_prompt or len(system_prompt.strip()) < 50:
-        system_prompt = get_default_system_prompt(patient_name)
-        logger.info("USING DEFAULT SYSTEM PROMPT, passed prompt was empty")
+    system_prompt = get_default_system_prompt(patient_name)
 
     final_system_prompt = (
         f"""
@@ -652,6 +650,7 @@ def get_response(
         NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
 
         {system_prompt}
+        {group_prompt}
 
         Additional details about your personality, symptoms or condition:
         {patient_prompt if patient_prompt else "No additional details provided."}
