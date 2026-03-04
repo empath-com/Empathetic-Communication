@@ -824,16 +824,6 @@ def generate_streaming_response(
         publish_to_appsync(session_id, {"type": "end", "content": full_response})
         save_message_to_db(session_id, False, full_response, None)
 
-        # Evaluate empathy on the student's message now that the full exchange is complete
-        if True and bedrock_client and should_evaluate and student_message_id:
-            try:
-                logger.info(f"🧠 POST-STREAM: Evaluating empathy for message {student_message_id}")
-                empathy_result = evaluate_empathy(query, patient_prompt, bedrock_client)
-                if empathy_result:
-                    update_message_empathy(student_message_id, empathy_result)
-            except Exception as e:
-                logger.error(f"Post-stream empathy evaluation failed (non-fatal): {e}")
-
         logger.info(f"✅ STREAMING COMPLETED for session: {session_id}, length: {len(full_response)}")
         
         return "Streaming completed"

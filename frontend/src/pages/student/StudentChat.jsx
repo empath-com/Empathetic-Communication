@@ -139,6 +139,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const streamSessionIdRef = useRef(null);
   const fullResponseRef = useRef("");
   const lastLoadedSessionIdRef = useRef(null);
+  // Refs used inside AppSync subscription callback to avoid stale closures
+  const empathyEnabledRef = useRef(false);
+  const pendingEmpathyRef = useRef(null);
   const [authCache, setAuthCache] = useState({ token: null, exp: 0, email: null });
 
   const getAuth = async () => {
@@ -253,6 +256,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       setNewMessage(null);
     }
   }, [session, newMessage, currentSessionId, messages]);
+
+  // Keep empathyEnabledRef in sync so the subscription callback always sees the current value
+  useEffect(() => {
+    empathyEnabledRef.current = empathyEnabled;
+  }, [empathyEnabled]);
 
   // Keep a warm AppSync subscription for the active session
   useEffect(() => {
@@ -784,6 +792,52 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     );
   };
 
+  const callEmpathyEvaluation = async (pending, sessionId) => {
+    try {
+      const { token } = await getAuth();
+      const url =
+        `${import.meta.env.VITE_API_ENDPOINT}student/empathy_evaluation` +
+        `?session_id=${encodeURIComponent(sessionId)}` +
+        `&patient_id=${encodeURIComponent(pending.patientId)}` +
+        `&simulation_group_id=${encodeURIComponent(pending.groupId)}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+        body: JSON.stringify({ message_content: pending.messageContent }),
+      });
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const empathyData = data.empathy_evaluation;
+      if (!empathyData) return;
+
+      const transformedData = {
+        overall_score: empathyData.empathy_score || 3,
+        avg_perspective_taking: empathyData.perspective_taking || 3,
+        avg_emotional_resonance: empathyData.emotional_resonance || 3,
+        avg_acknowledgment: empathyData.acknowledgment || 3,
+        avg_language_communication: empathyData.language_communication || 3,
+        avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
+        avg_affective_empathy: empathyData.affective_empathy || 3,
+        realism_assessment:
+          empathyData.realism_flag === "realistic"
+            ? "Your responses are generally realistic"
+            : "Your response is unrealistic",
+        realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
+        coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
+        strengths: empathyData.feedback?.strengths || [],
+        areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+        recommendations: empathyData.feedback?.improvement_suggestions || [],
+        recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+        timestamp: Date.now(),
+      };
+      setRealtimeEmpathy((prev) => [...prev, transformedData]);
+    } catch (e) {
+      console.error("Empathy evaluation failed:", e);
+    }
+  };
+
   const subscribeToStream = (sessionId) => {
     if (!sessionId) return null;
 
@@ -836,6 +890,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               appendStreamingChunk(content);
             } else if (t === "end") {
               await finalizeStreamingBubble(fullResponseRef.current, sessionId);
+              if (empathyEnabledRef.current && pendingEmpathyRef.current) {
+                const pending = pendingEmpathyRef.current;
+                pendingEmpathyRef.current = null;
+                callEmpathyEvaluation(pending, sessionId);
+              }
             } else if (t === "error") {
               setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
             }
@@ -976,6 +1035,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           "🚀 Using AppSync streaming for session:",
           newSession.session_id
         );
+        if (empathyEnabled) {
+          pendingEmpathyRef.current = {
+            messageContent: message,
+            patientId: patient.patient_id,
+            groupId: group.simulation_group_id,
+          };
+        }
         return handleStreamingResponse(
           textGenUrl,
           authToken,
