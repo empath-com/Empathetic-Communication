@@ -57,7 +57,9 @@
       "Bash(MSYS_NO_PATHCONV=1 aws logs get-log-events --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --log-stream-name '2026/03/03/[$LATEST]2eba11697d1f44c9b0c978d218d28c32' --region ca-central-1 --profile empath-staging --limit 60 --query 'events[*].message' --output text)",
       "Bash(python3 -c \"import sys; print\\(sys.stdin.buffer.read\\(\\).decode\\(''utf-8'', errors=''replace''\\)\\)\")",
       "Bash(set PYTHONIOENCODING=UTF-8)",
-      "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output json)"
+      "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output json)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [
       "Bash(cdk deploy:*)",

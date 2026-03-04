@@ -416,7 +416,7 @@ export class VpcStack extends Stack {
 
       const bastionSg = new ec2.SecurityGroup(this, `${id}-BastionSg`, {
         vpc: this.vpc,
-        description: "Bastion host — SSM Session Manager only, no inbound ports required",
+        description: "Bastion host - SSM Session Manager only, no inbound ports required",
         allowAllOutbound: true,
       });
 
@@ -427,7 +427,7 @@ export class VpcStack extends Stack {
           cpuType: ec2.AmazonLinuxCpuType.ARM_64,
         }),
         securityGroup: bastionSg,
-        vpcSubnets: { subnets: [this.frontPrivateSubnets[0]] },
+        vpcSubnets: { subnets: [this.vpc.privateSubnets[0]] },
         role: bastionRole,
         // No keyName — use SSM Session Manager instead of direct SSH key auth
       });

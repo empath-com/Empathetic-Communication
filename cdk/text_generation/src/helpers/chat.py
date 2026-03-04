@@ -20,30 +20,37 @@ class LLM_evaluation(BaseModel):
     response: str = Field(description="Assessment of the student's answer with a follow-up question.")
     verdict: str = Field(description="'True' if the student has properly diagnosed the patient, 'False' otherwise.")
 
+# Tables confirmed to exist in this Lambda container lifetime — avoids repeated list_tables scans
+_confirmed_tables: set = set()
 
 def create_dynamodb_history_table(table_name: str) -> bool:
     """
     Create a DynamoDB table to store the session history if it doesn't already exist.
+    Uses a module-level set to skip the list_tables scan on warm Lambda containers.
     """
+    if table_name in _confirmed_tables:
+        logger.info(f"DynamoDB table '{table_name}' already confirmed — skipping check")
+        return True
+
     dynamodb_resource = boto3.resource("dynamodb")
     dynamodb_client = boto3.client("dynamodb")
-    
+
     existing_tables = []
     exclusive_start_table_name = None
-    
+
     while True:
         if exclusive_start_table_name:
             response = dynamodb_client.list_tables(ExclusiveStartTableName=exclusive_start_table_name)
         else:
             response = dynamodb_client.list_tables()
-        
+
         existing_tables.extend(response.get('TableNames', []))
-        
+
         if 'LastEvaluatedTableName' in response:
             exclusive_start_table_name = response['LastEvaluatedTableName']
         else:
             break
-    
+
     if table_name not in existing_tables:
         table = dynamodb_resource.create_table(
             TableName=table_name,
@@ -52,6 +59,9 @@ def create_dynamodb_history_table(table_name: str) -> bool:
             BillingMode="PAY_PER_REQUEST",
         )
         table.meta.client.get_waiter("table_exists").wait(TableName=table_name)
+
+    _confirmed_tables.add(table_name)
+    logger.info(f"DynamoDB table '{table_name}' confirmed and cached")
 
 def get_bedrock_llm(
     bedrock_llm_id: str,
@@ -764,6 +774,9 @@ def generate_streaming_response(
         publish_to_appsync(session_id, {"type": "start", "content": ""})
 
         full_response = ""
+        # Buffer chunks and flush every CHUNK_BUFFER_SIZE chars to reduce AppSync HTTP calls
+        CHUNK_BUFFER_SIZE = 75
+        chunk_buffer = ""
 
         try:
             # Stream chunks to AppSync
@@ -784,7 +797,15 @@ def generate_streaming_response(
 
                 if content:
                     full_response += content
-                    publish_to_appsync(session_id, {"type": "chunk", "content": content})
+                    chunk_buffer += content
+                    if len(chunk_buffer) >= CHUNK_BUFFER_SIZE:
+                        publish_to_appsync(session_id, {"type": "chunk", "content": chunk_buffer})
+                        chunk_buffer = ""
+
+            # Flush any remaining buffered content
+            if chunk_buffer:
+                publish_to_appsync(session_id, {"type": "chunk", "content": chunk_buffer})
+                chunk_buffer = ""
 
             if not full_response:
                 raise Exception("No content received from streaming")
@@ -796,12 +817,8 @@ def generate_streaming_response(
                 config={"configurable": {"session_id": session_id}},
             )
             full_response = result.get("answer", str(result))
-            # Simulate streaming by breaking into chunks
-            words = full_response.split(" ")
-            for i in range(0, len(words), 3):
-                chunk = " ".join(words[i : i + 3]) + " "
-                publish_to_appsync(session_id, {"type": "chunk", "content": chunk})
-                time.sleep(0.005)
+            # Publish the full fallback response as a single chunk
+            publish_to_appsync(session_id, {"type": "chunk", "content": full_response})
 
         # Publish end event
         publish_to_appsync(session_id, {"type": "end", "content": full_response})

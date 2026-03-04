@@ -1300,7 +1300,7 @@ export class ApiServiceStack extends cdk.Stack {
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
           APPSYNC_GRAPHQL_URL: this.appSyncApi.graphqlUrl,
           APPSYNC_API_ID: this.appSyncApi.apiId,
-          BEDROCK_TIMEOUT_SECONDS: "15", // 🔴 CRITICAL: Timeout for Bedrock API calls
+          BEDROCK_TIMEOUT_SECONDS: "90",
         },
       }
     );
