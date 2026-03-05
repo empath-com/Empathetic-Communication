@@ -390,7 +390,7 @@ user_text: {student_response}"""
         logger.info(f"🚀 CALLING BEDROCK MODEL: {bedrock_client['model_id']}")
         try:
             response = bedrock_client["client"].invoke_model(
-                modelId=bedrock_client["model_id"],
+                modelId="amazon.nova-lite-v1:0",
                 contentType="application/json",
                 accept="application/json",
                 body=json.dumps(body)
@@ -400,7 +400,7 @@ user_text: {student_response}"""
             logger.warning(f"Nova Pro failed in deployment region, trying us-east-1: {model_error}")
             fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
             response = fallback_client.invoke_model(
-                modelId=bedrock_client["model_id"],
+                modelId="amazon.nova-lite-v1:0",
                 contentType="application/json",
                 accept="application/json",
                 body=json.dumps(body)
