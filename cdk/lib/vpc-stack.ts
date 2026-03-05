@@ -402,17 +402,11 @@ export class VpcStack extends Stack {
       this.vpc.addFlowLog(`${id}-vpcFlowLog`);
 
       // ── Bastion host ─────────────────────────────────────────────────────────
-      // t4g.nano (ARM Graviton2) in the first front subnet.
+      // t4g.nano (ARM Graviton2) in the back-1b subnet.
       // Access is exclusively via AWS SSM Session Manager — no key pair, no open
       // inbound ports.  SSH tunnelling is done through SSM port forwarding:
       //   aws ssm start-session --target <instance-id> \
       //     --document-name AWS-StartSSHSession --parameters portNumber=22
-      const bastionRole = new iam.Role(this, `${id}-BastionRole`, {
-        assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
-        managedPolicies: [
-          iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
-        ],
-      });
 
       const bastionSg = new ec2.SecurityGroup(this, `${id}-BastionSg`, {
         vpc: this.vpc,
@@ -427,8 +421,7 @@ export class VpcStack extends Stack {
           cpuType: ec2.AmazonLinuxCpuType.ARM_64,
         }),
         securityGroup: bastionSg,
-        vpcSubnets: { subnets: [this.vpc.privateSubnets[0]] },
-        role: bastionRole,
+        vpcSubnets: { subnets: [this.vpc.privateSubnets[1]] },
         // No keyName — use SSM Session Manager instead of direct SSH key auth
       });
       cdk.Tags.of(bastion).add("Name", "bastion");
