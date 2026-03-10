@@ -58,6 +58,7 @@ export class ApiServiceStack extends cdk.Stack {
     db: DatabaseStack,
     vpcStack: VpcStack,
     ecsSocketStack: any = null,
+    idleMode: boolean = false,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -2073,7 +2074,8 @@ export class ApiServiceStack extends cdk.Stack {
       })
     );
 
-    // Waf Firewall
+    // Waf Firewall — skipped in idle mode to eliminate the per-WebACL fixed cost
+    if (idleMode) return;
     const waf = new wafv2.CfnWebACL(this, `${id}-waf`, {
       description: "VCI waf",
       scope: "REGIONAL",

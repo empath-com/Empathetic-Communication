@@ -23,6 +23,7 @@ export class EcsSocketStack extends Stack {
     vpcStack: VpcStack,
     db: DatabaseStack,
     apiServiceStack: any,
+    idleMode: boolean = false,
     props?: StackProps
   ) {
     super(scope, id, props);
@@ -172,7 +173,8 @@ export class EcsSocketStack extends Stack {
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 1, // Start with single task - deployment is simpler and more stable
+      // Idle mode: start with 0 tasks to eliminate Fargate compute costs
+      desiredCount: idleMode ? 0 : 1,
       assignPublicIp: false, // No public IPs
       vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
       deploymentController: {
@@ -188,21 +190,24 @@ export class EcsSocketStack extends Stack {
     });
 
     // Auto-scaling configuration
-    // minCapacity is 0 to allow scheduled scale-to-zero during off-hours
+    // minCapacity is 0 to allow scheduled scale-to-zero during off-hours.
+    // Idle mode: cap at 0 tasks so no Fargate compute is ever scheduled.
     const scaling = service.autoScaleTaskCount({
       minCapacity: 0,
-      maxCapacity: 10,
+      maxCapacity: idleMode ? 0 : 10,
     });
 
-    scaling.scaleOnCpuUtilization("CpuScaling", {
-      targetUtilizationPercent: 70,
-      scaleInCooldown: Duration.seconds(60),
-      scaleOutCooldown: Duration.seconds(60),
-    });
+    if (!idleMode) {
+      scaling.scaleOnCpuUtilization("CpuScaling", {
+        targetUtilizationPercent: 70,
+        scaleInCooldown: Duration.seconds(60),
+        scaleOutCooldown: Duration.seconds(60),
+      });
 
-    scaling.scaleOnMemoryUtilization("MemoryScaling", {
-      targetUtilizationPercent: 80,
-    });
+      scaling.scaleOnMemoryUtilization("MemoryScaling", {
+        targetUtilizationPercent: 80,
+      });
+    }
 
     // Scheduled scaling: socket/voice server off during off-hours to reduce costs.
     // Core app (API Gateway + Lambda + RDS) remains available 24/7.
@@ -215,12 +220,15 @@ export class EcsSocketStack extends Stack {
       maxCapacity: 0,
     });
 
-    scaling.scaleOnSchedule("ScaleUpWeekdayMorning", {
-      // 7 AM PST (15:00 UTC) / 8 AM PDT — Mon–Fri only
-      schedule: appscaling.Schedule.cron({ hour: "15", minute: "0", weekDay: "MON-FRI" }),
-      minCapacity: 1,
-      maxCapacity: 10,
-    });
+    // Idle mode: skip the weekday scale-up so tasks stay at zero indefinitely
+    if (!idleMode) {
+      scaling.scaleOnSchedule("ScaleUpWeekdayMorning", {
+        // 7 AM PST (15:00 UTC) / 8 AM PDT — Mon–Fri only
+        schedule: appscaling.Schedule.cron({ hour: "15", minute: "0", weekDay: "MON-FRI" }),
+        minCapacity: 1,
+        maxCapacity: 10,
+      });
+    }
 
     // ============================================
     // APPLICATION LOAD BALANCER (WebSocket/HTTP)

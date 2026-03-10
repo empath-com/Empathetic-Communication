@@ -20,8 +20,12 @@ const environment = "dev";                         // instead of tryGetContext
 const githubRepo = "Empathetic-Communication";    // instead of tryGetContext
 const githubBranch = "main";
 
+// Idle mode: scale all running resources to zero to minimise costs.
+// Enable with: --context idleMode=true
+const idleMode = app.node.tryGetContext("idleMode") === "true";
+
 const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
-const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
+const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, idleMode, {
   env,
 });
 const apiStack = new ApiServiceStack(
@@ -30,6 +34,7 @@ const apiStack = new ApiServiceStack(
   dbStack,
   vpcStack,
   null, // ecsSocketStack will be passed later
+  idleMode,
   { env }
 );
 // Defining the new CI/CD Stack
@@ -57,6 +62,7 @@ const ecsSocketStack = new EcsSocketStack(
   vpcStack,
   dbStack,
   apiStack,
+  idleMode,
   { env }
 );
 const dbFlowStack = new DBFlowStack(

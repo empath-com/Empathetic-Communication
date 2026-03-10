@@ -8,6 +8,9 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as secretmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 
 import { VpcStack } from './vpc-stack';
 
@@ -20,7 +23,7 @@ export class DatabaseStack extends Stack {
     public readonly lambdaSecurityGroup: ec2.SecurityGroup;
     // Removed: rdsProxyEndpointTableCreator, rdsProxyEndpointAdmin - using single proxy
 
-    constructor(scope: Construct, id: string, vpcStack: VpcStack, props?: StackProps) {
+    constructor(scope: Construct, id: string, vpcStack: VpcStack, idleMode: boolean = false, props?: StackProps) {
         super(scope, id, props);
 
         /**
@@ -105,14 +108,17 @@ export class DatabaseStack extends Stack {
             maxAllocatedStorage: 115,
             allowMajorVersionUpgrade: false,
             autoMinorVersionUpgrade: true,
-            backupRetention: Duration.days(7),
+            // Idle mode: reduce backup window to 1 day to save storage costs
+            backupRetention: idleMode ? Duration.days(1) : Duration.days(7),
             deleteAutomatedBackups: true,
             deletionProtection: true,
             databaseName: "vci",
             publiclyAccessible: false,
-            cloudwatchLogsRetention: logs.RetentionDays.INFINITE,
+            // Idle mode: trim log retention from infinite to one week
+            cloudwatchLogsRetention: idleMode ? logs.RetentionDays.ONE_WEEK : logs.RetentionDays.INFINITE,
             storageEncrypted: true, // storage encryption at rest
-            monitoringInterval: Duration.seconds(60), // enhanced monitoring interval
+            // Idle mode: disable enhanced monitoring (saves ~$3-5/month)
+            monitoringInterval: idleMode ? Duration.seconds(0) : Duration.seconds(60),
             parameterGroup: parameterGroup
         });
         
@@ -201,5 +207,54 @@ export class DatabaseStack extends Stack {
 
         this.rdsProxyEndpoint = rdsProxy.endpoint;
         console.log(`🏗️ RDS_PROXY_ENDPOINT: ${this.rdsProxyEndpoint}`);
+
+        /**
+         * Idle mode: nightly Lambda that stops the RDS instance.
+         * No start action — the instance must be manually started when needed.
+         * Note: AWS automatically restarts stopped instances after 7 days regardless.
+         */
+        if (idleMode) {
+            const stopRdsRole = new iam.Role(this, `${id}-StopRdsRole`, {
+                assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+                managedPolicies: [
+                    iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+                ],
+            });
+
+            stopRdsRole.addToPolicy(new iam.PolicyStatement({
+                actions: ['rds:StopDBInstance', 'rds:DescribeDBInstances'],
+                resources: [this.dbInstance.instanceArn],
+            }));
+
+            const stopRdsLambda = new lambda.Function(this, `${id}-StopRdsLambda`, {
+                runtime: lambda.Runtime.PYTHON_3_12,
+                handler: 'index.lambda_handler',
+                code: lambda.Code.fromInline(`
+import boto3, os
+
+def lambda_handler(event, context):
+    rds = boto3.client('rds')
+    db_id = os.environ['DB_INSTANCE_ID']
+    resp = rds.describe_db_instances(DBInstanceIdentifier=db_id)
+    status = resp['DBInstances'][0]['DBInstanceStatus']
+    if status == 'available':
+        rds.stop_db_instance(DBInstanceIdentifier=db_id)
+        print(f'Stopped RDS instance {db_id}')
+    else:
+        print(f'RDS instance {db_id} is {status!r} — skipping stop')
+`),
+                environment: { DB_INSTANCE_ID: this.dbInstance.instanceIdentifier },
+                role: stopRdsRole,
+                timeout: Duration.seconds(60),
+            });
+
+            const stopRule = new events.Rule(this, `${id}-StopRdsNightly`, {
+                // 06:30 UTC = 10:30 PM PST / 11:30 PM PDT — after ECS scale-down at 06:00
+                schedule: events.Schedule.cron({ hour: '6', minute: '30' }),
+                description: 'Idle mode: stop RDS instance nightly to save compute costs',
+            });
+
+            stopRule.addTarget(new targets.LambdaFunction(stopRdsLambda));
+        }
     }
 }
