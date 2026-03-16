@@ -584,7 +584,30 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       if (response.ok) {
         const data = await response.json();
         console.log("📊 Empathy evaluation response:", data);
-        const summary = data.summary || null;
+        const empathyData = data.empathy_evaluation;
+        if (!empathyData) {
+          setIsEmpathyLoading(false);
+          return;
+        }
+        const summary = {
+          overall_score: empathyData.empathy_score || 0,
+          avg_perspective_taking: empathyData.perspective_taking || 0,
+          avg_emotional_resonance: empathyData.emotional_resonance || 0,
+          avg_acknowledgment: empathyData.acknowledgment || 0,
+          avg_language_communication: empathyData.language_communication || 0,
+          avg_cognitive_empathy: empathyData.cognitive_empathy || 0,
+          avg_affective_empathy: empathyData.affective_empathy || 0,
+          realism_assessment:
+            empathyData.realism_flag === "realistic"
+              ? "Your responses are generally realistic"
+              : "Your response is unrealistic",
+          realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
+          summary: empathyData.judge_reasoning?.overall_assessment || "",
+          strengths: empathyData.feedback?.strengths || [],
+          areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
+          recommendations: empathyData.feedback?.improvement_suggestions || [],
+          recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+        };
         setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);
       } else {
