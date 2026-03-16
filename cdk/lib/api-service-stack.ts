@@ -1344,6 +1344,7 @@ export class ApiServiceStack extends cdk.Stack {
         this.region +
         "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
+        "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
         `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });

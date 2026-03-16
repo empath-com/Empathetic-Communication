@@ -7,7 +7,7 @@ import os
 import json
 import logging
 import psycopg2
-from psycopg2 import pool
+from psycopg2 import pool, extensions
 from contextlib import contextmanager
 import boto3
 from typing import Optional, Dict, Any
