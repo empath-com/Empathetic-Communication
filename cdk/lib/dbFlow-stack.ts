@@ -1,4 +1,4 @@
-import { Stack, StackProps, triggers } from 'aws-cdk-lib';
+import { Stack, StackProps, triggers, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { Duration } from 'aws-cdk-lib';
 
@@ -98,6 +98,18 @@ export class DBFlowStack extends Stack {
             layers: [nodePgMigrateLayer],
             role: lambdaRole,
         });
+
+        // Retain the security group that was previously created here (pre-f2df852).
+        // It was removed from the template but still has Lambda ENIs attached, so
+        // CloudFormation cannot delete it. RETAIN prevents the delete attempt.
+        // Once AWS cleans up the ENIs you can delete sg-0d3ca50f7acef4f5d manually
+        // and remove this block.
+        const _retainedLambdaSg = new ec2.SecurityGroup(this, `${id}-lambda-sg`, {
+            vpc: vpcStack.vpc,
+            description: 'Security group for Lambda to access RDS',
+            allowAllOutbound: true
+        });
+        _retainedLambdaSg.applyRemovalPolicy(RemovalPolicy.RETAIN);
 
         // Use Lambda security group created in Database stack
         // (created there to avoid circular dependency)
