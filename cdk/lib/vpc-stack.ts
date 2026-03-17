@@ -19,7 +19,7 @@ export class VpcStack extends Stack {
   public readonly privateSubnetsCidrStrings: string[];
   public readonly frontPrivateSubnets: ec2.ISubnet[];
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, idleMode: boolean = false, props?: StackProps) {
     super(scope, id, props);
 
     // CDK Parameters for flexible deployment
@@ -330,28 +330,9 @@ export class VpcStack extends Stack {
       });
 
 
-      this.vpc.addInterfaceEndpoint("Glue Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.GLUE,
-        subnets: subnetSelection,
-        privateDnsEnabled: true, // Disable to avoid DNS conflicts
-        securityGroups: [endpointSecurityGroup],
-      });
+      // Glue, API Gateway, and RDS interface endpoints removed — not called from
+      // private subnets. DB connections use direct TCP to RDS Proxy within the VPC.
 
-      // Add API Gateway VPC endpoint
-      this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,
-        subnets: subnetSelection,
-        privateDnsEnabled: true, // Disable to avoid DNS conflicts
-        securityGroups: [endpointSecurityGroup],
-      });
-
-      this.vpc.addInterfaceEndpoint("RDS Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: subnetSelection,
-        privateDnsEnabled: true, // Disable to avoid DNS conflicts
-        securityGroups: [endpointSecurityGroup],
-      });
-      
       this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
         subnets: subnetSelection,
@@ -368,20 +349,22 @@ export class VpcStack extends Stack {
         securityGroups: [endpointSecurityGroup],
       });
 
-      // SSM Session Manager requires two additional endpoints beyond the base SSM endpoint
-      this.vpc.addInterfaceEndpoint("SSM Messages Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.SSM_MESSAGES,
-        subnets: subnetSelection,
-        privateDnsEnabled: true,
-        securityGroups: [endpointSecurityGroup],
-      });
+      // SSM Session Manager (bastion access) — skip in idle mode to save cost
+     /* if (!idleMode) {
+        this.vpc.addInterfaceEndpoint("SSM Messages Endpoint", {
+          service: ec2.InterfaceVpcEndpointAwsService.SSM_MESSAGES,
+          subnets: subnetSelection,
+          privateDnsEnabled: true,
+          securityGroups: [endpointSecurityGroup],
+        });
 
-      this.vpc.addInterfaceEndpoint("EC2 Messages Endpoint", {
-        service: ec2.InterfaceVpcEndpointAwsService.EC2_MESSAGES,
-        subnets: subnetSelection,
-        privateDnsEnabled: true,
-        securityGroups: [endpointSecurityGroup],
-      });
+        this.vpc.addInterfaceEndpoint("EC2 Messages Endpoint", {
+          service: ec2.InterfaceVpcEndpointAwsService.EC2_MESSAGES,
+          subnets: subnetSelection,
+          privateDnsEnabled: true,
+          securityGroups: [endpointSecurityGroup],
+        });
+      }*/
 
       // Only add gateway endpoints if NOT using specific subnets
       // (existing VPC likely already has them, and they cause route table duplicate issues)

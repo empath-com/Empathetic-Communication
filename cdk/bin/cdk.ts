@@ -24,7 +24,7 @@ const githubBranch = "main";
 // Enable with: --context idleMode=true
 const idleMode = app.node.tryGetContext("idleMode") === "true";
 
-const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
+const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, idleMode, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, idleMode, {
   env,
 });
