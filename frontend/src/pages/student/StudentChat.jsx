@@ -842,8 +842,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         avg_affective_empathy: empathyData.affective_empathy || 3,
         realism_assessment:
           empathyData.realism_flag === "realistic"
-            ? "Your responses are generally realistic"
-            : "Your response is unrealistic",
+            ? "Your responses are generally realistic!"
+            : "Your response is unrealistic!!",
         realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
         coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
         strengths: empathyData.feedback?.strengths || [],
@@ -889,7 +889,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                   avg_language_communication: empathyData.language_communication || 3,
                   avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
                   avg_affective_empathy: empathyData.affective_empathy || 3,
-                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
+                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic.." : "Your response is unrealistic...",
                   realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
                   coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
                   strengths: empathyData.feedback?.strengths || [],
