@@ -1,7 +1,14 @@
 import boto3, re, json, logging
 import psycopg2
 import os
+import requests
 from .db_connection_manager import get_db_cursor, get_pool_status
+from .resilience import retry_with_backoff
+
+# Persistent session reuses TCP connections to AppSync, avoiding a fresh DNS
+# lookup on every chunk publish (which causes intermittent NameResolutionError
+# under VPC DNS rate limits).
+_appsync_session = requests.Session()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -872,13 +879,10 @@ def get_cognito_token():
         logger.error("❌ No Cognito token available in context")
         return None
 
+@retry_with_backoff(max_retries=2, base_delay=0.2)
 def publish_to_appsync(session_id: str, data: dict):
     """Publish streaming data to AppSync subscription using Cognito User Pool authentication."""
-    import requests
-    import json
-    import os
-    
-    try:        
+    try:
         appsync_url = os.environ.get('APPSYNC_GRAPHQL_URL')
         if not appsync_url:
             logger.error("AppSync GraphQL URL not available in environment")
@@ -917,7 +921,7 @@ def publish_to_appsync(session_id: str, data: dict):
         logger.info("🔑 Using Cognito User Pool token for authentication")
         
         logger.info(f"📶 Making AppSync request to: {appsync_url}")
-        response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
+        response = _appsync_session.post(appsync_url, data=json.dumps(payload), headers=headers)
         
         if response.status_code != 200:
             logger.error(f"❌ APPSYNC ERROR - Status Code: {response.status_code}")
