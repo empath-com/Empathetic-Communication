@@ -604,6 +604,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           recommendations: data.recommendations || [],
           recommended_approach: data.recommended_approach || "",
         };
+        console.log("📊 Empathy evaluation response summary:", summary);
         setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);
       } else {

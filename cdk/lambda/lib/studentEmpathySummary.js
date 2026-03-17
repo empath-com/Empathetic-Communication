@@ -75,7 +75,21 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       );
     if (textGenFunctionName) {
       try {
-        const unevaluatedMessages = patient_id
+        const unevaluatedMessages = session_id
+          ? await sqlConnection`
+              SELECT m.message_id, m.message_content, m.session_id, si.patient_id
+              FROM "messages" m
+              JOIN "sessions" s ON m.session_id = s.session_id
+              JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+              JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+              WHERE e.user_id = ${userId}
+                AND e.simulation_group_id = ${simulation_group_id}
+                AND s.session_id = ${session_id}
+                AND m.student_sent = true
+                AND (m.empathy_evaluation IS NULL OR m.empathy_evaluation = '{}'::jsonb)
+              ORDER BY m.time_sent ASC
+              LIMIT 10`
+          : patient_id
           ? await sqlConnection`
               SELECT m.message_id, m.message_content, m.session_id, si.patient_id
               FROM "messages" m
@@ -144,7 +158,23 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     // Get ALL empathy evaluations for score calculation
     let allEmpathyData;
     try {
-      if (patient_id) {
+      if (session_id) {
+        console.log("[studentEmpathySummary] Querying empathy data for session_id:", session_id);
+        allEmpathyData = await sqlConnection`
+          SELECT m.empathy_evaluation
+          FROM "messages" m
+          JOIN "sessions" s ON m.session_id = s.session_id
+          JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+          JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+          WHERE e.user_id = ${userId}
+            AND e.simulation_group_id = ${simulation_group_id}
+            AND s.session_id = ${session_id}
+            AND m.student_sent = true
+            AND m.empathy_evaluation IS NOT NULL
+            AND m.empathy_evaluation != '{}'::jsonb
+          ORDER BY m.time_sent DESC;
+        `;
+      } else if (patient_id) {
         console.log("[studentEmpathySummary] Querying empathy data WITH patient_id");
         allEmpathyData = await sqlConnection`
           SELECT m.empathy_evaluation
