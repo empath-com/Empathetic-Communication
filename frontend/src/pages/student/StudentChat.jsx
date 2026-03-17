@@ -584,29 +584,28 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       if (response.ok) {
         const data = await response.json();
         console.log("📊 Empathy evaluation response:", data);
-        const empathyData = data.empathy_evaluation;
-        if (!empathyData) {
+        if (!data || !data.overall_score) {
           setIsEmpathyLoading(false);
           return;
         }
         const summary = {
-          overall_score: empathyData.empathy_score || 0,
-          avg_perspective_taking: empathyData.perspective_taking || 0,
-          avg_emotional_resonance: empathyData.emotional_resonance || 0,
-          avg_acknowledgment: empathyData.acknowledgment || 0,
-          avg_language_communication: empathyData.language_communication || 0,
-          avg_cognitive_empathy: empathyData.cognitive_empathy || 0,
-          avg_affective_empathy: empathyData.affective_empathy || 0,
+          overall_score: data.overall_score || 0,
+          avg_perspective_taking: data.avg_perspective_taking || 0,
+          avg_emotional_resonance: data.avg_emotional_resonance || 0,
+          avg_acknowledgment: data.avg_acknowledgment || 0,
+          avg_language_communication: data.avg_language_communication || 0,
+          avg_cognitive_empathy: data.avg_cognitive_empathy || 0,
+          avg_affective_empathy: data.avg_affective_empathy || 0,
           realism_assessment:
-            empathyData.realism_flag === "realistic"
+            data.realism_flag === "realistic"
               ? "Your responses are generally realistic"
               : "Your response is unrealistic",
-          realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-          summary: empathyData.judge_reasoning?.overall_assessment || "",
-          strengths: empathyData.feedback?.strengths || [],
-          areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-          recommendations: empathyData.feedback?.improvement_suggestions || [],
-          recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+          realism_explanation: data.judge_reasoning?.realism_justification || "",
+          summary: data.judge_reasoning?.overall_assessment || "",
+          strengths: data.feedback?.strengths || [],
+          areas_for_improvement: data.feedback?.areas_for_improvement || [],
+          recommendations: data.feedback?.improvement_suggestions || [],
+          recommended_approach: data.feedback?.alternative_phrasing || "",
         };
         setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);
