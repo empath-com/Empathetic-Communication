@@ -596,16 +596,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           avg_language_communication: data.avg_language_communication || 0,
           avg_cognitive_empathy: data.avg_cognitive_empathy || 0,
           avg_affective_empathy: data.avg_affective_empathy || 0,
-          realism_assessment:
-            data.realism_flag === "realistic"
-              ? "Your responses are generally realistic"
-              : "Your response is unrealistic",
-          realism_explanation: data.judge_reasoning?.realism_justification || "",
-          summary: data.judge_reasoning?.overall_assessment || "",
-          strengths: data.feedback?.strengths || [],
-          areas_for_improvement: data.feedback?.areas_for_improvement || [],
-          recommendations: data.feedback?.improvement_suggestions || [],
-          recommended_approach: data.feedback?.alternative_phrasing || "",
+          realism_assessment: data.realism_assessment || "",
+          realism_explanation: data.realism_explanation || "",
+          summary: data.summary || "",
+          strengths: data.strengths || [],
+          areas_for_improvement: data.areas_for_improvement || [],
+          recommendations: data.recommendations || [],
+          recommended_approach: data.recommended_approach || "",
         };
         setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);

@@ -419,20 +419,15 @@ def handler_empathy_evaluation(event, context):
 def handler_text_generation(event, context):
     """Handler for the /student/text_generation endpoint"""
     logger.info("💬 TEXT GENERATION HANDLER STARTED")
-    
+
     # Check if this is an async self-invocation
     is_async_invocation = event.get("asyncInvocation", False)
     logger.info(f"🔍 Is async invocation: {is_async_invocation}")
-    
-    try:
-        # initialize all cached resources ONCE per container (not per invocation)
-        initialize_constants()
-        # ensure we have a working database connection, this will reuse existing conn or create new one if needed
-        get_db_connection()
 
+    try:
         # Extract the user's Cognito token from the API Gateway event or async payload
         auth_token = None
-        
+
         # For async invocations, token is passed in the payload
         if is_async_invocation and 'cognitoToken' in event:
             auth_token = event['cognitoToken']
@@ -441,24 +436,7 @@ def handler_text_generation(event, context):
             headers = event['headers']
             auth_token = headers.get('Authorization') or headers.get('authorization')
             logger.info(f"🔍 Found headers: {list(headers.keys())}")
-        
-        if auth_token:
-            logger.info(f"🎫 Raw auth token: {auth_token[:30]}...")
-            # Extract JWT token from Bearer format if present
-            if auth_token.startswith('Bearer '):
-                jwt_token = auth_token[7:]  # Remove 'Bearer ' prefix
-            else:
-                jwt_token = auth_token
-            
-            # Store the JWT token for AppSync authentication (will be accessed in helpers.chat)
-            import helpers.chat
-            helpers.chat.get_cognito_token.current_token = f"Bearer {jwt_token}"
-            logger.info(f"✅ Cognito JWT token extracted and stored: Bearer {jwt_token[:20]}...")
-        else:
-            logger.warning(f"❌ No Authorization header found. Available headers: {list(event.get('headers', {}).keys()) if 'headers' in event else 'No headers'}")
 
-        query_params = event.get("queryStringParameters", {}) if not is_async_invocation else {}
-        
         # Extract parameters from async payload or query string
         if is_async_invocation:
             simulation_group_id = event.get("simulation_group_id", "")
@@ -466,6 +444,7 @@ def handler_text_generation(event, context):
             patient_id = event.get("patient_id", "")
             session_name = event.get("session_name", "New Chat")
         else:
+            query_params = event.get("queryStringParameters", {}) or {}
             simulation_group_id = query_params.get("simulation_group_id", "")
             session_id = query_params.get("session_id", "")
             patient_id = query_params.get("patient_id", "")
@@ -483,72 +462,26 @@ def handler_text_generation(event, context):
                 'body': json.dumps("Missing required parameters: simulation_group_id, session_id, or patient_id")
             }
 
-        group_prompt = get_group_prompt(simulation_group_id)
-        if group_prompt is None:
-            logger.error(f"Error fetching group prompt for simulation_group_id: {simulation_group_id}")
-            return {
-                'statusCode': 400,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Error fetching group prompt')
-            }
-
-        patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(
-            patient_id)
-        if patient_name is None or patient_age is None or patient_prompt is None or llm_completion is None:
-            return {
-                'statusCode': 400,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                },
-                'body': json.dumps('Error fetching patient details')
-            }
-
+        # Parse body/question before deciding whether to short-circuit for streaming
         body = {}
         if is_async_invocation:
-            # For async invocations, body fields are in the event directly
             body = {"message_content": event.get("message_content", "")}
         elif event.get("body") is not None:
             body = json.loads(event.get("body"))
-        
         question = body.get("message_content", "")
-        
-        logger.info(f"🔍 RAW BODY: {event.get('body')}")
-        logger.info(f"🔍 PARSED BODY: {body}")
-        logger.info(f"🔍 QUESTION: '{question}'")
-
-        if not question:
-            logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
-            student_query = get_initial_student_query(patient_name)
-        else:
-            logger.info(f"Processing student question: {question}")
-            student_query = get_student_query(question)
-            
-        logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
-        
-
 
         # Check if streaming is requested
         if is_async_invocation:
-            # For async invocations, stream flag is in the event directly
             stream = event.get("stream", False)
         else:
-            query_params = event.get("queryStringParameters", {})
-            stream = query_params.get("stream", "false").lower() == "true"
-        
+            stream = (event.get("queryStringParameters", {}) or {}).get("stream", "false").lower() == "true"
+
         # If streaming is requested and this is the initial call (not async invocation),
-        # invoke ourselves asynchronously and return 200 immediately
+        # invoke ourselves asynchronously and return 200 immediately — before any DB work.
+        # The async invocation will redo all initialization and DB queries on its own container.
         if stream and not is_async_invocation:
             logger.info("📤 SELF-INVOCATION: Invoking Lambda asynchronously for streaming")
-            
-            # Prepare payload for async invocation
+
             async_payload = {
                 "asyncInvocation": True,
                 "cognitoToken": auth_token,
@@ -559,20 +492,15 @@ def handler_text_generation(event, context):
                 "message_content": question,
                 "stream": True
             }
-            
-            # Get current function name
-            function_name = context.function_name
-            
+
             try:
-                # Invoke Lambda asynchronously using Event invocation type
                 lambda_client.invoke(
-                    FunctionName=function_name,
+                    FunctionName=context.function_name,
                     InvocationType='Event',  # Async invocation
                     Payload=json.dumps(async_payload)
                 )
-                logger.info(f"✅ SELF-INVOCATION: Successfully invoked {function_name} asynchronously")
-                
-                # Return 200 immediately to API Gateway
+                logger.info(f"✅ SELF-INVOCATION: Successfully invoked {context.function_name} asynchronously")
+
                 return {
                     "statusCode": 200,
                     "headers": {
@@ -598,8 +526,61 @@ def handler_text_generation(event, context):
                     },
                     'body': json.dumps(f'Error starting streaming: {str(e)}')
                 }
-        
-        # Continue with normal processing (either non-streaming or async invocation handling streaming)
+
+        # Non-streaming path or async invocation: initialize cached resources and DB connection
+        initialize_constants()
+        get_db_connection()
+
+        if auth_token:
+            logger.info(f"🎫 Raw auth token: {auth_token[:30]}...")
+            jwt_token = auth_token[7:] if auth_token.startswith('Bearer ') else auth_token
+            import helpers.chat
+            helpers.chat.get_cognito_token.current_token = f"Bearer {jwt_token}"
+            logger.info(f"✅ Cognito JWT token extracted and stored: Bearer {jwt_token[:20]}...")
+        else:
+            logger.warning(f"❌ No Authorization header found. Available headers: {list(event.get('headers', {}).keys()) if 'headers' in event else 'No headers'}")
+
+        group_prompt = get_group_prompt(simulation_group_id)
+        if group_prompt is None:
+            logger.error(f"Error fetching group prompt for simulation_group_id: {simulation_group_id}")
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error fetching group prompt')
+            }
+
+        patient_name, patient_age, patient_prompt, llm_completion = get_patient_details(patient_id)
+        if patient_name is None or patient_age is None or patient_prompt is None or llm_completion is None:
+            return {
+                'statusCode': 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                },
+                'body': json.dumps('Error fetching patient details')
+            }
+
+        logger.info(f"🔍 RAW BODY: {event.get('body')}")
+        logger.info(f"🔍 PARSED BODY: {body}")
+        logger.info(f"🔍 QUESTION: '{question}'")
+
+        if not question:
+            logger.info(f"Start of conversation. Creating conversation history table in DynamoDB.")
+            student_query = get_initial_student_query(patient_name)
+        else:
+            logger.info(f"Processing student question: {question}")
+            student_query = get_student_query(question)
+
+        logger.info(f"🔍 FINAL STUDENT QUERY: '{student_query}'")
+
+        # Continue with normal processing (async invocation handling streaming)
         logger.info(f"🔄 CONTINUING NORMAL PROCESSING: stream={stream}, is_async={is_async_invocation}")
         
         try:
@@ -701,7 +682,7 @@ def handler_text_generation(event, context):
         try:
             logger.info("Updating session name if this is the first exchange between the LLM and student")
             potential_session_name = update_session_name(
-                TABLE_NAME, session_id, BEDROCK_LLM_ID, patient_name)
+                TABLE_NAME, session_id, BEDROCK_LLM_ID, patient_name, session_name)
             if potential_session_name:
                 logger.info("This is the first exchange between the LLM and student. Updating session name.")
                 session_name = potential_session_name

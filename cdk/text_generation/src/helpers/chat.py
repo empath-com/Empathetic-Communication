@@ -1144,64 +1144,21 @@ def split_into_sentences(paragraph: str) -> list[str]:
     sentences = re.split(sentence_endings, paragraph)
     return sentences
 
-def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, patient_name: str = None) -> str:
+def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, patient_name: str = None, current_session_name: str = "New chat") -> str:
     """
-    Generate session name after first real medical exchange using patient_name_[timestamp] format.
-    Looks for: 1 AI intro + 1 student response + 1 AI response (1 human, 2 AI total).
+    Set a meaningful session name the first time a student exchanges a message.
+    Only updates if the session still has the default name ("New chat" / "New Chat").
+    Persists directly to PostgreSQL so it works even with async (streaming) invocations.
     """
-    
-    dynamodb_client = boto3.client("dynamodb")
-    
-    try:
-        response = dynamodb_client.get_item(
-            TableName=table_name,
-            Key={
-                'SessionId': {
-                    'S': session_id
-                }
-            }
-        )
-    except Exception as e:
-        print(f"Error fetching conversation history from DynamoDB: {e}")
+    if current_session_name.strip().lower() != "new chat":
+        logger.info(f"Session name already set to '{current_session_name}', skipping update.")
         return None
 
-    history = response.get('Item', {}).get('History', {}).get('L', [])
-
-    human_messages = []
-    ai_messages = []
-    
-    for item in history:
-        message_type = item.get('M', {}).get('data', {}).get('M', {}).get('type', {}).get('S')
-        
-        if message_type == 'human':
-            human_messages.append(item)
-            if len(human_messages) > 1:
-                print("More than one student message found; past naming window.")
-                return None
-        
-        elif message_type == 'ai':
-            ai_messages.append(item)
-            if len(ai_messages) > 2:
-                print("More than two AI messages found; past naming window.")
-                return None
-
-    # Check if this is the right moment: 1 human message, 2 AI messages
-    if len(human_messages) != 1 or len(ai_messages) != 2:
-        print(f"Not the naming moment - Human: {len(human_messages)}, AI: {len(ai_messages)}")
-        return None
-    
-    # Generate timestamp-based session name
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    if patient_name:
-        session_name = f"{patient_name}_{timestamp}"
-    else:
-        session_name = f"Chat_{timestamp}"
+    session_name = f"{patient_name}_{timestamp}" if patient_name else f"Chat_{timestamp}"
 
-    # Persist the new name directly to PostgreSQL so it's saved even when the
-    # text-generation Lambda is invoked asynchronously (stream=true) and the
-    # initial HTTP response returns before the name is generated.
     try:
         with get_db_cursor() as cursor:
             cursor.execute(
@@ -1211,6 +1168,5 @@ def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, p
         logger.info(f"✅ SESSION_NAME_UPDATED: session_id={session_id}, name={session_name}")
     except Exception as e:
         logger.error(f"❌ SESSION_NAME_UPDATE_FAILED: {e}")
-        # Still return the name — caller can log/ignore the DB failure
 
     return session_name
