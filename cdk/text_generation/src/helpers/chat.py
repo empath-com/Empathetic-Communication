@@ -612,7 +612,8 @@ def get_response(
     llm_completion: bool,
     stream: bool = False,
     bedrock_client=None,
-    empathy_enabled: bool = False
+    empathy_enabled: bool = False,
+    current_session_name: str = "New chat",
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -704,6 +705,8 @@ def get_response(
                 patient_prompt,
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
+                llm_completion=llm_completion,
+                current_session_name=current_session_name,
             )
             # For streaming, response is saved directly via AppSync
             # Return immediately with status message
@@ -753,7 +756,9 @@ def generate_streaming_response(
     patient_age: str,
     patient_prompt: str,
     bedrock_client=None,
-    empathy_enabled: bool = False
+    empathy_enabled: bool = False,
+    llm_completion: bool = False,
+    current_session_name: str = "New chat",
 ) -> str:
     """
     Streams an answer via AppSync directly (no threading needed with self-invocation pattern).
@@ -821,8 +826,24 @@ def generate_streaming_response(
             # Publish the full fallback response as a single chunk
             publish_to_appsync(session_id, {"type": "chunk", "content": full_response})
 
-        # Publish end event
-        publish_to_appsync(session_id, {"type": "end", "content": full_response})
+        # Determine llm_verdict from the full response text
+        llm_verdict = llm_completion and "SESSION COMPLETED" in full_response
+
+        # Determine new session name for first message (frontend sidebar update)
+        new_session_name = None
+        if current_session_name.strip().lower() == "new chat" and patient_name:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_session_name = f"{patient_name}_{timestamp}"
+
+        # Publish end event with verdict and session name so the frontend can
+        # update patient score and sidebar without a separate round-trip
+        publish_to_appsync(session_id, {
+            "type": "end",
+            "content": full_response,
+            "llm_verdict": llm_verdict,
+            "session_name": new_session_name,
+        })
         save_message_to_db(session_id, False, full_response, None)
 
         logger.info(f"✅ STREAMING COMPLETED for session: {session_id}, length: {len(full_response)}")

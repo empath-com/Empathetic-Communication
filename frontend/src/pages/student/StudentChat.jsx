@@ -910,6 +910,35 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               appendStreamingChunk(content);
             } else if (t === "end") {
               await finalizeStreamingBubble(fullResponseRef.current, sessionId);
+
+              // Update session name in sidebar on first message
+              if (streamData.session_name) {
+                setSession((prev) => ({ ...prev, session_name: streamData.session_name }));
+                setSessions((prev) =>
+                  prev.map((s) =>
+                    s.session_id === sessionId
+                      ? { ...s, session_name: titleCase(streamData.session_name) }
+                      : s
+                  )
+                );
+              }
+
+              // Update patient score with the actual llm_verdict from the LLM
+              if (streamData.llm_verdict !== undefined && patient && group) {
+                try {
+                  const { token, email } = await getAuth();
+                  const scoreUrl =
+                    `${import.meta.env.VITE_API_ENDPOINT}student/update_patient_score` +
+                    `?patient_id=${encodeURIComponent(patient.patient_id)}` +
+                    `&student_email=${encodeURIComponent(email)}` +
+                    `&simulation_group_id=${encodeURIComponent(group.simulation_group_id)}` +
+                    `&llm_verdict=${encodeURIComponent(streamData.llm_verdict)}`;
+                  fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
+                } catch (e) {
+                  console.error("Failed to update patient score:", e);
+                }
+              }
+
               if (empathyEnabledRef.current && pendingEmpathyRef.current) {
                 const pending = pendingEmpathyRef.current;
                 pendingEmpathyRef.current = null;
@@ -1068,61 +1097,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           message,
           newSession.session_id
         );
-      })
-      .then((textGenData) => {
-        // Update session name and patient score as before, but do NOT add AI message here (stream handles it)
-        setSession((prevSession) => ({
-          ...prevSession,
-          session_name: textGenData.session_name,
-        }));
-        const updateSessionName = `${import.meta.env.VITE_API_ENDPOINT
-          }student/update_session_name?session_id=${encodeURIComponent(
-            newSession.session_id
-          )}`;
-
-        setSessions((prevSessions) => {
-          return prevSessions.map((s) =>
-            s.session_id === newSession.session_id
-              ? { ...s, session_name: titleCase(textGenData.session_name) }
-              : s
-          );
-        });
-
-        const updatePatientScore = `${import.meta.env.VITE_API_ENDPOINT
-          }student/update_patient_score?patient_id=${encodeURIComponent(
-            patient.patient_id
-          )}&student_email=${encodeURIComponent(
-            userEmail
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&llm_verdict=${encodeURIComponent(textGenData.llm_verdict)}`;
-
-        return Promise.all([
-          fetch(updateSessionName, {
-            method: "PUT",
-            headers: {
-              Authorization: authToken,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              session_name: textGenData.session_name,
-            }),
-          }),
-          fetch(updatePatientScore, {
-            method: "POST",
-            headers: {
-              Authorization: authToken,
-              "Content-Type": "application/json",
-            },
-          }),
-        ]);
-      })
-      .then(([response1, response2, textGenData]) => {
-        if (!response1.ok || !response2.ok) {
-          throw new Error("Failed to fetch endpoints");
-        }
-
-        return textGenData;
       })
       .catch((error) => {
         setIsSubmitting(false);

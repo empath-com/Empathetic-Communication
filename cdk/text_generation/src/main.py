@@ -664,6 +664,7 @@ def handler_text_generation(event, context):
                 stream=stream,
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
+                current_session_name=session_name,
             )
         except Exception as e:
             logger.error(f"Error getting response: {e}")
