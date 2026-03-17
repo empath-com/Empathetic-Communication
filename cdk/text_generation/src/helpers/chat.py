@@ -1193,10 +1193,24 @@ def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, p
     # Generate timestamp-based session name
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     if patient_name:
         session_name = f"{patient_name}_{timestamp}"
     else:
         session_name = f"Chat_{timestamp}"
-    
+
+    # Persist the new name directly to PostgreSQL so it's saved even when the
+    # text-generation Lambda is invoked asynchronously (stream=true) and the
+    # initial HTTP response returns before the name is generated.
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                'UPDATE sessions SET session_name = %s WHERE session_id = %s',
+                (session_name, session_id)
+            )
+        logger.info(f"✅ SESSION_NAME_UPDATED: session_id={session_id}, name={session_name}")
+    except Exception as e:
+        logger.error(f"❌ SESSION_NAME_UPDATE_FAILED: {e}")
+        # Still return the name — caller can log/ignore the DB failure
+
     return session_name
