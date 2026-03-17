@@ -558,6 +558,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     if (!session || !patient) return;
 
     setIsEmpathyLoading(true);
+    setIsEmpathyCoachOpen(true);
     try {
       const authSession = await fetchAuthSession();
       const token = authSession.tokens.idToken;
