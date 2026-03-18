@@ -30,7 +30,7 @@ import {
   Chat as ChatIcon,
   History as HistoryIcon,
 } from "@mui/icons-material";
-import { useAuthentication } from "../../functions/useAuth";
+import { useAuthentication } from "../../hooks/useAuth";
 import { fetchAuthSession } from "aws-amplify/auth";
 
 // Tab Panel Component

@@ -3,7 +3,7 @@ import {
   retrieveJwtToken,
   retrieveUser,
   getIdentityCredentials,
-} from "./handleAuth";
+} from "../functions/handleAuth";
 
 // Retrieves temporary credentials for user
 export function useAuthentication() {
