@@ -1,24 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import AIMessage from "../../components/AIMessage";
-import Session from "../../components/Session";
-import StudentMessage from "../../components/StudentMessage";
-import VoiceConversation from "../../components/VoiceConversation";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { useNavigate } from "react-router-dom";
-import { fetchUserAttributes } from "aws-amplify/auth";
-import DraggableNotes from "./DraggableNotes";
-import FilesPopout from "./FilesPopout";
-import EmpathyCoachSummary from "../../components/EmpathyCoachSummary";
-import { getSocket } from "../../utils/socket";
+import { fetchAuthSession, fetchUserAttributes, signOut } from "aws-amplify/auth";
 
 import {
   startSpokenLLM,
   stopSpokenLLM,
-  playAudio,
   stopAudioPlayback,
 } from "../../utils/voiceStream";
-
-import { signOut } from "aws-amplify/auth";
 
 import {
   Dialog,
@@ -30,118 +18,46 @@ import {
   Typography,
 } from "@mui/material";
 
-// Importing icons
-import DescriptionIcon from "@mui/icons-material/Description";
-import InfoIcon from "@mui/icons-material/Info";
-import KeyIcon from "@mui/icons-material/Key";
 import MicIcon from "@mui/icons-material/Mic";
 import CloseIcon from "@mui/icons-material/Close";
-import PsychologyIcon from "@mui/icons-material/Psychology";
-
-import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 
-// Add Amplify GraphQL client for AppSync streaming
-import { generateClient } from "aws-amplify/api";
-const gqlClient = generateClient();
+import EmpathyCoachSummary from "../../components/EmpathyCoachSummary";
+import DraggableNotes from "./DraggableNotes";
+import FilesPopout from "./FilesPopout";
 
-// AppSync subscription for streaming text
-const ON_TEXT_STREAM = /* GraphQL */ `
-  subscription OnTextStream($sessionId: String!) {
-    onTextStream(sessionId: $sessionId) {
-      sessionId
-      data
-    }
-  }
-`;
+// Hooks
+import useSidebarResize from "./hooks/useSidebarResize";
+import useChatSessions from "./hooks/useChatSessions";
+import useChatMessages from "./hooks/useChatMessages";
+import useEmpathyCoach from "./hooks/useEmpathyCoach";
+import { filterUnwantedMessages } from "./hooks/useChatMessages";
+
+// Sub-components
+import ChatSidebar from "./ChatSidebar";
+import ChatTopBar from "./ChatTopBar";
+import ChatMessageArea from "./ChatMessageArea";
+import ChatInput from "./ChatInput";
 
 // Importing l-mirage animation
 import { mirage } from "ldrs";
 mirage.register();
 
-// Temporary ID used for the streaming bubble
-const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
-
-// TypingIndicator using l-mirage
-const TypingIndicator = ({ patientName }) => (
-  <div className="flex items-center justify-center py-4">
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-4 flex items-center space-x-3">
-      <l-mirage size="24" speed="2.5" color="#10b981"></l-mirage>
-      <span className="text-gray-600 font-medium text-sm">
-        {patientName
-          ? `${titleCase(patientName)} is thinking...`
-          : "Thinking..."}
-      </span>
-    </div>
-  </div>
-);
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1); // Capitalize only the first letter, leave the rest of the word unchanged
-    })
-    .join(" ");
-}
-
 const StudentChat = ({ group, patient, setPatient, setGroup }) => {
-  const textareaRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const audioRef = useRef(null);
-  // Gate for allowing audio playback from Nova Sonic
-  const allowAudioRef = useRef(false);
-  const [novaStarted, setNovaStarted] = useState(false);
+  const navigate = useNavigate();
+
+  // =====================================================================
+  // Parent-owned shared state (consumed by multiple hooks)
+  // =====================================================================
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
-  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false);
-  const [micStartPos, setMicStartPos] = useState(null);
-  const micRef = useRef(null);
   const [messages, setMessages] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [novaTextInput, setNovaTextInput] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [creatingSession, setCreatingSession] = useState(false);
-  const [newMessage, setNewMessage] = useState(null);
   const [isAItyping, setIsAItyping] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
-  const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
-  const [empathySummary, setEmpathySummary] = useState(null);
-  const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
-  const [empathyEnabled, setEmpathyEnabled] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
-  const [patientInfoFiles, setPatientInfoFiles] = useState([]);
-  const [isInfoLoading, setIsInfoLoading] = useState(false);
-  const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
-  const [isAnswerLoading, setIsAnswerLoading] = useState(false);
-  const [profilePicture, setProfilePicture] = useState(null);
-
-  // Real-time empathy chunks from AppSync stream
-  const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
-
-  // Handle empathy data from voice conversations
-  const handleVoiceEmpathyData = (empathyData) => {
-    console.log('🧠 Received empathy data from voice:', empathyData);
-    setRealtimeEmpathy(prev => [...prev, empathyData]);
-  };
-
-  // Persistent AppSync stream subscription + auth cache
-  const streamSubRef = useRef(null);
-  const streamSessionIdRef = useRef(null);
-  const fullResponseRef = useRef("");
-  const lastLoadedSessionIdRef = useRef(null);
-  // Refs used inside AppSync subscription callback to avoid stale closures
-  const empathyEnabledRef = useRef(false);
-  const pendingEmpathyRef = useRef(null);
+  // =====================================================================
+  // Auth cache
+  // =====================================================================
   const [authCache, setAuthCache] = useState({ token: null, exp: 0, email: null });
 
   const getAuth = async () => {
@@ -149,352 +65,125 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     if (authCache.token && authCache.exp - 60 > now && authCache.email) {
       return authCache;
     }
-
-    const session = await fetchAuthSession();
-    const token = session.tokens.idToken;
-    const exp = session.tokens?.idToken?.payload?.exp || now + 300;
+    const authSession = await fetchAuthSession();
+    const token = authSession.tokens.idToken;
+    const exp = authSession.tokens?.idToken?.payload?.exp || now + 300;
     const { email } = await fetchUserAttributes();
     const updated = { token, exp, email };
     setAuthCache(updated);
     return updated;
   };
 
-  const navigate = useNavigate();
+  // =====================================================================
+  // UI state for popouts / overlays / files
+  // =====================================================================
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
+  const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
-  // Sidebar resizing logic
-  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [patientInfoFiles, setPatientInfoFiles] = useState([]);
+  const [isInfoLoading, setIsInfoLoading] = useState(false);
+  const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
+  const [isAnswerLoading, setIsAnswerLoading] = useState(false);
+  const [profilePicture, setProfilePicture] = useState(null);
 
-  const handleMouseMove = (e) => {
-    const newWidth = e.clientX; // Get the new width based on the mouse position
-    if (newWidth >= 115 && newWidth <= 400) {
-      // Limit resizing between 100px and 400px
-      setSidebarWidth(newWidth);
+  // =====================================================================
+  // Ref bridge: lets useChatSessions call handleStreamingResponse from useChatMessages
+  // =====================================================================
+  const handleStreamingResponseRef = useRef(null);
+
+  // =====================================================================
+  // Empathy coach hook
+  // =====================================================================
+  const empathy = useEmpathyCoach({ group, patient, session });
+
+  // =====================================================================
+  // Chat sessions hook (called first -- uses ref for streaming)
+  // =====================================================================
+  const chatSessions = useChatSessions({
+    group,
+    patient,
+    getAuth,
+    handleStreamingResponseRef,
+    setIsAItyping,
+    sessions,
+    setSessions,
+    session,
+    setSession,
+    setMessages,
+    setCurrentSessionId,
+    filterUnwantedMessages,
+  });
+
+  // =====================================================================
+  // Chat messages hook (called second -- receives real session values)
+  // =====================================================================
+  const chatMessages = useChatMessages({
+    group,
+    patient,
+    session,
+    setSession,
+    setSessions,
+    messages,
+    setMessages,
+    currentSessionId,
+    setCurrentSessionId,
+    creatingSession: chatSessions.creatingSession,
+    setCreatingSession: chatSessions.setCreatingSession,
+    getAuth,
+    empathyEnabled: empathy.empathyEnabled,
+    setRealtimeEmpathy: empathy.setRealtimeEmpathy,
+    handleNewChat: chatSessions.handleNewChat,
+    handleStreamingResponseRef,
+    isAItyping,
+    setIsAItyping,
+  });
+
+  // Keep the sessions hook's submitting/typing refs in sync
+  useEffect(() => {
+    chatSessions.updateSubmittingRef(chatMessages.isSubmitting);
+  }, [chatMessages.isSubmitting]);
+  useEffect(() => {
+    chatSessions.updateAItypingRef(isAItyping);
+  }, [isAItyping]);
+
+  // =====================================================================
+  // Sidebar resize
+  // =====================================================================
+  const { sidebarWidth, startResizing } = useSidebarResize(280);
+
+  // =====================================================================
+  // Restore patient/group from sessionStorage
+  // =====================================================================
+  useEffect(() => {
+    const storedPatient = sessionStorage.getItem("patient");
+    if (storedPatient) {
+      setPatient(JSON.parse(storedPatient));
     }
-  };
-
-  const stopResizing = () => {
-    document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", stopResizing);
-  };
-
-  const startResizing = (e) => {
-    e.preventDefault(); // Prevent default behavior
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", stopResizing);
-  };
-
-  // Handle nova-started event once
-  useEffect(() => {
-    const setupSocket = async () => {
-      const socket = await getSocket();
-      socket.off("nova-started");
-      socket.on("nova-started", () => {
-        console.log("✅ Nova backend ready in StudentChat!");
-        setNovaStarted(true);
-      });
-    };
-    setupSocket();
-  }, []);
-
-  useEffect(() => {
-    if (
-      !loading &&
-      !creatingSession &&
-      !isSubmitting &&
-      !isAItyping &&
-      sessions.length === 0
-    ) {
-      setCreatingSession(true);
-      handleNewChat();
-    }
-  }, [sessions, creatingSession]);
-
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (newMessage !== null) {
-      if (currentSessionId === session?.session_id) {
-        // Enhanced duplicate detection
-        const contentKey = `${newMessage.student_sent ? "student" : "ai"
-          }-${newMessage.message_content.trim()}`;
-
-        // Check if this message already exists in the messages array to prevent duplication
-        const messageExists = messages.some(
-          (msg) =>
-            msg.message_id === newMessage.message_id ||
-            `${msg.student_sent ? "student" : "ai"
-            }-${msg.message_content.trim()}` === contentKey
-        );
-
-        if (!messageExists) {
-          // Only add the message if it doesn't already exist
-          setMessages((prevItems) => {
-            // Double-check for duplicates again to be extra safe
-            const isDuplicate = prevItems.some(
-              (msg) =>
-                msg.message_id === newMessage.message_id ||
-                `${msg.student_sent ? "student" : "ai"
-                }-${msg.message_content.trim()}` === contentKey
-            );
-
-            if (isDuplicate) {
-              console.log("Prevented duplicate message from being added");
-              return prevItems;
-            } else {
-              console.log("Adding new message to chat");
-              return [...prevItems, newMessage];
-            }
-          });
-        } else {
-          console.log("Message already exists in chat, not adding duplicate");
-        }
-      }
-      setNewMessage(null);
-    }
-  }, [session, newMessage, currentSessionId, messages]);
-
-  // Keep empathyEnabledRef in sync so the subscription callback always sees the current value
-  useEffect(() => {
-    empathyEnabledRef.current = empathyEnabled;
-  }, [empathyEnabled]);
-
-  // Keep a warm AppSync subscription for the active session
-  useEffect(() => {
-    if (session?.session_id) {
-      subscribeToStream(session.session_id);
-    }
-
-    return () => {
-      streamSubRef.current?.unsubscribe();
-      streamSubRef.current = null;
-      streamSessionIdRef.current = null;
-    };
-  }, [session?.session_id]);
+  }, [setPatient]);
 
   useEffect(() => {
-    const fetchPatient = async () => {
-      setLoading(true);
-      if (!group || !patient) {
-        return;
-      }
-
-      try {
-        const session = await fetchAuthSession();
-        const { email } = await fetchUserAttributes();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }student/patient?email=${encodeURIComponent(
-            email
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data);
-          const latestSession = data[data.length - 1];
-          setSession(latestSession);
-          if (latestSession) {
-            setCurrentSessionId(latestSession.session_id);
-          }
-        } else {
-          console.error("Failed to fetch patient:", response.statusText);
-        }
-      } catch (error) {
-        console.error("Error fetching patient:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPatient();
-  }, [group, patient]);
-
-  const getMostRecentStudentMessageIndex = () => {
-    const studentMessages = messages
-      .map((message, index) => ({ ...message, index }))
-      .filter((message) => message.student_sent);
-    return studentMessages.length > 0
-      ? studentMessages[studentMessages.length - 1].index
-      : -1;
-  };
-
-  const hasAiMessageAfter = (messages, recentStudentMessageIndex) => {
-    return messages
-      .slice(recentStudentMessageIndex + 1)
-      .some((message) => !message.student_sent);
-  };
-
-  const fetchVoiceID = async () => {
-    try {
-      if (!patient?.patient_id) {
-        console.warn("Patient ID not available, defaulting to tiffany");
-        return "tiffany";
-      }
-      
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/patient_voice_id?patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        return data.voice_id;
-      } else {
-        console.warn(
-          "Failed to fetch voice ID, defaulting to tiffany:",
-          response.statusText
-        );
-        return "tiffany";
-      }
-    } catch (error) {
-      console.warn("Error fetching voice ID, defaulting to tiffany:", error);
-      return "tiffany";
+    const storedGroup = sessionStorage.getItem("group");
+    if (storedGroup) {
+      setGroup(JSON.parse(storedGroup));
     }
-  };
+  }, [setGroup]);
 
-
-  const normalizeVoiceLine = (rawText) => {
-    const text = (rawText ?? "").trim();
-    if (!text) return null;
-
-    if (text.startsWith("[VOICE_TRANSCRIPT]")) return null;
-
-    if (text.startsWith("User:")) {
-      return { student_sent: true, message_content: text.replace(/^User:\s*/, "").trim() };
-    }
-    if (text.startsWith("Assistant:")) {
-      return { student_sent: false, message_content: text.replace(/^Assistant:\s*/, "").trim() };
-    }
-    // No change to student_sent if no prefix found
-    return { message_content: text };
-  };
-
-  useEffect(() => {
-    const setupSocketListeners = async () => {
-      const socket = await getSocket();
-      if (!socket.connected) socket.connect();
-
-      const handleAudio = (data) => {
-        if (!allowAudioRef.current || !data.data) return;
-        playAudio(data.data);
-      };
-
-      const handleTextMessage = (data) => {
-        // ADD MESSAGE TO CHAT UI
-        console.log("Voice text message received:", data.text);
-
-        const normalized = normalizeVoiceLine(data.text);
-        if (!normalized) return;
-
-        const newMsg = {
-          message_id: `voice_${Date.now()}`,
-          student_sent: normalized.hasOwnProperty('student_sent') ? normalized.student_sent : false,
-          message_content: normalized.message_content,
-          time_sent: new Date().toISOString()
-        };
-
-        setMessages(prev => [...prev, newMsg]);
-      };
-
-      const handleEmpathyFeedback = (data) => {
-        if (data.content) {
-          setRealtimeEmpathy((prev) => [...prev, { content: data.content, timestamp: Date.now() }]);
-        }
-      };
-
-      const handleDiagnosisComplete = (data) => {
-        alert("Session completed successfully!");
-      };
-
-      // Clean up existing listeners
-      socket.off("audio-chunk");
-      socket.off("text-message");
-      socket.off("empathy-feedback");
-      socket.off("diagnosis-complete");
-
-      // Add optimized listeners
-      socket.on("audio-chunk", handleAudio);
-      socket.on("text-message", handleTextMessage);
-      socket.on("empathy-feedback", handleEmpathyFeedback);
-      socket.on("diagnosis-complete", handleDiagnosisComplete);
-    };
-    setupSocketListeners();
-  }, []);
-
-  async function playNovaPcmBase64Audio(base64Data) {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)(
-      { sampleRate: 24000 }
-    ); // Nova uses 24kHz output
-
-    const rawData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-    const audioBuffer = audioContext.createBuffer(1, rawData.length / 2, 24000); // mono, 16-bit = 2 bytes/sample
-
-    const channelData = audioBuffer.getChannelData(0);
-    for (let i = 0; i < channelData.length; i++) {
-      const sample = (rawData[i * 2 + 1] << 8) | rawData[i * 2]; // Little-endian
-      channelData[i] =
-        sample > 32767 ? (sample - 65536) / 32768 : sample / 32768;
-    }
-
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.start();
-  }
-
-  function convertFloat32ToInt16(buffer) {
-    const l = buffer.length;
-    const buf = new Int16Array(l);
-    for (let i = 0; i < l; i++) {
-      let s = Math.max(-1, Math.min(1, buffer[i]));
-      buf[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    return new Uint8Array(buf.buffer);
-  }
-
-  // Send text to Nova Sonic
-  async function sendTextToNova() {
-    if (novaTextInput.trim()) {
-      console.log("📝 Sending text to Nova:", novaTextInput);
-      const socket = await getSocket();
-      socket.emit("text-input", { text: novaTextInput });
-      setNovaTextInput("");
-    }
-  }
-
+  // =====================================================================
+  // Fetch files (patient info, answer key, profile picture)
+  // =====================================================================
   const fetchFiles = async () => {
     setIsInfoLoading(true);
     setIsAnswerLoading(true);
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
+      const authSession = await fetchAuthSession();
+      const token = authSession.tokens.idToken;
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/get_all_files?simulation_group_id=${encodeURIComponent(
+        `${import.meta.env.VITE_API_ENDPOINT}student/get_all_files?simulation_group_id=${encodeURIComponent(
           group.simulation_group_id
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
@@ -510,7 +199,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Simulation group data:", data);
         const infoFiles = Object.entries(data.info_files).map(
           ([fileName, fileDetails]) => ({
             name: fileName,
@@ -519,7 +207,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             metadata: fileDetails.metadata,
           })
         );
-        const answerKeyFiles = Object.entries(data.answer_key_files).map(
+        const answerFiles = Object.entries(data.answer_key_files).map(
           ([fileName, fileDetails]) => ({
             name: fileName,
             url: fileDetails.url,
@@ -527,23 +215,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             metadata: fileDetails.metadata,
           })
         );
-        const profilePicture = data.profile_picture_url;
-        console.log("Profile picture data:", profilePicture);
-        // Handle different data structures for profile picture
+        const profilePic = data.profile_picture_url;
         const profileUrl =
-          typeof profilePicture === "string"
-            ? profilePicture
-            : profilePicture?.url ||
-            profilePicture?.profile_picture_url ||
-            null;
+          typeof profilePic === "string"
+            ? profilePic
+            : profilePic?.url || profilePic?.profile_picture_url || null;
         setProfilePicture(profileUrl || null);
         setPatientInfoFiles(infoFiles);
-        setAnswerKeyFiles(answerKeyFiles);
+        setAnswerKeyFiles(answerFiles);
       } else {
-        console.error(
-          "Failed to fetch patient info files:",
-          response.statusText
-        );
+        console.error("Failed to fetch patient info files:", response.statusText);
       }
     } catch (error) {
       console.error("Error fetching patient info files:", error);
@@ -553,125 +234,26 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
-  // Function to fetch empathy summary
-  const fetchEmpathySummary = async () => {
-    if (!session || !patient) return;
-
-    setIsEmpathyLoading(true);
-    setIsEmpathyCoachOpen(true);
-    try {
-      const authSession = await fetchAuthSession();
-      const token = authSession.tokens.idToken;
-      const { email } = await fetchUserAttributes();
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/empathy_summary?session_id=${encodeURIComponent(
-          session.session_id
-        )}&email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("📊 Empathy evaluation response:", data);
-        if (!data || !data.overall_score) {
-          setIsEmpathyLoading(false);
-          return;
-        }
-        const summary = {
-          overall_score: data.overall_score || 0,
-          avg_perspective_taking: data.avg_perspective_taking || 0,
-          avg_emotional_resonance: data.avg_emotional_resonance || 0,
-          avg_acknowledgment: data.avg_acknowledgment || 0,
-          avg_language_communication: data.avg_language_communication || 0,
-          avg_cognitive_empathy: data.avg_cognitive_empathy || 0,
-          avg_affective_empathy: data.avg_affective_empathy || 0,
-          realism_assessment: data.realism_assessment || "",
-          realism_explanation: data.realism_explanation || "",
-          summary: data.summary || "",
-          strengths: data.strengths || [],
-          areas_for_improvement: data.areas_for_improvement || [],
-          recommendations: data.recommendations || [],
-          recommended_approach: data.recommended_approach || "",
-        };
-        console.log("📊 Empathy evaluation response summary:", summary);
-        setEmpathySummary(summary);
-        setIsEmpathyCoachOpen(true);
-      } else {
-        console.error("Failed to evaluate empathy:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error evaluating empathy:", error);
-    } finally {
-      setIsEmpathyLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (patient && group) {
       fetchFiles();
     }
   }, [patient, group]);
 
-  // Fetch empathy enabled status
-  useEffect(() => {
-    const fetchEmpathyEnabled = async () => {
-      if (!group?.simulation_group_id) return;
-
-      try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }student/empathy_enabled?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setEmpathyEnabled(data.empathy_enabled);
-        } else {
-          console.error("Failed to fetch empathy enabled status:", response.statusText);
-        }
-      } catch (error) {
-        console.error("Error fetching empathy enabled status:", error);
-      }
-    };
-
-    fetchEmpathyEnabled();
-    fetchVoiceEnabled();
-  }, [group]);
-
-  // Fetch voice enabled status
-  const fetchVoiceEnabled = async () => {
-    if (!group?.simulation_group_id) return;
-
+  // =====================================================================
+  // Voice helpers
+  // =====================================================================
+  const fetchVoiceID = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
+      if (!patient?.patient_id) {
+        console.warn("Patient ID not available, defaulting to tiffany");
+        return "tiffany";
+      }
+      const authSession = await fetchAuthSession();
+      const token = authSession.tokens.idToken;
       const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/voice_enabled?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
+        `${import.meta.env.VITE_API_ENDPOINT}student/patient_voice_id?patient_id=${encodeURIComponent(
+          patient.patient_id
         )}`,
         {
           method: "GET",
@@ -681,441 +263,46 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           },
         }
       );
-
       if (response.ok) {
         const data = await response.json();
-        setVoiceEnabled(data.voice_enabled);
+        return data.voice_id;
       } else {
-        console.error("Failed to fetch voice enabled status:", response.statusText);
+        console.warn("Failed to fetch voice ID, defaulting to tiffany:", response.statusText);
+        return "tiffany";
       }
     } catch (error) {
-      console.error("Error fetching voice enabled status:", error);
+      console.warn("Error fetching voice ID, defaulting to tiffany:", error);
+      return "tiffany";
     }
   };
 
-  async function retrieveKnowledgeBase(message, sessionId) {
-    try {
-      // Create a normalized version of the message for comparison
-      const normalizedMessage = message.trim();
-
-      // First check if this message already exists to avoid creating duplicates
-      const messageExists = messages.some(
-        (msg) =>
-          !msg.student_sent && msg.message_content.trim() === normalizedMessage
-      );
-
-      if (messageExists) {
-        console.log("Message already exists in chat, skipping API call");
-        return;
-      }
-
-      const authSession = await fetchAuthSession();
-      const { email } = await fetchUserAttributes();
-      const token = authSession.tokens.idToken;
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }student/create_ai_message?session_id=${encodeURIComponent(
-            sessionId
-          )}&email=${encodeURIComponent(
-            email
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message_content: message,
-            }),
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-
-          // Create a content key for the new message
-          const contentKey = `ai-${data[0].message_content.trim()}`;
-
-          // Double-check if this message already exists in the messages array
-          const messageExists = messages.some(
-            (msg) =>
-              msg.message_id === data[0].message_id ||
-              (!msg.student_sent &&
-                msg.message_content.trim() === data[0].message_content.trim())
-          );
-
-          if (!messageExists) {
-            console.log("Adding new AI message to chat");
-            setNewMessage(data[0]);
-          } else {
-            console.log("Duplicate AI message detected, not adding to chat");
-          }
-        } else {
-          console.error("Failed to retrieve message:", response.statusText);
-        }
-      } catch (error) {
-        console.error("Error retrieving message:", error);
-      }
-    } catch (error) {
-      console.error("Error retrieving message from knowledge base:", error);
-    }
-  }
-
-  // Streaming helpers for AppSync text stream
-  const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
-
-  const startStreamingBubble = () => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        message_id: STREAMING_TEMP_ID,
-        student_sent: false,
-        message_content: "",
-        _streaming: true, // enable typing cursor
-      },
-    ]);
-    // Keep isAItyping true - will be set false on first chunk
-  };
-
-  const appendStreamingChunk = (text) => {
-    // Hide thinking indicator on first chunk
-    setIsAItyping(false);
-    
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.message_id === STREAMING_TEMP_ID
-          ? {
-            ...m,
-            message_content:
-              (m.message_content === " " ? "" : m.message_content) + text,
-          }
-          : m
-      )
-    );
-  };
-
-  const finalizeStreamingBubble = async (finalText, sessionId) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.message_id === STREAMING_TEMP_ID
-          ? {
-            ...m,
-            message_id: `ai_${Date.now()}`,
-            message_content: finalText,
-            _streaming: false, // stop typing cursor
-          }
-          : m
-      )
-    );
-  };
-
-  const callEmpathyEvaluation = async (pending, sessionId) => {
-    try {
-      const { token } = await getAuth();
-      const url =
-        `${import.meta.env.VITE_API_ENDPOINT}student/empathy_evaluation` +
-        `?session_id=${encodeURIComponent(sessionId)}` +
-        `&patient_id=${encodeURIComponent(pending.patientId)}` +
-        `&simulation_group_id=${encodeURIComponent(pending.groupId)}`;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-        body: JSON.stringify({ message_content: pending.messageContent }),
-      });
-      if (!response.ok) return;
-
-      const data = await response.json();
-      const empathyData = data.empathy_evaluation;
-      if (!empathyData) return;
-
-      const transformedData = {
-        overall_score: empathyData.empathy_score || 3,
-        avg_perspective_taking: empathyData.perspective_taking || 3,
-        avg_emotional_resonance: empathyData.emotional_resonance || 3,
-        avg_acknowledgment: empathyData.acknowledgment || 3,
-        avg_language_communication: empathyData.language_communication || 3,
-        avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-        avg_affective_empathy: empathyData.affective_empathy || 3,
-        realism_assessment:
-          empathyData.realism_flag === "realistic"
-            ? "Your responses are generally realistic!"
-            : "Your response is unrealistic!!",
-        realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-        coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
-        strengths: empathyData.feedback?.strengths || [],
-        areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-        recommendations: empathyData.feedback?.improvement_suggestions || [],
-        recommended_approach: empathyData.feedback?.alternative_phrasing || "",
-        timestamp: Date.now(),
-      };
-      setRealtimeEmpathy((prev) => [...prev, transformedData]);
-    } catch (e) {
-      console.error("Empathy evaluation failed:", e);
-    }
-  };
-
-  const subscribeToStream = (sessionId) => {
-    if (!sessionId) return null;
-
-    if (streamSubRef.current) {
-      streamSubRef.current.unsubscribe();
-      streamSubRef.current = null;
-    }
-
-    streamSubRef.current = gqlClient
-      .graphql({
-        query: ON_TEXT_STREAM,
-        variables: { sessionId },
-      })
-      .subscribe({
-        next: async ({ data }) => {
-          try {
-            const streamData = JSON.parse(data.onTextStream.data);
-            const t = streamData?.type;
-            const content = streamData?.content || "";
-
-            if (t === "empathy") {
-              try {
-                const empathyData = JSON.parse(content);
-                const transformedData = {
-                  overall_score: empathyData.empathy_score || 3,
-                  avg_perspective_taking: empathyData.perspective_taking || 3,
-                  avg_emotional_resonance: empathyData.emotional_resonance || 3,
-                  avg_acknowledgment: empathyData.acknowledgment || 3,
-                  avg_language_communication: empathyData.language_communication || 3,
-                  avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-                  avg_affective_empathy: empathyData.affective_empathy || 3,
-                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic.." : "Your response is unrealistic...",
-                  realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-                  coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
-                  strengths: empathyData.feedback?.strengths || [],
-                  areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-                  recommendations: empathyData.feedback?.improvement_suggestions || [],
-                  recommended_approach: empathyData.feedback?.alternative_phrasing || "",
-                  timestamp: Date.now(),
-                };
-                setRealtimeEmpathy((prev) => [...prev, transformedData]);
-              } catch (e) {
-                console.error("Failed to parse empathy JSON:", e);
-              }
-            } else if (t === "start") {
-              fullResponseRef.current = "";
-              startStreamingBubble();
-            } else if (t === "chunk") {
-              fullResponseRef.current += content;
-              appendStreamingChunk(content);
-            } else if (t === "end") {
-              await finalizeStreamingBubble(fullResponseRef.current, sessionId);
-
-              // Update session name in sidebar on first message
-              if (streamData.session_name) {
-                setSession((prev) => ({ ...prev, session_name: streamData.session_name }));
-                setSessions((prev) =>
-                  prev.map((s) =>
-                    s.session_id === sessionId
-                      ? { ...s, session_name: titleCase(streamData.session_name) }
-                      : s
-                  )
-                );
-              }
-
-              // Update patient score with the actual llm_verdict from the LLM
-              if (streamData.llm_verdict !== undefined && patient && group) {
-                try {
-                  const { token, email } = await getAuth();
-                  const scoreUrl =
-                    `${import.meta.env.VITE_API_ENDPOINT}student/update_patient_score` +
-                    `?patient_id=${encodeURIComponent(patient.patient_id)}` +
-                    `&student_email=${encodeURIComponent(email)}` +
-                    `&simulation_group_id=${encodeURIComponent(group.simulation_group_id)}` +
-                    `&llm_verdict=${encodeURIComponent(streamData.llm_verdict)}`;
-                  fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
-                } catch (e) {
-                  console.error("Failed to update patient score:", e);
-                }
-              }
-
-              if (empathyEnabledRef.current && pendingEmpathyRef.current) {
-                const pending = pendingEmpathyRef.current;
-                pendingEmpathyRef.current = null;
-                callEmpathyEvaluation(pending, sessionId);
-              }
-            } else if (t === "error") {
-              setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-            }
-          } catch (err) {
-            console.error("Error processing stream data:", err);
-          }
-        },
-        error: (error) => {
-          console.error("❌ AppSync subscription error:", error);
-          setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-        },
-      });
-
-    streamSessionIdRef.current = sessionId;
-
-    return streamSubRef.current;
-  };
-
-  const handleStreamingResponse = async (
-    url,
-    authToken,
-    message,
-    overrideSessionId = null
-  ) => {
-    try {
-      const currentSessionId = overrideSessionId || session?.session_id;
-      if (!currentSessionId)
-        throw new Error("No session ID available for streaming");
-
-      // Ensure a warm, persistent subscription is active for this session
-      if (!streamSubRef.current || streamSessionIdRef.current !== currentSessionId) {
-        console.log("📡 Warming AppSync subscription for session:", currentSessionId);
-        subscribeToStream(currentSessionId);
-      }
-
-      console.log("🚀 Making POST request to:", url);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: authToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message_content: message }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      return await response.json();
-    } catch (error) {
-      console.error("❌ AppSync streaming error:", error);
-      setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
-      throw error;
-    }
-  };
-
-  const handleSubmit = () => {
-    if (isSubmitting || isAItyping || creatingSession) return;
-    setIsSubmitting(true);
-    let newSession;
-    let authToken;
-    let userEmail;
-    let messageContent = novaTextInput.trim();
-
-    console.log("📝 Submitting message:", messageContent);
-    let getSession;
-
-    if (!messageContent) {
-      console.warn("Message content is empty or contains only spaces.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (session) {
-      getSession = Promise.resolve(session);
+  const handleVoiceToggle = () => {
+    if (isRecording) {
+      chatMessages.allowAudioRef.current = false;
+      stopAudioPlayback();
+      stopSpokenLLM();
+      setIsRecording(false);
+      setShowVoiceOverlay(false);
+      chatSessions.setLoading(false);
     } else {
-      if (!creatingSession) {
-        setCreatingSession(true);
-        handleNewChat();
-      }
-      setIsSubmitting(false);
-      return;
-    }
-
-    getSession
-      .then((retrievedSession) => {
-        newSession = retrievedSession;
-        setCurrentSessionId(newSession.session_id);
-        return getAuth();
-      })
-      .then(({ token, email }) => {
-        authToken = token;
-        userEmail = email;
-        const messageUrl = `${import.meta.env.VITE_API_ENDPOINT
-          }student/create_message?session_id=${encodeURIComponent(
-            newSession.session_id
-          )}&email=${encodeURIComponent(
-            userEmail
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&patient_id=${encodeURIComponent(patient.patient_id)}`;
-
-        return fetch(messageUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message_content: messageContent,
-          }),
+      chatMessages.allowAudioRef.current = true;
+      setShowVoiceOverlay(true);
+      fetchVoiceID().then((voice_id) => {
+        startSpokenLLM(voice_id, chatSessions.setLoading, currentSessionId, {
+          patient_name: patient?.patient_name,
+          patient_prompt: patient?.patient_prompt,
+          llm_completion: !!patient?.llm_completion,
+          system_prompt: group?.system_prompt || "",
         });
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to create message: ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then((messageData) => {
-        setNewMessage(messageData[0]);
-        setIsAItyping(true);
-        setNovaTextInput("");
-
-        const message = messageData[0].message_content;
-
-        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT
-          }student/text_generation?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&session_id=${encodeURIComponent(
-            newSession.session_id
-          )}&patient_id=${encodeURIComponent(
-            patient.patient_id
-          )}&session_name=${encodeURIComponent(
-            newSession.session_name
-          )}&stream=true`;
-
-        console.log(
-          "🚀 Using AppSync streaming for session:",
-          newSession.session_id
-        );
-        if (empathyEnabled) {
-          pendingEmpathyRef.current = {
-            messageContent: message,
-            patientId: patient.patient_id,
-            groupId: group.simulation_group_id,
-          };
-        }
-        return handleStreamingResponse(
-          textGenUrl,
-          authToken,
-          message,
-          newSession.session_id
-        );
-      })
-      .catch((error) => {
-        setIsSubmitting(false);
-        setIsAItyping(false);
-        console.error("Error:", error);
-      })
-      .finally(() => {
-        setIsSubmitting(false);
       });
-  };
-
-  const handleKeyDown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit();
+      setIsRecording(true);
+      chatSessions.setLoading(true);
     }
   };
 
+  // =====================================================================
+  // Navigation / auth actions
+  // =====================================================================
   const handleBack = () => {
     sessionStorage.removeItem("patient");
     navigate(-1);
@@ -1131,555 +318,45 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
-  const handleNewChat = () => {
-    let sessionData;
-    let userEmail;
-    let authToken;
-
-    setTimeout(() => setIsAItyping(true), 775);
-    return getAuth()
-      .then(({ token, email }) => {
-        authToken = token;
-        userEmail = email;
-        const session_name = "New chat";
-        const url = `${import.meta.env.VITE_API_ENDPOINT
-          }student/create_session?email=${encodeURIComponent(
-            userEmail
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&patient_id=${encodeURIComponent(
-            patient.patient_id
-          )}&session_name=${encodeURIComponent(session_name)}`;
-
-        return fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-        });
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to create session: ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        sessionData = data[0];
-        console.log("New session created:", sessionData.session_id);
-        setCurrentSessionId(sessionData.session_id);
-        setSessions((prevItems) => [...prevItems, sessionData]);
-        setSession(sessionData);
-        setCreatingSession(false);
-
-        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT
-          }student/text_generation?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&session_id=${encodeURIComponent(
-            sessionData.session_id
-          )}&patient_id=${encodeURIComponent(
-            patient.patient_id
-          )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
-
-        console.log("Session data for text generation:", sessionData);
-
-        // Use the same AppSync streaming flow for the initial message
-        return handleStreamingResponse(
-          textGenUrl,
-          authToken,
-          "",
-          sessionData.session_id
-        );
-      })
-      .then((textResponseData) => {
-        // Do not call retrieveKnowledgeBase here; stream already persisted the AI message.
-
-        console.log("sessionData:", sessionData);
-        return sessionData;
-      })
-      .catch((error) => {
-        console.error("Error creating new chat:", error);
-        setCreatingSession(false);
-        setIsAItyping(false);
-      })
-      .finally(() => {
-      });
-  };
-
-  const handleDeleteSession = async (sessionDelete) => {
-    try {
-      const authSession = await fetchAuthSession();
-      const { email } = await fetchUserAttributes();
-      const token = authSession.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/delete_session?email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_id=${encodeURIComponent(sessionDelete.session_id)}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setSessions((prevSessions) =>
-          prevSessions.filter(
-            (isession) => isession.session_id !== sessionDelete.session_id
-          )
-        );
-        if (sessionDelete.session_id === session.session_id) {
-          setSession(null);
-          setMessages([]);
-        }
-      } else {
-        console.error("Failed to create session:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error creating session:", error);
-    }
-  };
-
-  const handleDeleteMessage = async (message) => {
-    // remember to set is submitting true/false
-    const authSession = await fetchAuthSession();
-    const { email } = await fetchUserAttributes();
-    const token = authSession.tokens.idToken;
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }student/delete_last_message?session_id=${encodeURIComponent(
-          session.session_id
-        )}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setMessages((prevMessages) => {
-          if (prevMessages.length >= 2) {
-            return prevMessages.slice(0, -2);
-          } else {
-            return [];
-          }
-        });
-      } else {
-        console.error("Failed to delete message:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error deleting message:", error);
-    }
-  };
-  useEffect(() => {
-    const handleResize = () => {
-      const textarea = textareaRef.current;
-      if (textarea) {
-        textarea.style.height = "auto";
-        textarea.style.height = `${textarea.scrollHeight}px`;
-
-        // Enforce max-height and add scroll when needed
-        if (textarea.scrollHeight > parseInt(textarea.style.maxHeight)) {
-          textarea.style.overflowY = "auto";
-        } else {
-          textarea.style.overflowY = "hidden";
-        }
-      }
-    };
-
-    handleResize();
-    const textarea = textareaRef.current;
-
-    if (textarea) {
-      textarea.addEventListener("input", handleResize);
-
-      textarea.addEventListener("keydown", handleKeyDown);
-    }
-
-    // Cleanup event listener on unmount
-    return () => {
-      if (textarea) {
-        textarea.removeEventListener("input", handleResize);
-        textarea.removeEventListener("keydown", handleKeyDown);
-      }
-    };
-  }, [textareaRef.currrent, handleKeyDown]);
-  useEffect(() => {
-    const storedPatient = sessionStorage.getItem("patient");
-    if (storedPatient) {
-      setPatient(JSON.parse(storedPatient));
-    }
-  }, [setPatient]);
-
-  useEffect(() => {
-    const storedGroup = sessionStorage.getItem("group");
-    if (storedGroup) {
-      setGroup(JSON.parse(storedGroup));
-    }
-  }, [setGroup]);
-
-  const getMessages = async () => {
-    try {
-      if (!session?.session_id) {
-        console.warn("[getMessages] Cannot fetch messages: session or session_id is undefined");
-        return;
-      }
-
-      console.log("[getMessages] Starting fetch for session_id:", session.session_id);
-
-      if (!import.meta.env.VITE_APPSYNC_GRAPHQL_URL) {
-        console.error("VITE_APPSYNC_GRAPHQL_URL is not configured");
-        return;
-      }
-
-      // Use AppSync to fetch messages for this session
-      const query = `
-        query listMessagesBySession($sessionId: String!) {
-          listMessagesBySession(sessionId: $sessionId) {
-            message_id
-            session_id
-            message_content
-            student_sent
-            time_sent
-          }
-        }
-      `;
-
-      const apiUrl = `${import.meta.env.VITE_API_ENDPOINT}student/get_messages?session_id=${encodeURIComponent(session.session_id)}`;
-      console.log("[getMessages] Calling API:", apiUrl);
-      
-      const response = await fetch(
-        apiUrl,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: (await fetchAuthSession()).tokens.idToken,
-          },
-        }
-      );
-
-      console.log("[getMessages] API response status:", response.status, response.statusText);
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log("[getMessages] Full API response:", result);
-        // API returns messages directly as an array, not nested in data.listMessagesBySession
-        const data = Array.isArray(result) ? result : (result.data?.listMessagesBySession || []);
-        console.log("[getMessages] Extracted messages count:", data.length);
-
-        // Enhanced duplicate detection and removal
-        const uniqueMessages = [];
-        const messageIds = new Set();
-        const messageContentMap = new Map(); // Track message content with sender type
-
-        // First sort by time_sent to ensure we keep the earliest messages
-        const sortedData = [...data].sort((a, b) => {
-          return new Date(a.time_sent) - new Date(b.time_sent);
-        });
-
-        sortedData.forEach((message) => {
-          // Filter out initial messages
-          if (message.message_content.trim() === "introduce yourself briefly" ||
-            message.message_content.includes("Begin the conversation as the patient:")) {
-            return;
-          }
-
-          // Filtering out the final voice transcript message
-          if (message.message_content.trim().startsWith("[VOICE_TRANSCRIPT]")) {
-            console.log("Filtered out the final voice transcript message");
-            return;
-          }
-
-          let normalizedMsg = { ...message };
-          const n = normalizeVoiceLine(normalizedMsg.message_content);
-
-          // If it's the transcript block - normalizeVoiceLine() returns null, but we already filtered that.
-          // but for a safeguard:
-          if (!n) return;
-
-          // If it was role prefixed, strip prefix and force the correct sender
-          normalizedMsg.message_content = n.message_content;
-          normalizedMsg.student_sent = n.hasOwnProperty("student_sent")
-            ? n.student_sent
-            : message.student_sent;
-
-          // Now, use normalizedMsg for deduplication + pushing
-          const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"
-            }-${normalizedMsg.message_content.trim()}`;
-
-          // Check for duplicates by ID or content
-          if (
-            !messageIds.has(normalizedMsg.message_id) &&
-            !messageContentMap.has(contentKey)
-          ) {
-            messageIds.add(normalizedMsg.message_id);
-            messageContentMap.set(contentKey, true);
-            uniqueMessages.push(normalizedMsg);
-          } else {
-            console.log(
-              "Filtered out duplicate message:",
-              normalizedMsg.message_content.substring(0, 30) + "..."
-            );
-          }
-        });
-
-        console.log(
-          `[getMessages] Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`
-        );
-        console.log("[getMessages] Setting messages state with:", uniqueMessages);
-        setFilteredMessages(uniqueMessages);
-      } else {
-        const errorText = await response.text();
-        console.error("[getMessages] Failed to retrieve messages - Status:", response.status, response.statusText, "Body:", errorText);
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error("[getMessages] Error fetching messages:", error);
-      setMessages([]);
-    }
-  };
-  
-  useEffect(() => {
-    console.log("[useEffect] Session changed. New session_id:", session?.session_id, "Last loaded:", lastLoadedSessionIdRef.current);
-    if (session?.session_id && session.session_id !== lastLoadedSessionIdRef.current) {
-      console.log("[useEffect] Switching to new session:", session.session_id);
-      setCurrentSessionId(session.session_id);
-      lastLoadedSessionIdRef.current = session.session_id;
-      // Always fetch messages when switching sessions
-      // If it's a brand new session, the API will return empty results (which is fine)
-      // Existing sessions should have historical messages to display
-      console.log("[useEffect] Calling getMessages() for session:", session.session_id);
-      getMessages();
-      /*
-      getMessages().then(() => {
-        // apply filters again once messages are loaded
-        setMessages(prevMessages =>
-          prevMessages.filter(message => {
-            const content = message.message_content || "";
-            const trimmedContent = content.trim();
-
-            // filtering out the voice transcript messages
-            if (trimmedContent.includes("[VOICE_TRANSCRIPT]")) {
-              return false;
-            }
-
-            return true;
-          })
-        );
-      });
-      */
-    } else {
-      console.log("[useEffect] Session ID unchanged or undefined - skipping getMessages()");
-
-    }
-  }, [session?.session_id]);
-
-  // Open the confirmation dialog
-  const handleOpenConfirm = () => {
-    setIsConfirmOpen(true);
-  };
-
-  // Close the confirmation dialog
-  const handleCloseConfirm = () => {
-    setIsConfirmOpen(false);
-  };
-
-  // Open the modal for Answer Key(s) after confirmation
+  // Confirmation dialog for reveal
+  const handleCloseConfirm = () => setIsConfirmOpen(false);
   const handleConfirmReveal = () => {
     setIsConfirmOpen(false);
     setIsAnswerKeyOpen(true);
   };
 
-  // Helper function to filter out unwanted messages
-  const filterUnwantedMessages = (messagesArray) => {
-    if (!Array.isArray(messagesArray)) {
-      return messagesArray;
-    }
-
-    const out = [];
-    for (const m of messagesArray) {
-      const n = normalizeVoiceLine(m?.message_content);
-      if (!n) continue;
-
-      // keep the other filters
-      if ((m.message_content || "").includes("Begin the conversation as the patient")) continue;
-
-      out.push({
-        ...m,
-        student_sent: n.hasOwnProperty('student_sent') ? n.student_sent : m.student_sent,
-        message_content: n.message_content,
-      });
-    }
-
-    return out;
-
-  };
-
-  // Filtered setter that always applies the filter
-  const setFilteredMessages = (messagesOrUpdater) => {
-    if (typeof messagesOrUpdater === "function") {
-      setMessages(prevMessages => filterUnwantedMessages(messagesOrUpdater(prevMessages)));
-    } else {
-      setMessages(filterUnwantedMessages(messagesOrUpdater));
-    }
-  };
-
+  // =====================================================================
+  // Early return if patient not loaded
+  // =====================================================================
   if (!patient) {
     return <div>Loading...</div>;
   }
 
+  // =====================================================================
+  // Render
+  // =====================================================================
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Modern Sidebar */}
-      <div
-        className="flex flex-col bg-white border-r border-gray-200 shadow-sm"
-        style={{
-          width: sidebarWidth,
-          minWidth: sidebarWidth <= 160 ? "120px" : "280px",
-        }}
-      >
-        {/* Header Section */}
-        <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleBack}
-              className="p-2 rounded-lg bg-[rgba(0,0,0,0)] hover:bg-gray-100 transition-colors duration-200 flex-shrink-0"
-            >
-              <svg
-                className="w-5 h-5 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </button>
-            {sidebarWidth > 160 && (
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg font-semibold text-gray-900 truncate">
-                  {titleCase(patient.patient_name)}
-                </h2>
-                <p className="text-sm text-gray-500">
-                  {patient.patient_gender}, {patient.patient_age} years old
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-        {/* Comment: Sidebar Content */}
-        {/* New Chat Button */}
-        <div className="p-4">
-          <button
-            onClick={() => {
-              if (!creatingSession) {
-                setCreatingSession(true);
-                handleNewChat();
-              }
-            }}
-            disabled={creatingSession}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg py-3 px-4 font-medium transition-colors duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            {sidebarWidth > 160 && <span>New Chat</span>}
-          </button>
-        </div>
-
-        {/* Session List */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
-          <div className="space-y-2">
-            {sessions
-              .slice()
-              .reverse()
-              .map((iSession) => (
-                <Session
-                  key={iSession.session_id}
-                  text={sidebarWidth > 160 ? iSession.session_name : ""}
-                  session={iSession}
-                  setSession={setSession}
-                  deleteSession={handleDeleteSession}
-                  selectedSession={session}
-                  setMessages={setFilteredMessages}
-                  setSessions={setSessions}
-                  sessions={sessions}
-                />
-              ))}
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="p-4 border-t border-gray-100 space-y-3">
-          {/* Empathy Coach Button - Only show if enabled */}
-          {empathyEnabled && (
-            <button
-              onClick={fetchEmpathySummary}
-              disabled={isEmpathyLoading}
-              className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <PsychologyIcon className="w-5 h-5" />
-              {sidebarWidth > 160 && <span>Empathy Coach</span>}
-            </button>
-          )}
-
-          {/* Notes Button */}
-          <button
-            onClick={() => setIsNotesOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
-          >
-            <DescriptionIcon className="w-5 h-5" />
-            {sidebarWidth > 160 && <span>Notes</span>}
-          </button>
-
-          {/* Patient Info Button */}
-          <button
-            onClick={() => setIsPatientInfoOpen(true)}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
-          >
-            <InfoIcon className="w-5 h-5" />
-            {sidebarWidth > 160 && <span>Patient Info</span>}
-          </button>
-
-          {/* Reveal Answer Button 
-          <button
-            onClick={handleOpenConfirm}
-            className="w-full bg-white border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 rounded-lg py-3 px-4 font-medium transition-all duration-200 flex items-center justify-start space-x-2"
-          >
-            <KeyIcon className="w-5 h-5" />
-            {sidebarWidth > 160 && <span>Reveal Answer</span>}
-          </button>
-          */}
-        </div>
-      </div>
+      {/* Sidebar */}
+      <ChatSidebar
+        patient={patient}
+        sidebarWidth={sidebarWidth}
+        sessions={sessions}
+        session={session}
+        setSession={setSession}
+        setSessions={setSessions}
+        creatingSession={chatSessions.creatingSession}
+        setCreatingSession={chatSessions.setCreatingSession}
+        handleNewChat={chatSessions.handleNewChat}
+        handleDeleteSession={chatSessions.handleDeleteSession}
+        setFilteredMessages={chatSessions.setFilteredMessages}
+        empathyEnabled={empathy.empathyEnabled}
+        isEmpathyLoading={empathy.isEmpathyLoading}
+        fetchEmpathySummary={empathy.fetchEmpathySummary}
+        onNotesOpen={() => setIsNotesOpen(true)}
+        onPatientInfoOpen={() => setIsPatientInfoOpen(true)}
+        handleBack={handleBack}
+      />
 
       {/* Sidebar Resize Handle */}
       <div
@@ -1689,160 +366,39 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-white">
-        {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-              <svg
-                className="w-6 h-6 text-emerald-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                />
-              </svg>
-            </div>
-            <div style={{ textAlign: "left" }} className="flex flex-col">
-              <h1 className="text-xl font-semibold text-gray-900">
-                AI Patient
-              </h1>
-              <p className="text-sm text-gray-500">
-                Interactive medical simulation
-              </p>
-            </div>
-          </div>
+        <ChatTopBar handleSignOut={handleSignOut} />
 
-          <button
-            onClick={handleSignOut}
-            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200"
-          >
-            Sign Out
-          </button>
-        </div>
+        <ChatMessageArea
+          messages={messages}
+          isAItyping={isAItyping}
+          patient={patient}
+          profilePicture={profilePicture}
+          messagesEndRef={chatMessages.messagesEndRef}
+          getMostRecentStudentMessageIndex={chatMessages.getMostRecentStudentMessageIndex}
+          hasAiMessageAfter={chatMessages.hasAiMessageAfter}
+          handleDeleteMessage={chatMessages.handleDeleteMessage}
+        />
 
-        {/* Move messages below the fixed header by adding a top margin equal to header height */}
-        <div className="flex-grow overflow-y-auto p-4 h-full flex flex-col">
-          {messages.map((message, index) =>
-            message.student_sent ? (
-              <StudentMessage
-                key={message.message_id}
-                message={message.message_content}
-                isMostRecent={getMostRecentStudentMessageIndex() === index}
-                onDelete={() => handleDeleteMessage(message)}
-                hasAiMessageAfter={() =>
-                  hasAiMessageAfter(
-                    messages,
-                    getMostRecentStudentMessageIndex()
-                  )
-                }
-              />
-            ) : (
-              <AIMessage
-                key={message.message_id}
-                message={message.message_content}
-                profilePicture={profilePicture}
-                name={patient?.patient_name}
-                isStreaming={message._streaming === true}
-              />
-            )
-          )}
-
-          {/* TypingIndicator */}
-
-          {isAItyping && (
-            <TypingIndicator patientName={patient?.patient_name} />
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="border-t border-gray-200 p-6">
-          <div className="bg-gray-50 border border-gray-200 rounded-2xl flex items-end space-x-3 p-4 focus-within:border-emerald-300 focus-within:bg-white transition-all duration-200">
-            {/* Voice Button */}
-            {voiceEnabled && (
-              <button
-                onClick={() => {
-                  if (isRecording) {
-                    // Stop immediately
-                    allowAudioRef.current = false;
-                    stopAudioPlayback();
-                    stopSpokenLLM();
-                    setIsRecording(false);
-                    setShowVoiceOverlay(false);
-                    setLoading(false);
-                  } else {
-                    // Start voice; allow audio playback
-                    allowAudioRef.current = true;
-                    setShowVoiceOverlay(true);
-                    fetchVoiceID().then((voice_id) => {
-                      console.log("Session ID:", currentSessionId);
-                      startSpokenLLM(voice_id, setLoading, currentSessionId, {
-                        patient_name: patient?.patient_name,
-                        patient_prompt: patient?.patient_prompt,
-                        llm_completion: !!patient?.llm_completion,
-                        // If you have a group/system prompt available, pass it here; otherwise omit or keep empty
-                        system_prompt: group?.system_prompt || "",
-                      });
-                    });
-                    setIsRecording(true);
-                    setLoading(true);
-                  }
-                }}
-                className={`p-2 rounded-lg transition-colors duration-200 flex-shrink-0 ${isRecording
-                  ? "bg-red-100 text-red-600 hover:bg-red-200"
-                  : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
-                  }`}
-              >
-                <MicIcon className="w-5 h-5" />
-              </button>
-            )}
-
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={novaTextInput}
-              onChange={(e) => setNovaTextInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your message..."
-              className="flex-1 bg-transparent text-gray-900 placeholder-gray-500 resize-none outline-none max-h-32 py-1"
-              style={{ maxHeight: "2.4rem" }}
-              maxLength={2096}
-            />
-
-            {/* Send Button */}
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || isAItyping || creatingSession}
-              className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors duration-200 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <ChatInput
+          textareaRef={chatMessages.textareaRef}
+          novaTextInput={chatMessages.novaTextInput}
+          setNovaTextInput={chatMessages.setNovaTextInput}
+          handleKeyDown={chatMessages.handleKeyDown}
+          handleSubmit={chatMessages.handleSubmit}
+          isSubmitting={chatMessages.isSubmitting}
+          isAItyping={isAItyping}
+          creatingSession={chatSessions.creatingSession}
+          voiceEnabled={empathy.voiceEnabled}
+          isRecording={isRecording}
+          onVoiceToggle={handleVoiceToggle}
+        />
       </div>
 
       {/* Draggable Notes */}
       {isNotesOpen && (
         <DraggableNotes
           isOpen={isNotesOpen}
-          sessionId={session.session_id}
+          sessionId={session?.session_id}
           onClose={() => setIsNotesOpen(false)}
           zIndex={showVoiceOverlay ? 3500 : 50}
         />
@@ -1864,8 +420,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       {/* Empathy Coach Dialog */}
       <Dialog
-        open={isEmpathyCoachOpen}
-        onClose={() => setIsEmpathyCoachOpen(false)}
+        open={empathy.isEmpathyCoachOpen}
+        onClose={() => empathy.setIsEmpathyCoachOpen(false)}
         maxWidth="md"
         fullWidth
         PaperProps={{
@@ -1888,7 +444,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {patient && ` - ${patient.patient_name}`}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
-          {isEmpathyLoading ? (
+          {empathy.isEmpathyLoading ? (
             <div className="flex items-center space-x-3 py-8">
               <l-mirage size="32" speed="2.5" color="#10b981"></l-mirage>
               <Typography className="text-gray-600">
@@ -1896,18 +452,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               </Typography>
             </div>
           ) : (
-            <EmpathyCoachSummary empathyData={empathySummary} />
+            <EmpathyCoachSummary empathyData={empathy.empathySummary} />
           )}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 2 }}>
           <Button
-            onClick={() => setIsEmpathyCoachOpen(false)}
+            onClick={() => empathy.setIsEmpathyCoachOpen(false)}
             sx={{
               backgroundColor: "#f3f4f6",
               color: "#374151",
-              "&:hover": {
-                backgroundColor: "#e5e7eb",
-              },
+              "&:hover": { backgroundColor: "#e5e7eb" },
               borderRadius: "8px",
               textTransform: "none",
               fontWeight: 500,
@@ -1952,9 +506,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             sx={{
               backgroundColor: "#f3f4f6",
               color: "#374151",
-              "&:hover": {
-                backgroundColor: "#e5e7eb",
-              },
+              "&:hover": { backgroundColor: "#e5e7eb" },
               borderRadius: "8px",
               textTransform: "none",
               fontWeight: 500,
@@ -1967,9 +519,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             sx={{
               backgroundColor: "#ef4444",
               color: "white",
-              "&:hover": {
-                backgroundColor: "#dc2626",
-              },
+              "&:hover": { backgroundColor: "#dc2626" },
               borderRadius: "8px",
               textTransform: "none",
               fontWeight: 500,
@@ -1979,8 +529,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           </Button>
         </DialogActions>
       </Dialog>
-      {/* Loading screen - Modern design */}
-      {loading && (
+
+      {/* Loading screen */}
+      {chatSessions.loading && (
         <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm z-[2000] flex flex-col items-center justify-center">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
             <l-mirage size="48" speed="2.5" color="#10b981" />
@@ -1994,12 +545,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         </div>
       )}
 
-      {/* Voice Overlay - Modern design */}
+      {/* Voice Overlay */}
       {showVoiceOverlay && (
         <>
           <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
             {/* Loading state while mic initializes */}
-            {loading && (
+            {chatSessions.loading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-[3002]">
                 <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
                   <l-mirage size="48" speed="2.5" color="#10b981" />
@@ -2035,7 +586,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 Speak naturally to interact with the AI patient
               </p>
 
-              {/* Animated voice waves - render immediately even before audio starts */}
+              {/* Animated voice waves */}
               <div className="flex justify-center space-x-1 mb-8">
                 {[...Array(5)].map((_, i) => (
                   <div
@@ -2044,14 +595,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                     style={{
                       height: Math.random() * 30 + 20 + "px",
                       animationDelay: i * 0.1 + "s",
-                      opacity: loading ? 0.5 : 1,
+                      opacity: chatSessions.loading ? 0.5 : 1,
                     }}
                   />
                 ))}
               </div>
             </div>
 
-            {/* Visualizer canvas kept visible at all times while overlay is open */}
+            {/* Visualizer canvas */}
             <canvas
               id="audio-visualizer"
               width={window.innerWidth}
@@ -2059,18 +610,17 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
             />
 
-            {/* Bottom control island with Close (red) and Notes (white) */}
+            {/* Bottom control island */}
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3003] bg-white/90 backdrop-blur-md border border-gray-200 shadow-lg rounded-full px-3 py-2 flex items-center space-x-3">
               <button
                 onClick={() => {
-                  // Disable any further playback and stop immediately
-                  allowAudioRef.current = false;
-                  getMessages();
+                  chatMessages.allowAudioRef.current = false;
+                  chatMessages.getMessages();
                   stopAudioPlayback();
                   stopSpokenLLM();
                   setIsRecording(false);
                   setShowVoiceOverlay(false);
-                  setLoading(false);
+                  chatSessions.setLoading(false);
                 }}
                 aria-label="Close voice overlay"
                 className="w-12 h-12 rounded-full bg-[#ff6666] hover:bg-[#c74545] flex items-center justify-center shadow-md"
@@ -2081,14 +631,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               <button
                 onClick={() => setIsNotesOpen((prev) => !prev)}
                 aria-label={isNotesOpen ? "Close notes" : "Open notes"}
-                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${isNotesOpen
-                  ? "bg-emerald-100 border-emerald-400"
-                  : "bg-white hover:bg-gray-50 border-gray-200"
-                  }`}
+                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${
+                  isNotesOpen
+                    ? "bg-emerald-100 border-emerald-400"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
               >
                 <EditNoteIcon
-                  className={`w-6 h-6 ${isNotesOpen ? "text-emerald-600" : "text-gray-700"
-                    }`}
+                  className={`w-6 h-6 ${isNotesOpen ? "text-emerald-600" : "text-gray-700"}`}
                 />
               </button>
             </div>
