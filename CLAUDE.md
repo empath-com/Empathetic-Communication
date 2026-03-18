@@ -19,14 +19,48 @@ Generative AI tool on AWS that helps healthcare students practice empathetic com
 cdk/                        # AWS CDK infrastructure (TypeScript)
   bin/                      # CDK app entry point
   lib/                      # Stack definitions
+    api-service-stack.ts    # Orchestrator — imports from constructs/
     vpc-stack.ts            # VPC networking
     database-stack.ts       # RDS PostgreSQL + pgvector
-    api-service-stack.ts    # API Gateway, Lambda, Cognito, AppSync, S3
     ecs-socket-stack.ts     # ECS Fargate for Socket.IO server
     amplify-stack.ts        # Frontend hosting
     cicd-stack.ts           # CI/CD pipeline
+    constructs/             # CDK construct helpers (split from api-service-stack)
+      cognito-auth.ts       # User pool, identity pool, IAM roles
+      lambda-layers.ts      # All Lambda layer definitions
+      api-gateway.ts        # OpenAPI processing, SpecRestApi, WAF
+      authorizer-lambdas.ts # Admin/instructor/student authorizers
+      business-lambdas.ts   # All business Lambda functions, S3, SSM
+      appsync-streaming.ts  # AppSync GraphQL API and resolvers
+      monitoring.ts         # CloudWatch, EventBridge, timeout handler
   lambda/                   # Node.js Lambda functions
-    lib/                    # Shared Lambda utilities (studentFunction, instructorFunction, etc.)
+    lib/
+      shared/utils.js       # Shared utilities (formatNames, generateAccessCode)
+      lib.js                # DB connection initialization
+      instructor/           # Instructor route modules
+        router.js           # Auth + route dispatch
+        groupRoutes.js      # Group/analytics routes
+        patientRoutes.js    # Patient CRUD routes
+        studentRoutes.js    # Student management routes
+        promptRoutes.js     # System prompt routes
+        accessRoutes.js     # Access code routes
+        completionRoutes.js # Completion status routes
+        empathyRoutes.js    # Empathy summary routes
+        voiceRoutes.js      # Voice settings routes
+      student/              # Student route modules
+        router.js           # Auth + route dispatch
+        userRoutes.js       # User creation/roles routes
+        groupRoutes.js      # Simulation group routes
+        patientRoutes.js    # Patient data routes
+        sessionRoutes.js    # Session CRUD routes
+        messageRoutes.js    # Message creation routes
+        enrollmentRoutes.js # Student enrollment routes
+        progressRoutes.js   # Score/completion routes
+        notesRoutes.js      # Notes routes
+        empathyRoutes.js    # Empathy summary/enabled routes
+        voiceRoutes.js      # Voice enabled routes
+      instructorFunction.js # Re-export → instructor/router.js
+      studentFunction.js    # Re-export → student/router.js
     adminFunction/          # Admin-specific Lambda
     db_setup/               # DB initialization
     deleteFile/ deleteLastMessage/ deletePatient/ generatePreSignedURL/
@@ -36,7 +70,12 @@ cdk/                        # AWS CDK infrastructure (TypeScript)
     src/
       main.py               # Entry point
       helpers/
-        chat.py             # Chat history / LLM calls
+        chat.py             # Re-export facade for backwards compatibility
+        prompts.py          # Prompt templates (patient + empathy)
+        empathy.py          # Empathy evaluation and scoring
+        streaming.py        # AppSync publishing, streaming responses
+        llm.py              # Bedrock LLM factory
+        conversation.py     # Chat history, message DB ops, RAG chain
         db_connection_manager.py
         helper.py
         resilience.py       # Retry/resilience logic
@@ -52,17 +91,40 @@ cdk/                        # AWS CDK infrastructure (TypeScript)
 
 frontend/                   # React SPA
   src/
+    hooks/
+      useAuth.js            # AWS Amplify auth hook
     pages/
+      auth/                 # Auth flow components (split from Login.jsx)
+        useAuthFlow.js      # Auth state machine hook
+        LoginForm.jsx       # Sign-in form
+        SignUpForm.jsx       # Sign-up form
+        ConfirmSignUpForm.jsx # Confirmation code form
+        ForgotPasswordForm.jsx # Password reset flow
+        NewPasswordForm.jsx # Admin-created user password
+        styles.js           # Shared MUI styles
       admin/                # Admin pages
       instructor/           # Instructor pages
-      student/              # Student pages (conversation, empathy feedback)
+      student/              # Student pages
+        StudentChat.jsx     # Composition root for chat
+        hooks/              # Chat-specific hooks
+          useChatSessions.js  # Session CRUD
+          useChatMessages.js  # Message state, streaming
+          useEmpathyCoach.js  # Empathy evaluation
+          useSidebarResize.js # Sidebar resize
+        ChatSidebar.jsx     # Session list sidebar
+        ChatTopBar.jsx      # Top bar UI
+        ChatMessageArea.jsx # Message list
+        ChatInput.jsx       # Text input area
+      Login.jsx             # Thin wrapper rendering auth forms
     components/             # Shared React components
-    functions/              # Utility functions
-    utils/                  # Helpers (auth, API calls)
+    functions/              # Utility functions (auth, S3, image)
+    utils/                  # Helpers
+      textFormatting.js     # titleCase, string utilities
   vite.config.js
   tailwind.config.js
 
 docs/                       # Architecture, deployment, troubleshooting guides
+  llm-development-guide.md  # LLM coding guidelines and patterns
 ```
 
 ## Tech Stack Details
@@ -83,7 +145,9 @@ docs/                       # Architecture, deployment, troubleshooting guides
 
 ### Lambda (Node.js)
 - Runtime: Node.js (ESM where noted)
-- Shared code in `cdk/lambda/lib/`
+- Route handlers split by domain in `cdk/lambda/lib/<role>/<domain>Routes.js`
+- Shared utilities in `cdk/lambda/lib/shared/utils.js`
+- DB connection via `cdk/lambda/lib/lib.js`
 - Authorizers: separate Lambda per role (admin/instructor/student)
 
 ### Python Containers (text_generation, data_ingestion)
@@ -220,13 +284,56 @@ Key production values:
 - No automated frontend tests currently (manual testing via dev server)
 - Lambda functions tested manually via AWS Console or test events
 
+## Module Size Guidelines
+
+- **Max ~400 lines** per source file. Split at 500+ lines.
+- See [docs/llm-development-guide.md](docs/llm-development-guide.md) for splitting patterns and naming conventions.
+- When splitting a file, keep the original filename as a **re-export facade** for backwards compatibility.
+
+## Code Navigation
+
+### API route → handler file
+1. Route prefix tells you the role: `/instructor/...` → `cdk/lambda/lib/instructor/`
+2. Domain tells you the file: patient routes → `patientRoutes.js`, session routes → `sessionRoutes.js`
+3. Search for the full route key: `"GET /instructor/groups"`
+
+### Page URL → React component
+- `/admin/...` → `frontend/src/pages/admin/`
+- `/instructor/...` → `frontend/src/pages/instructor/`
+- `/student/...` → `frontend/src/pages/student/`
+- Login/auth → `frontend/src/pages/Login.jsx` + `frontend/src/pages/auth/`
+
+### CDK resource → construct file
+- Cognito → `cdk/lib/constructs/cognito-auth.ts`
+- API Gateway / WAF → `cdk/lib/constructs/api-gateway.ts`
+- Lambda functions → `cdk/lib/constructs/business-lambdas.ts`
+- Authorizers → `cdk/lib/constructs/authorizer-lambdas.ts`
+- AppSync → `cdk/lib/constructs/appsync-streaming.ts`
+- Monitoring → `cdk/lib/constructs/monitoring.ts`
+
+### Python RAG/LLM → helper file
+- Prompt templates → `cdk/text_generation/src/helpers/prompts.py`
+- Empathy scoring → `cdk/text_generation/src/helpers/empathy.py`
+- Streaming → `cdk/text_generation/src/helpers/streaming.py`
+- LLM setup → `cdk/text_generation/src/helpers/llm.py`
+- Chat history → `cdk/text_generation/src/helpers/conversation.py`
+
 ## Common Tasks
 
-### Adding a new Lambda function
+### Adding a new API route to an existing Lambda
+1. Add the handler to the appropriate `<domain>Routes.js` in `cdk/lambda/lib/<role>/`
+2. If it's a new domain, create `<domain>Routes.js` and import it in `router.js`
+3. Add the endpoint to `cdk/OpenAPI_Swagger_Definition.yaml`
+
+### Adding a new standalone Lambda function
 1. Create function file in `cdk/lambda/<functionName>/`
-2. Register it in `cdk/lib/api-service-stack.ts`
+2. Register it in `cdk/lib/constructs/business-lambdas.ts`
 3. Wire to API Gateway endpoint in `OpenAPI_Swagger_Definition.yaml`
-4. Update processed swagger: `OpenAPI_Swagger_Definition_processed.yaml`
+
+### Adding a new React feature
+1. Create a custom hook in `<page>/hooks/use<Feature>.js` for logic
+2. Create a sub-component `<page>/<Feature>.jsx` for UI
+3. Wire them in the page component — do NOT add 200+ lines to an existing file
 
 ### Modifying the empathy prompt
 See [docs/promptModificationGuide.md](docs/promptModificationGuide.md)
