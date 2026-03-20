@@ -40,7 +40,69 @@ user_text: {student_response}"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    # Build request body with prompt caching
+    # Tool schema forces the model to return structured JSON — no text parsing needed
+    empathy_tool = {
+        "toolSpec": {
+            "name": "submit_empathy_evaluation",
+            "description": "Submit the structured empathy evaluation scores and feedback.",
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "empathy_score":          {"type": "integer", "minimum": 1, "maximum": 5},
+                        "perspective_taking":     {"type": "integer", "minimum": 1, "maximum": 5},
+                        "emotional_resonance":    {"type": "integer", "minimum": 1, "maximum": 5},
+                        "acknowledgment":         {"type": "integer", "minimum": 1, "maximum": 5},
+                        "language_communication": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "cognitive_empathy":      {"type": "integer", "minimum": 1, "maximum": 5},
+                        "affective_empathy":      {"type": "integer", "minimum": 1, "maximum": 5},
+                        "realism_flag": {"type": "string", "enum": ["realistic", "unrealistic"]},
+                        "judge_reasoning": {
+                            "type": "object",
+                            "properties": {
+                                "perspective_taking_justification":  {"type": "string"},
+                                "emotional_resonance_justification": {"type": "string"},
+                                "acknowledgment_justification":      {"type": "string"},
+                                "language_justification":            {"type": "string"},
+                                "cognitive_empathy_justification":   {"type": "string"},
+                                "affective_empathy_justification":   {"type": "string"},
+                                "realism_justification":             {"type": "string"},
+                                "overall_assessment":                {"type": "string"},
+                            },
+                            "required": [
+                                "perspective_taking_justification", "emotional_resonance_justification",
+                                "acknowledgment_justification", "language_justification",
+                                "cognitive_empathy_justification", "affective_empathy_justification",
+                                "realism_justification", "overall_assessment",
+                            ],
+                        },
+                        "feedback": {
+                            "type": "object",
+                            "properties": {
+                                "strengths":               {"type": "array", "items": {"type": "string"}},
+                                "areas_for_improvement":   {"type": "array", "items": {"type": "string"}},
+                                "why_realistic":           {"type": "string"},
+                                "why_unrealistic":         {"type": "string"},
+                                "improvement_suggestions": {"type": "array", "items": {"type": "string"}},
+                                "alternative_phrasing":    {"type": "string"},
+                            },
+                            "required": [
+                                "strengths", "areas_for_improvement",
+                                "improvement_suggestions", "alternative_phrasing",
+                            ],
+                        },
+                    },
+                    "required": [
+                        "empathy_score", "perspective_taking", "emotional_resonance",
+                        "acknowledgment", "language_communication", "cognitive_empathy",
+                        "affective_empathy", "realism_flag", "judge_reasoning", "feedback",
+                    ],
+                }
+            },
+        }
+    }
+
+    # Build request body with prompt caching and tool use for guaranteed structured output
     body = {
             "system": [
                 {
@@ -60,9 +122,13 @@ user_text: {student_response}"""
                     ]
                 }
             ],
+            "toolConfig": {
+                "tools": [empathy_tool],
+                "toolChoice": {"tool": {"name": "submit_empathy_evaluation"}},
+            },
             "inferenceConfig": {
                 "temperature": 0.1,
-                "maxTokens": 1200
+                "maxTokens": 2500
             }
     }
 
@@ -77,7 +143,7 @@ user_text: {student_response}"""
             )
             logger.info("✅ BEDROCK MODEL CALL SUCCESSFUL")
         except Exception as model_error:
-            logger.warning(f"Nova Pro failed in deployment region, trying us-east-1: {model_error}")
+            logger.warning(f"Nova Lite failed in deployment region, trying us-east-1: {model_error}")
             fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
             response = fallback_client.invoke_model(
                 modelId="amazon.nova-lite-v1:0",
@@ -104,57 +170,46 @@ user_text: {student_response}"""
 
         logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
 
-        response_text = result["output"]["message"]["content"][0]["text"]
-        logger.info(f"📝 BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
+         # Extract structured output from tool use response
+        content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+        evaluation = None
+        for block in content_blocks:
+            tool_use = block.get("toolUse", {})
+            if tool_use.get("name") == "submit_empathy_evaluation":
+                evaluation = tool_use.get("input", {})
+                break
 
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}') + 1
-
-        if json_start != -1 and json_end > json_start:
-            json_text = response_text[json_start:json_end]
-            logger.info(f"📝 EXTRACTED JSON LENGTH: {len(json_text)} characters")
-
-            try:
-                evaluation = json.loads(json_text)
-            except json.JSONDecodeError as parse_error:
-                logger.error(f"❌ FAILED TO PARSE EXTRACTED JSON: {parse_error}")
-                logger.error(f"❌ EXTRACTED TEXT: {json_text[:200]}")
-                return None
-
-            logger.info(f"✅ JSON PARSING SUCCESSFUL - Keys: {list(evaluation.keys())}")
-
-            # Validate that it's a dict and not a string
-            if not isinstance(evaluation, dict):
-                logger.error(f"❌ EVALUATION IS NOT A DICT: {type(evaluation)}")
-                return None
-
-            # Convert string scores to integers and validate
-            required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
-            for score_key in required_scores:
-                score_value = evaluation.get(score_key)
-                if isinstance(score_value, str):
-                    try:
-                        evaluation[score_key] = int(score_value)
-                    except (ValueError, TypeError):
-                        evaluation[score_key] = 3
-                elif score_value is None or score_value == 0:
-                    evaluation[score_key] = 3
-
-            if 'empathy_score' in evaluation:
-                empathy_score = evaluation.get('empathy_score')
-                if isinstance(empathy_score, str):
-                    try:
-                        evaluation['empathy_score'] = int(empathy_score)
-                    except (ValueError, TypeError):
-                        evaluation['empathy_score'] = 3
-
-            evaluation["evaluation_method"] = "LLM-as-a-Judge"
-            evaluation["judge_model"] = bedrock_client["model_id"]
-            logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
-            return evaluation
-        else:
-            logger.error(f"❌ NO JSON FOUND IN RESPONSE: {response_text[:200]}")
+        if not evaluation:
+            logger.error(f"❌ NO TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
             return None
+
+        logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
+
+        # Coerce integer scores in case model returned strings
+        required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment',
+                           'language_communication', 'cognitive_empathy', 'affective_empathy']
+        for score_key in required_scores:
+            score_value = evaluation.get(score_key)
+            if isinstance(score_value, str):
+                try:
+                    evaluation[score_key] = int(score_value)
+                except (ValueError, TypeError):
+                    evaluation[score_key] = 3
+            elif score_value is None or score_value == 0:
+                evaluation[score_key] = 3
+
+        if 'empathy_score' in evaluation:
+            empathy_score = evaluation.get('empathy_score')
+            if isinstance(empathy_score, str):
+                try:
+                    evaluation['empathy_score'] = int(empathy_score)
+                except (ValueError, TypeError):
+                    evaluation['empathy_score'] = 3
+
+        evaluation["evaluation_method"] = "LLM-as-a-Judge"
+        evaluation["judge_model"] = bedrock_client["model_id"]
+        logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
+        return evaluation
 
     except json.JSONDecodeError as e:
         logger.error(f"❌ JSON DECODE ERROR: {e}")
