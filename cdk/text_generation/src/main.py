@@ -4,6 +4,7 @@ import boto3
 import logging
 import psycopg2
 from psycopg2 import extensions
+from botocore.config import Config
 from langchain_aws import BedrockEmbeddings
 
 from helpers.vectorstore import get_vectorstore_retriever
@@ -27,7 +28,11 @@ APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm", region_name=REGION)
 bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
-lambda_client = boto3.client("lambda", region_name=REGION)
+lambda_client = boto3.client(
+    "lambda",
+    region_name=REGION,
+    config=Config(connect_timeout=5, read_timeout=10, retries={"max_attempts": 1}),
+)
 
 # Cached resources
 connection = None
@@ -494,12 +499,15 @@ def handler_text_generation(event, context):
             }
 
             try:
-                lambda_client.invoke(
+                invoke_response = lambda_client.invoke(
                     FunctionName=context.function_name,
                     InvocationType='Event',  # Async invocation
                     Payload=json.dumps(async_payload)
                 )
-                logger.info(f"✅ SELF-INVOCATION: Successfully invoked {context.function_name} asynchronously")
+                invoke_status = invoke_response.get("StatusCode")
+                logger.info(f"✅ SELF-INVOCATION: Invoked {context.function_name} asynchronously — StatusCode={invoke_status}")
+                if invoke_status == 429:
+                    logger.error("❌ SELF-INVOCATION THROTTLED: async Lambda was not started (concurrency limit reached)")
 
                 return {
                     "statusCode": 200,
