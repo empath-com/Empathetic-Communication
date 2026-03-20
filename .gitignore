@@ -136,3 +136,8 @@ venv/
 .claude/settings.local.json
 cdk/text_generation/src/helpers/__pycache__
 cdk/text_generation/src/__pycache__
+.sourcevision/
+.hench
+.rex
+.claude/skills/ndx*
+.n-dx.json
