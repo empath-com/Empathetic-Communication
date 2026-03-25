@@ -18,7 +18,8 @@ def get_bedrock_llm(
     guardrail_id = os.environ.get('BEDROCK_GUARDRAIL_ID')
 
     deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-    if 'nova' in bedrock_llm_id.lower():
+    model_lower = bedrock_llm_id.lower()
+    if 'nova-pro' in model_lower or 'nova-premier' in model_lower:
         region = 'us-east-1'
     else:
         region = deployment_region

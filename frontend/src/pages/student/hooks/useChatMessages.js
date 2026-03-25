@@ -294,7 +294,13 @@ export default function useChatMessages({
             const t = streamData?.type;
             const content = streamData?.content || "";
 
-            if (t === "empathy") {
+            if (t === "debug_prompt") {
+              console.log(
+                "%c[LLM FULL SYSTEM PROMPT]%c\n" + content,
+                "color: #7c3aed; font-weight: bold",
+                "color: inherit"
+              );
+            } else if (t === "empathy") {
               try {
                 const empathyData = JSON.parse(content);
                 const transformedData = {

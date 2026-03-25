@@ -336,6 +336,7 @@ def get_response(
                 empathy_enabled=empathy_enabled,
                 llm_completion=llm_completion,
                 current_session_name=current_session_name,
+                debug_prompt=final_system_prompt,
             )
             # For streaming, response is saved directly via AppSync
             # Return immediately with status message

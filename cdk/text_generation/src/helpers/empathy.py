@@ -44,63 +44,240 @@ user_text: {student_response}"""
     empathy_tool = {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
-            "description": "Submit the structured empathy evaluation scores and feedback.",
+            "description": "Submit a complete and detailed structured empathy evaluation. ALL fields must be filled with meaningful content. Do not leave any field empty.",
             "inputSchema": {
                 "json": {
                     "type": "object",
                     "properties": {
-                        "empathy_score":          {"type": "integer", "minimum": 1, "maximum": 5},
-                        "perspective_taking":     {"type": "integer", "minimum": 1, "maximum": 5},
-                        "emotional_resonance":    {"type": "integer", "minimum": 1, "maximum": 5},
-                        "acknowledgment":         {"type": "integer", "minimum": 1, "maximum": 5},
-                        "language_communication": {"type": "integer", "minimum": 1, "maximum": 5},
-                        "cognitive_empathy":      {"type": "integer", "minimum": 1, "maximum": 5},
-                        "affective_empathy":      {"type": "integer", "minimum": 1, "maximum": 5},
-                        "realism_flag": {"type": "string", "enum": ["realistic", "unrealistic"]},
+                        "empathy_score": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5,
+                            "description": "Overall empathy rating from 1 (low) to 5 (high)."
+                        },
+                        "perspective_taking": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "emotional_resonance": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "acknowledgment": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "language_communication": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "cognitive_empathy": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "affective_empathy": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                        },
+                        "realism_flag": {
+                            "type": "string",
+                            "enum": ["realistic", "unrealistic"],
+                            "description": "Indicates whether the response feels natural and realistic."
+                        },
                         "judge_reasoning": {
                             "type": "object",
+                            "description": "Detailed justification for each score. Each field must contain specific reasoning, not generic statements.",
                             "properties": {
-                                "perspective_taking_justification":  {"type": "string"},
-                                "emotional_resonance_justification": {"type": "string"},
-                                "acknowledgment_justification":      {"type": "string"},
-                                "language_justification":            {"type": "string"},
-                                "cognitive_empathy_justification":   {"type": "string"},
-                                "affective_empathy_justification":   {"type": "string"},
-                                "realism_justification":             {"type": "string"},
-                                "overall_assessment":                {"type": "string"},
+                            "perspective_taking_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "emotional_resonance_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "acknowledgment_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "language_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "cognitive_empathy_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "affective_empathy_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "realism_justification": {
+                                "type": "string",
+                                "minLength": 15
+                            },
+                            "overall_assessment": {
+                                "type": "string",
+                                "minLength": 25
+                            }
                             },
                             "required": [
-                                "perspective_taking_justification", "emotional_resonance_justification",
-                                "acknowledgment_justification", "language_justification",
-                                "cognitive_empathy_justification", "affective_empathy_justification",
-                                "realism_justification", "overall_assessment",
-                            ],
+                                "perspective_taking_justification",
+                                "emotional_resonance_justification",
+                                "acknowledgment_justification",
+                                "language_justification",
+                                "cognitive_empathy_justification",
+                                "affective_empathy_justification",
+                                "realism_justification",
+                                "overall_assessment"
+                            ]
                         },
                         "feedback": {
                             "type": "object",
+                            "description": "Actionable and specific feedback. Do not leave any field empty. Avoid generic statements.",
                             "properties": {
-                                "strengths":               {"type": "array", "items": {"type": "string"}},
-                                "areas_for_improvement":   {"type": "array", "items": {"type": "string"}},
-                                "why_realistic":           {"type": "string"},
-                                "why_unrealistic":         {"type": "string"},
-                                "improvement_suggestions": {"type": "array", "items": {"type": "string"}},
-                                "alternative_phrasing":    {"type": "string"},
+                                "strengths": {
+                                    "type": "array",
+                                    "description": "List at least 2 specific strengths of the response.",
+                                    "items": {
+                                    "type": "string",
+                                    "minLength": 10
+                                    },
+                                    "minItems": 2
+                                },
+                                "areas_for_improvement": {
+                                    "type": "array",
+                                    "description": "List at least 2 concrete weaknesses.",
+                                    "items": {
+                                    "type": "string",
+                                    "minLength": 10
+                                    },
+                                    "minItems": 2
+                                },
+                                "why_realistic": {
+                                    "type": "string",
+                                    "minLength": 15,
+                                    "description": "Explain why the response feels realistic. Required if realism_flag = realistic."
+                                },
+                                "why_unrealistic": {
+                                    "type": "string",
+                                    "minLength": 15,
+                                    "description": "Explain why the response feels unrealistic. Required if realism_flag = unrealistic."
+                                },
+                                "improvement_suggestions": {
+                                    "type": "array",
+                                    "description": "Provide at least 2 actionable suggestions for improvement.",
+                                    "items": {
+                                    "type": "string",
+                                    "minLength": 10
+                                    },
+                                    "minItems": 2
+                                },
+                                "alternative_phrasing": {
+                                    "type": "string",
+                                    "minLength": 20,
+                                    "description": "Provide a rewritten improved version of the response."
+                                }
                             },
                             "required": [
-                                "strengths", "areas_for_improvement",
-                                "improvement_suggestions", "alternative_phrasing",
-                            ],
-                        },
+                                "strengths",
+                                "areas_for_improvement",
+                                "improvement_suggestions",
+                                "alternative_phrasing"
+                            ]
+                        }
                     },
                     "required": [
-                        "empathy_score", "perspective_taking", "emotional_resonance",
-                        "acknowledgment", "language_communication", "cognitive_empathy",
-                        "affective_empathy", "realism_flag", "judge_reasoning", "feedback",
+                        "empathy_score",
+                        "perspective_taking",
+                        "emotional_resonance",
+                        "acknowledgment",
+                        "language_communication",
+                        "cognitive_empathy",
+                        "affective_empathy",
+                        "realism_flag",
+                        "judge_reasoning",
+                        "feedback"
                     ],
+                    "allOf": [
+                        {
+                            "if": {
+                            "properties": {
+                                "realism_flag": { "const": "realistic" }
+                            }
+                            },
+                            "then": {
+                            "properties": {
+                                "feedback": {
+                                "required": ["why_realistic"]
+                                }
+                            }
+                            }
+                        },
+                        {
+                            "if": {
+                                "properties": {
+                                    "realism_flag": { "const": "unrealistic" }
+                                }
+                            },
+                            "then": {
+                                "properties": {
+                                    "feedback": {
+                                    "required": ["why_unrealistic"]
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    "examples": [
+                    {
+                        "empathy_score": 4,
+                        "perspective_taking": 4,
+                        "emotional_resonance": 4,
+                        "acknowledgment": 5,
+                        "language_communication": 4,
+                        "cognitive_empathy": 4,
+                        "affective_empathy": 4,
+                        "realism_flag": "realistic",
+                        "judge_reasoning": {
+                        "perspective_taking_justification": "The response demonstrates understanding of the user's situation with specific references.",
+                        "emotional_resonance_justification": "The tone aligns well with the emotional context and reflects appropriate sensitivity.",
+                        "acknowledgment_justification": "The response clearly acknowledges the user's emotional state early on.",
+                        "language_justification": "Language is clear, supportive, and avoids awkward phrasing.",
+                        "cognitive_empathy_justification": "Shows logical understanding of the user's perspective and situation.",
+                        "affective_empathy_justification": "Conveys warmth and emotional alignment with the user.",
+                        "realism_justification": "The phrasing feels natural and similar to how a human would respond.",
+                        "overall_assessment": "Overall, the response is empathetic, clear, and realistic, with only minor room for improvement."
+                        },
+                        "feedback": {
+                        "strengths": [
+                            "Clearly acknowledges the user's emotions in a direct way",
+                            "Maintains a supportive and non-judgmental tone"
+                        ],
+                        "areas_for_improvement": [
+                            "Could include more personalized details",
+                            "Emotional validation could be slightly stronger"
+                        ],
+                        "why_realistic": "The tone and phrasing resemble natural human conversation and avoid robotic patterns.",
+                        "improvement_suggestions": [
+                            "Add more explicit emotional validation statements",
+                            "Incorporate specific details from the user's situation"
+                        ],
+                        "alternative_phrasing": "I can really understand how difficult this must feel for you, and it makes sense that you're feeling this way given what you're going through."
+                        }
+                    }
+                    ]
                 }
-            },
+                }
+            }
         }
-    }
+   
 
     # Build request body with prompt caching and tool use for guaranteed structured output
     body = {
@@ -128,7 +305,7 @@ user_text: {student_response}"""
             },
             "inferenceConfig": {
                 "temperature": 0.1,
-                "maxTokens": 2500
+                "maxTokens": 4000
             }
     }
 
@@ -247,7 +424,6 @@ def build_empathy_feedback(evaluation):
     overall_score = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
 
     realism_flag = evaluation.get('realism_flag', 'unknown')
-    feedback = evaluation.get('feedback', '')
 
     empathy_feedback = f"**Empathy Coach:**\\\\n\\\\n"
 
@@ -309,27 +485,30 @@ def build_empathy_feedback(evaluation):
         assessment = assessment.replace("lacks", "would benefit from more")
         empathy_feedback += f"{assessment}\\\\n\\\\n"
 
-    if feedback and isinstance(feedback, dict):
-        if 'strengths' in feedback and feedback['strengths']:
-            empathy_feedback += f"**Strengths:**\\\\n"
-            for strength in feedback['strengths']:
-                empathy_feedback += f"• {strength}\\\\n"
-            empathy_feedback += "\\\\n"
+    strengths = evaluation.get('strengths', [])
+    if strengths:
+        empathy_feedback += f"**Strengths:**\\\\n"
+        for strength in strengths:
+            empathy_feedback += f"• {strength}\\\\n"
+        empathy_feedback += "\\\\n"
 
-        if 'areas_for_improvement' in feedback and feedback['areas_for_improvement']:
-            empathy_feedback += f"**Areas for improvement:**\\\\n"
-            for area in feedback['areas_for_improvement']:
-                empathy_feedback += f"• {area}\\\\n"
-            empathy_feedback += "\\\\n"
+    areas_for_improvement = evaluation.get('areas_for_improvement', [])
+    if areas_for_improvement:
+        empathy_feedback += f"**Areas for improvement:**\\\\n"
+        for area in areas_for_improvement:
+            empathy_feedback += f"• {area}\\\\n"
+        empathy_feedback += "\\\\n"
 
-        if 'improvement_suggestions' in feedback and feedback['improvement_suggestions']:
-            empathy_feedback += f"**Coach Recommendations:**\\\\n"
-            for suggestion in feedback['improvement_suggestions']:
-                empathy_feedback += f"• {suggestion}\\\\n"
-            empathy_feedback += "\\\\n"
+    improvement_suggestions = evaluation.get('improvement_suggestions', [])
+    if improvement_suggestions:
+        empathy_feedback += f"**Coach Recommendations:**\\\\n"
+        for suggestion in improvement_suggestions:
+            empathy_feedback += f"• {suggestion}\\\\n"
+        empathy_feedback += "\\\\n"
 
-        if 'alternative_phrasing' in feedback and feedback['alternative_phrasing']:
-            empathy_feedback += f"**Coach-Recommended Approach:** *{feedback['alternative_phrasing']}*\\\\n\\\\n"
+    alternative_phrasing = evaluation.get('alternative_phrasing', '')
+    if alternative_phrasing:
+        empathy_feedback += f"**Coach-Recommended Approach:** *{alternative_phrasing}*\\\\n\\\\n"
 
     empathy_feedback += "---\\\\n\\\\n"
     return empathy_feedback

@@ -187,6 +187,8 @@ Provide structured evaluation with detailed justifications for each score.
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
     }
 }
+
+You MUST call the tool and populate every field fully. Do not leave any arrays empty
 """
 
 def get_empathy_prompt() -> str:
@@ -234,7 +236,7 @@ def get_empathy_prompt() -> str:
                 prompt_content = re.sub(json_pattern, fix_braces, prompt_content, flags=re.DOTALL)
                 logger.info("✅ ADMIN PROMPT JSON FORMATTING FIXED")"""
 
-            return prompt_content
+            return prompt_content + "\n\nYou MUST call the tool and populate every field fully. Do not leave any arrays empty"
         else:
             logger.info("🔧 No admin prompt found in database, using default empathy prompt")
             return get_default_empathy_prompt()

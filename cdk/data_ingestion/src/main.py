@@ -21,7 +21,6 @@ EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
 ssm_client = boto3.client("ssm")
-bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")  # Bedrock is currently only available in us-east-1
 
 # Cached resources
 connection = None
@@ -301,11 +300,15 @@ def update_vectorstore_from_s3(bucket, simulation_group_id, patient_id, file_pat
     if connection is None:
         logger.error("Database connection failed. Unable to query embeddings.")
         raise
-    
+
+    model_id = get_parameter()
+    bedrock_region = 'us-east-1' if 'nova' in model_id.lower() else REGION
+    bedrock_runtime = boto3.client("bedrock-runtime", region_name=bedrock_region)
+
     embeddings = BedrockEmbeddings(
-        model_id=get_parameter(), 
+        model_id=model_id,
         client=bedrock_runtime,
-        region_name=REGION
+        region_name=bedrock_region
     )
 
     secret = get_secret()

@@ -93,6 +93,7 @@ def generate_streaming_response(
     empathy_enabled: bool = False,
     llm_completion: bool = False,
     current_session_name: str = "New chat",
+    debug_prompt: str = None,
 ) -> str:
     """
     Streams an answer via AppSync directly (no threading needed with self-invocation pattern).
@@ -111,6 +112,10 @@ def generate_streaming_response(
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
 
         student_message_id = save_message_to_db(session_id, True, query, None)
+
+        # Publish debug prompt event so frontend can log the full prompt
+        if debug_prompt:
+            publish_to_appsync(session_id, {"type": "debug_prompt", "content": debug_prompt})
 
         # Publish start event
         publish_to_appsync(session_id, {"type": "start", "content": ""})
