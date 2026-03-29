@@ -243,7 +243,7 @@ def get_response(
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
     """
-    from .prompts import get_default_system_prompt
+    from .prompts import get_system_prompt
     # Late import to avoid circular dependency
     from .streaming import generate_streaming_response
 
@@ -271,7 +271,7 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    system_prompt = get_default_system_prompt(patient_name)
+    system_prompt = get_system_prompt(patient_name)
 
     final_system_prompt = (
         f"""
