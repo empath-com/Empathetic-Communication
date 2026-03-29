@@ -270,6 +270,15 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             elif env_patient_name:
                 base_prompt = f"You are {env_patient_name}." + base_prompt
         
+        elif self.extra_system_prompt and self.extra_system_prompt.strip():
+            # extra_system_prompt (from frontend system_prompt field) is a full instruction — use it as the base
+            # and clear it so it isn't appended again below
+            base_prompt = self.extra_system_prompt
+            if env_patient_name and "{patient_name}" not in base_prompt:
+                base_prompt = f"You are {env_patient_name}. " + base_prompt
+            self.extra_system_prompt = ""
+            print(f"USING EXTRA SYSTEM PROMPT AS BASE (skipping DB)", flush=True)
+
         else:
             # ok now try database
             try:

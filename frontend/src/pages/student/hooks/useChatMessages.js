@@ -25,7 +25,11 @@ export function normalizeVoiceLine(rawText) {
   const text = (rawText ?? "").trim();
   if (!text) return null;
 
-  if (text.startsWith("[VOICE_TRANSCRIPT]")) return null;
+  if (text.startsWith("[VOICE_TRANSCRIPT]")) {
+    const content = text.replace(/^\[VOICE_TRANSCRIPT\]/, "").trim();
+    if (!content) return null;
+    return { student_sent: true, message_content: content };
+  }
 
   if (text.startsWith("User:")) {
     return { student_sent: true, message_content: text.replace(/^User:\s*/, "").trim() };
@@ -603,11 +607,6 @@ export default function useChatMessages({
             message.message_content.trim() === "introduce yourself briefly" ||
             message.message_content.includes("Begin the conversation as the patient:")
           ) {
-            return;
-          }
-
-          if (message.message_content.trim().startsWith("[VOICE_TRANSCRIPT]")) {
-            console.log("Filtered out the final voice transcript message");
             return;
           }
 

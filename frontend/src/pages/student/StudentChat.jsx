@@ -365,7 +365,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       />
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white min-w-0">
         <ChatTopBar handleSignOut={handleSignOut} />
 
         <ChatMessageArea
@@ -400,7 +400,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           isOpen={isNotesOpen}
           sessionId={session?.session_id}
           onClose={() => setIsNotesOpen(false)}
-          zIndex={showVoiceOverlay ? 3500 : 50}
+          zIndex={50}
         />
       )}
 
@@ -530,8 +530,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Loading screen */}
-      {chatSessions.loading && (
+      {/* Loading screen (not shown when voice panel is handling its own loading state) */}
+      {chatSessions.loading && !showVoiceOverlay && (
         <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm z-[2000] flex flex-col items-center justify-center">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
             <l-mirage size="48" speed="2.5" color="#10b981" />
@@ -545,105 +545,95 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         </div>
       )}
 
-      {/* Voice Overlay */}
+      {/* Voice Side Panel */}
       {showVoiceOverlay && (
-        <>
-          <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
-            {/* Loading state while mic initializes */}
-            {chatSessions.loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-[3002]">
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
-                  <l-mirage size="48" speed="2.5" color="#10b981" />
-                  <div className="text-center">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                      Preparing microphone...
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      Setting up voice stream
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="text-center">
-              <div className="relative z-[3001] w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-lg">
-                {profilePicture ? (
-                  <img
-                    src={profilePicture}
-                    alt={patient?.patient_name}
-                    className="relative z-[3001] w-32 h-32 object-cover"
-                    onError={() => setProfilePicture(null)}
-                  />
-                ) : (
-                  <MicIcon className="relative z-[3001] w-16 h-16 text-emerald-600" />
-                )}
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Voice Mode Active
-              </h3>
-              <p className="text-gray-600 mb-8">
-                Speak naturally to interact with the AI patient
-              </p>
-
-              {/* Animated voice waves */}
-              <div className="flex justify-center space-x-1 mb-8">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 bg-emerald-500 rounded-full animate-pulse"
-                    style={{
-                      height: Math.random() * 30 + 20 + "px",
-                      animationDelay: i * 0.1 + "s",
-                      opacity: chatSessions.loading ? 0.5 : 1,
-                    }}
-                  />
-                ))}
-              </div>
+        <div className="w-72 flex-shrink-0 flex flex-col bg-white border-l border-gray-200">
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <MicIcon className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-semibold text-gray-800">Voice Mode</span>
             </div>
-
-            {/* Visualizer canvas */}
-            <canvas
-              id="audio-visualizer"
-              width={window.innerWidth}
-              height={window.innerHeight}
-              className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
-            />
-
-            {/* Bottom control island */}
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3003] bg-white/90 backdrop-blur-md border border-gray-200 shadow-lg rounded-full px-3 py-2 flex items-center space-x-3">
-              <button
-                onClick={() => {
-                  chatMessages.allowAudioRef.current = false;
-                  chatMessages.getMessages();
-                  stopAudioPlayback();
-                  stopSpokenLLM();
-                  setIsRecording(false);
-                  setShowVoiceOverlay(false);
-                  chatSessions.setLoading(false);
-                }}
-                aria-label="Close voice overlay"
-                className="w-12 h-12 rounded-full bg-[#ff6666] hover:bg-[#c74545] flex items-center justify-center shadow-md"
-              >
-                <CloseIcon className="w-6 h-6 text-white" />
-              </button>
-
-              <button
-                onClick={() => setIsNotesOpen((prev) => !prev)}
-                aria-label={isNotesOpen ? "Close notes" : "Open notes"}
-                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${
-                  isNotesOpen
-                    ? "bg-emerald-100 border-emerald-400"
-                    : "bg-white hover:bg-gray-50 border-gray-200"
-                }`}
-              >
-                <EditNoteIcon
-                  className={`w-6 h-6 ${isNotesOpen ? "text-emerald-600" : "text-gray-700"}`}
-                />
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                chatMessages.allowAudioRef.current = false;
+                chatMessages.getMessages();
+                stopAudioPlayback();
+                stopSpokenLLM();
+                setIsRecording(false);
+                setShowVoiceOverlay(false);
+                chatSessions.setLoading(false);
+              }}
+              aria-label="Close voice panel"
+              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center transition-colors duration-200"
+            >
+              <CloseIcon className="w-4 h-4 text-red-600" />
+            </button>
           </div>
-        </>
+
+          {/* Panel body */}
+          <div className="flex-1 flex flex-col items-center justify-center px-4 py-6 space-y-5">
+            {/* Loading state while mic initializes */}
+            {chatSessions.loading ? (
+              <div className="flex flex-col items-center space-y-3">
+                <l-mirage size="36" speed="2.5" color="#10b981" />
+                <p className="text-sm text-gray-500 text-center">Preparing microphone...</p>
+              </div>
+            ) : (
+              <>
+                {/* Profile picture */}
+                <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center overflow-hidden shadow-md">
+                  {profilePicture ? (
+                    <img
+                      src={profilePicture}
+                      alt={patient?.patient_name}
+                      className="w-24 h-24 object-cover"
+                      onError={() => setProfilePicture(null)}
+                    />
+                  ) : (
+                    <MicIcon className="w-12 h-12 text-emerald-600" />
+                  )}
+                </div>
+
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-800">Voice Mode Active</p>
+                  <p className="text-xs text-gray-500 mt-1">Speak naturally to the AI patient</p>
+                </div>
+
+                {/* Animated voice waves */}
+                <div className="flex justify-center items-end space-x-1 h-10">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-1.5 bg-emerald-500 rounded-full animate-pulse"
+                      style={{
+                        height: [24, 32, 40, 28, 20][i] + "px",
+                        animationDelay: i * 0.1 + "s",
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {/* Notes button */}
+                <button
+                  onClick={() => setIsNotesOpen((prev) => !prev)}
+                  aria-label={isNotesOpen ? "Close notes" : "Open notes"}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg border text-sm transition-colors duration-200 ${
+                    isNotesOpen
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                      : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <EditNoteIcon className="w-4 h-4" />
+                  <span>{isNotesOpen ? "Close Notes" : "Open Notes"}</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Visualizer canvas (hidden but keeps audio context working) */}
+          <canvas id="audio-visualizer" width={1} height={1} className="hidden" />
+        </div>
       )}
     </div>
   );

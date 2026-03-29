@@ -43,12 +43,14 @@ class VoiceConnectionManager:
         self._secret_version = None
         self._last_health_check = 0
         self._health_check_interval = 300  # 5 minutes
-        
+        self._pool_failed_at = None       # Timestamp of last pool creation failure
+        self._pool_retry_cooldown = 60    # Seconds to wait before retrying after failure
+
         # Optimized settings for voice workloads with RDS Proxy
         # Increased pool size to prevent text generation blocking on voice empathy
-        self.min_connections = 3          # Minimum connections for stability
+        self.min_connections = 1          # Reduced to 1 to shorten timeout on failure
         self.max_connections = 20         # Increased from 10 to handle concurrent voice + text pipelines
-        self.connection_timeout = 30      # Prevent hanging
+        self.connection_timeout = 10      # Reduced from 30s to fail faster
         self.idle_timeout = 300          # 5 min cleanup
         
         logger.info("🔗 VOICE_DB_MANAGER: Initializing voice connection manager")
@@ -141,6 +143,7 @@ class VoiceConnectionManager:
             
         except Exception as e:
             logger.error(f"❌ VOICE_POOL_CREATION_ERROR: {e}")
+            self._pool_failed_at = time.time()
             raise
 
     def _health_check(self):
@@ -174,6 +177,14 @@ class VoiceConnectionManager:
     def get_connection(self):
         """Get connection from pool (non-context manager for compatibility)"""
         if self._pool is None:
+            if self._pool_failed_at is not None:
+                elapsed = time.time() - self._pool_failed_at
+                if elapsed < self._pool_retry_cooldown:
+                    raise Exception(
+                        f"DB pool creation failed {elapsed:.0f}s ago, retrying in {self._pool_retry_cooldown - elapsed:.0f}s"
+                    )
+                # Cooldown expired — clear the failure timestamp and retry
+                self._pool_failed_at = None
             self._create_pool()
         
         self._health_check()
