@@ -635,8 +635,18 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             )}
           </div>
 
-          {/* Visualizer canvas (hidden but keeps audio context working) */}
-          <canvas id="audio-visualizer" width={1} height={1} className="hidden" />
+          {/* Visualizer canvas (visible during voice mode for diagnostics) */}
+          <canvas 
+            id="audio-visualizer" 
+            width={300} 
+            height={300} 
+            className={`rounded-lg border-2 transition-all ${
+              isRecording 
+                ? "border-emerald-400 bg-gray-900 opacity-100" 
+                : "border-transparent bg-transparent opacity-0 pointer-events-none"
+            }`}
+            style={{ maxWidth: "100%", margin: "8px 0" }}
+          />
         </div>
       )}
     </div>

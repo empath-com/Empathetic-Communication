@@ -20,10 +20,22 @@ let currentSource = null; // AudioBufferSourceNode currently playing
 export function initPlaybackContext() {
   if (!playbackCtx || playbackCtx.state === "closed") {
     playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    console.log("🔊 Created new playback AudioContext", {
+      state: playbackCtx.state,
+      sampleRate: playbackCtx.sampleRate,
+      outputChannels: playbackCtx.destination?.maxChannelCount,
+    });
   }
   // Resume immediately while we're inside the user-gesture stack frame.
   if (playbackCtx.state === "suspended") {
-    playbackCtx.resume().catch(() => {});
+    console.log("⏸️  AudioContext suspended, attempting resume...");
+    playbackCtx.resume().then(() => {
+      console.log("✅ AudioContext resumed successfully", { state: playbackCtx.state });
+    }).catch((e) => {
+      console.error("❌ Failed to resume AudioContext:", e);
+    });
+  } else {
+    console.log("✅ AudioContext already running", { state: playbackCtx.state });
   }
 }
 
@@ -225,19 +237,26 @@ export function playAudio(audioBytes) {
     }
 
     audioBuffer.push(audioBytes);
-    console.log("🔊 Buffered chunk", audioBuffer.length);
+    console.log("🔊 Buffered audio chunk", {
+      chunkSize: audioBytes.length,
+      totalBuffered: audioBuffer.length,
+      isPlaying,
+    });
 
     if (bufferTimeout) clearTimeout(bufferTimeout);
 
     if (!isPlaying) {
-      bufferTimeout = setTimeout(playBufferedAudio, 300);
       if (audioBuffer.length >= 5) {
+        console.log("⚡ Buffered 5+ chunks, playing immediately...");
         clearTimeout(bufferTimeout);
         playBufferedAudio();
+      } else {
+        console.log("⏳ Waiting for more chunks or timeout (300ms)...");
+        bufferTimeout = setTimeout(playBufferedAudio, 300);
       }
     }
   } catch (error) {
-    console.error("🔊 Audio processing failed:", error);
+    console.error("❌ Audio processing failed:", error);
   }
 }
 
@@ -246,6 +265,7 @@ async function playBufferedAudio() {
   isPlaying = true;
 
   try {
+    console.log("🎵 Starting playback of buffered audio chunks...", { chunkCount: audioBuffer.length });
     // ── Decode base64 chunks → raw PCM bytes ──────────────────────────────
     let totalLength = 0;
     const byteArrays = audioBuffer.map((chunk) => {
@@ -256,6 +276,7 @@ async function playBufferedAudio() {
       return bytes;
     });
     audioBuffer = [];
+    console.log("✅ Decoded base64 chunks to PCM bytes", { totalBytes: totalLength });
 
     const pcm = new Uint8Array(totalLength);
     let off = 0;
@@ -287,23 +308,48 @@ async function playBufferedAudio() {
     // ── Get (or create) the shared playback context ────────────────────────
     if (!playbackCtx || playbackCtx.state === "closed") {
       playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      console.log("🔊 Created new playback context for audio");
     }
     if (playbackCtx.state === "suspended") {
+      console.log("⏸️  Resuming suspended AudioContext...");
       await playbackCtx.resume();
+      console.log("✅ AudioContext resumed", { state: playbackCtx.state });
     }
 
-    // ── Decode WAV → AudioBuffer ──────────────────────────────────────────
-    const decoded = await playbackCtx.decodeAudioData(wav);
+    console.log("📊 AudioContext ready", {
+      state: playbackCtx.state,
+      sampleRate: playbackCtx.sampleRate,
+      destinationChannels: playbackCtx.destination?.maxChannelCount,
+    });
 
-    // ── Wire: source → analyser → destination ─────────────────────────────
+    // ── Decode WAV → AudioBuffer ──────────────────────────────────────────
+    console.log("🔄 Decoding WAV audio data...");
+    const decoded = await playbackCtx.decodeAudioData(wav);
+    console.log("✅ WAV decoded", { duration: decoded.duration, channels: decoded.numberOfChannels });
+
+    // ── Wire: source → analyser → gain → destination ──────────────────────
     analyser = playbackCtx.createAnalyser();
     analyser.fftSize = 2048;
     dataArray = new Uint8Array(analyser.fftSize);
 
+    // Create gain node for explicit volume control
+    const gainNode = playbackCtx.createGain();
+    gainNode.gain.value = 1.0;
+    console.log("🔉 Created gain node", { gain: gainNode.gain.value });
+
     const source = playbackCtx.createBufferSource();
     source.buffer = decoded;
+    
+    console.log("🔗 Wiring audio components...");
     source.connect(analyser);
-    analyser.connect(playbackCtx.destination);
+    analyser.connect(gainNode);
+    gainNode.connect(playbackCtx.destination);
+    console.log("✅ Audio chain connected: source → analyser → gain → destination");
+
+    console.log("📊 Destination info", {
+      maxChannelCount: playbackCtx.destination?.maxChannelCount,
+      numberOfInputs: playbackCtx.destination?.numberOfInputs,
+    });
 
     currentSource = source;
     startWaveformVisualizer(analyser.fftSize);
@@ -311,18 +357,33 @@ async function playBufferedAudio() {
     source.onended = () => {
       currentSource = null;
       isPlaying = false;
+      console.log("⏹️  Audio source finished playing");
       if (audioBuffer.length > 0) setTimeout(playBufferedAudio, 50);
     };
 
+    console.log("▶️  Starting audio playback...");
     source.start(0);
+    console.log("✅ Source.start() called successfully");
   } catch (error) {
-    console.error("🔊 Playback failed:", error);
+    console.error("❌ Playback failed:", error, {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
     isPlaying = false;
     audioBuffer = [];
+    
+    // Diagnostic info
+    console.log("🔍 Audio system diagnostics:", {
+      contextState: playbackCtx?.state,
+      destinationChannels: playbackCtx?.destination?.maxChannelCount,
+      hasAudioOutputDevice: playbackCtx?.destination?.maxChannelCount > 0,
+    });
   }
 }
 
 function startWaveformVisualizer(bufferLength) {
+  console.log("🎨 Starting waveform visualizer with buffer length:", bufferLength);
   const canvas = document.getElementById("audio-visualizer");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -371,4 +432,5 @@ function startWaveformVisualizer(bufferLength) {
   }
 
   draw();
+  console.log("🎵 Waveform visualizer active");
 }

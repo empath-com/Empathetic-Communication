@@ -48,9 +48,10 @@ async def queue_empathy_evaluation(evaluation_coro):
     semaphore = await get_empathy_semaphore()
     async with semaphore:
         try:
-            return await asyncio.wait_for(evaluation_coro, timeout=5.0)
+            # 120 s outer guard — inner _invoke already has 45 s per attempt (primary + fallback)
+            return await asyncio.wait_for(evaluation_coro, timeout=120.0)
         except asyncio.TimeoutError:
-            print(f"⏱️ EMPATHY TIMEOUT: Evaluation exceeded 5 seconds, skipping", flush=True)
+            print(f"⏱️ EMPATHY TIMEOUT: Evaluation exceeded 120 seconds, skipping", flush=True)
             logger.warning("Empathy evaluation timeout - took too long")
             return None
         except Exception as e:
@@ -969,70 +970,40 @@ Provide structured evaluation with detailed justifications for each score.
                 }
             }
             
-            # ⏱️ TIMEOUT PROTECTION: Prevent Bedrock API from blocking text generation
-            try:
-                # Wrap the blocking bedrock call in a timeout (5 seconds max)
-                loop = asyncio.get_running_loop()
-                response = await asyncio.wait_for(
+            # Empathy evaluation runs as a background async task so a generous
+            # timeout is fine — it won't block voice generation.
+            # 45 s primary + 45 s fallback; cold prompt-cache misses can be slow.
+            EMPATHY_TIMEOUT = 45.0
+            loop = asyncio.get_running_loop()
+
+            async def _invoke(client):
+                return await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        lambda: bedrock_client.invoke_model(
+                        lambda: client.invoke_model(
                             modelId="amazon.nova-pro-v1:0",
                             contentType="application/json",
                             accept="application/json",
                             body=json.dumps(body)
                         )
                     ),
-                    timeout=5.0
+                    timeout=EMPATHY_TIMEOUT
                 )
+
+            try:
+                response = await _invoke(bedrock_client)
                 logger.info("✅ VOICE: BEDROCK MODEL CALL SUCCESSFUL")
-            except asyncio.TimeoutError:
-                logger.warning(f"⏱️ VOICE: Bedrock API call exceeded 5 second timeout - trying fallback region")
+            except (asyncio.TimeoutError, Exception) as primary_error:
+                logger.warning(f"⏱️ VOICE: Primary Bedrock call failed ({primary_error}), trying us-east-1 fallback")
                 try:
                     fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                    loop = asyncio.get_running_loop()
-                    response = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None,
-                            lambda: fallback_client.invoke_model(
-                                modelId="amazon.nova-pro-v1:0",
-                                contentType="application/json",
-                                accept="application/json",
-                                body=json.dumps(body)
-                            )
-                        ),
-                        timeout=5.0
-                    )
+                    response = await _invoke(fallback_client)
                     logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
                 except asyncio.TimeoutError:
-                    logger.error(f"⏱️ VOICE: Bedrock API still timing out - aborting empathy evaluation to free resources")
-                    return None
-                except Exception as model_error:
-                    logger.warning(f"VOICE: Nova Pro fallback failed: {model_error}")
-                    return None
-            except Exception as model_error:
-                logger.warning(f"VOICE: Nova Pro failed in deployment region, trying fallback: {model_error}")
-                try:
-                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                    loop = asyncio.get_running_loop()
-                    response = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None,
-                            lambda: fallback_client.invoke_model(
-                                modelId="amazon.nova-pro-v1:0",
-                                contentType="application/json",
-                                accept="application/json",
-                                body=json.dumps(body)
-                            )
-                        ),
-                        timeout=5.0
-                    )
-                    logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
-                except asyncio.TimeoutError:
-                    logger.error(f"⏱️ VOICE: Bedrock API fallback also timing out - aborting")
+                    logger.error("⏱️ VOICE: Bedrock fallback also timed out - aborting empathy evaluation")
                     return None
                 except Exception as fallback_error:
-                    logger.error(f"VOICE: Bedrock fallback also failed: {fallback_error}")
+                    logger.error(f"VOICE: Bedrock fallback failed: {fallback_error}")
                     return None
             
             result = json.loads(response["body"].read())
