@@ -666,13 +666,37 @@ export default function useChatMessages({
         const normalized = normalizeVoiceLine(data.text);
         if (!normalized) return;
 
-        const newMsg = {
-          message_id: `voice_${Date.now()}`,
-          student_sent: normalized.hasOwnProperty("student_sent") ? normalized.student_sent : false,
-          message_content: normalized.message_content,
-          time_sent: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, newMsg]);
+        const isStudent = normalized.hasOwnProperty("student_sent")
+          ? normalized.student_sent
+          : false;
+
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          // Merge consecutive AI voice messages: if the last message is also an
+          // AI voice turn (no student message in between), append rather than
+          // creating a new bubble.
+          if (
+            !isStudent &&
+            last &&
+            last.student_sent === false &&
+            typeof last.message_id === "string" &&
+            last.message_id.startsWith("voice_")
+          ) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, message_content: last.message_content + " " + normalized.message_content },
+            ];
+          }
+          return [
+            ...prev,
+            {
+              message_id: `voice_${Date.now()}`,
+              student_sent: isStudent,
+              message_content: normalized.message_content,
+              time_sent: new Date().toISOString(),
+            },
+          ];
+        });
       };
 
       const handleEmpathyFeedback = (data) => {
