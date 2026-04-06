@@ -189,13 +189,20 @@ export class EcsSocketStack extends Stack {
       maxHealthyPercent: 200,
     });
 
-    // Allow ECS socket server tasks to reach RDS and the RDS Proxy on port 5432.
-    // Using SG-to-SG rule avoids hardcoded CIDR assumptions about the VPC range.
-    db.dbInstance.connections.allowFrom(
-      service,
-      ec2.Port.tcp(5432),
-      "Allow ECS socket server to connect to RDS Proxy"
-    );
+    // Grant the ECS socket service access to the RDS Proxy on port 5432.
+    //
+    // We use a standalone CfnSecurityGroupIngress placed IN THIS STACK so that:
+    //   • The resource references db.rdsSecurityGroupId (EcsSocket → Database, existing)
+    //   • Nothing is added to DatabaseStack's template (no Database → EcsSocket edge)
+    //   • CDK's Connections/allowFrom machinery is bypassed — it would inline the
+    //     ingress rule into the RDS SG's owning stack, creating the reverse dependency.
+    new ec2.CfnSecurityGroupIngress(this, "EcsToRdsIngress", {
+      groupId: db.rdsSecurityGroupId,
+      ipProtocol: "tcp",
+      fromPort: 5432,
+      toPort: 5432,
+      sourceSecurityGroupId: service.connections.securityGroups[0].securityGroupId,
+    });
 
     // Auto-scaling configuration
     // minCapacity is 0 to allow scheduled scale-to-zero during off-hours.

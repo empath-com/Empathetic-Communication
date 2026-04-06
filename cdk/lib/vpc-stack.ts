@@ -472,5 +472,6 @@ export class VpcStack extends Stack {
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
     }
+
   }
 }

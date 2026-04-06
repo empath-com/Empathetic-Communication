@@ -21,6 +21,9 @@ export class DatabaseStack extends Stack {
     public readonly secretPathTableCreator: secretsmanager.Secret;
     public readonly rdsProxyEndpoint: string;
     public readonly lambdaSecurityGroup: ec2.SecurityGroup;
+    // Exposed so EcsSocketStack can create a CfnSecurityGroupIngress in its own
+    // template (no reverse dependency created — only EcsSocket → Database).
+    public readonly rdsSecurityGroupId: string;
     // Removed: rdsProxyEndpointTableCreator, rdsProxyEndpointAdmin - using single proxy
 
     constructor(scope: Construct, id: string, vpcStack: VpcStack, idleMode: boolean = false, props?: StackProps) {
@@ -152,6 +155,11 @@ export class DatabaseStack extends Stack {
             ec2.Port.tcp(5432),
             'Allow Lambda to connect to RDS on port 5432'
         );
+
+        // Expose RDS SG ID so EcsSocketStack can add its own CfnSecurityGroupIngress
+        // rule entirely within its own template — no reverse dependency created.
+        this.rdsSecurityGroupId = this.dbInstance.connections.securityGroups[0].securityGroupId;
+
 
         /**
          * Create IAM role for RDS Proxy
