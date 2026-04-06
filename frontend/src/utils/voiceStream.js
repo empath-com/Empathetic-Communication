@@ -39,23 +39,33 @@ export async function startSpokenLLM(
     novaStarted = true;
 
     // Set a small delay to ensure the start-audio is processed
-    setTimeout(() => {
-      const bufferSize = 2048;  // Reduced buffer size for lower latency
+    setTimeout(async () => {
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000,
       });
+
+      try {
+        await audioContext.audioWorklet.addModule("/pcm-processor.js");
+      } catch (err) {
+        console.error("🎤 Failed to load AudioWorklet module:", err);
+        setLoading(false);
+        return;
+      }
 
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
           globalStream = stream;
           input = audioContext.createMediaStreamSource(stream);
-          processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+          processor = new AudioWorkletNode(audioContext, "pcm-processor");
 
-          processor.onaudioprocess = (e) => {
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = convertFloat32ToInt16(inputData);
-            const base64 = btoa(String.fromCharCode.apply(null, pcmData));
+          processor.port.onmessage = (e) => {
+            const pcmData = e.data; // Uint8Array
+            let binary = "";
+            for (let i = 0; i < pcmData.length; i++) {
+              binary += String.fromCharCode(pcmData[i]);
+            }
+            const base64 = btoa(binary);
             socket.emit("audio-input", { data: base64 });
           };
 
@@ -300,7 +310,7 @@ export function playAudio(audioBytes) {
   }
 }
 
-function playBufferedAudio() {
+async function playBufferedAudio() {
   if (audioBuffer.length === 0 || isPlaying) return;
 
   isPlaying = true;
@@ -359,6 +369,10 @@ function playBufferedAudio() {
     audio.volume = 1.0;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Browsers start AudioContext suspended — resume before routing audio through it
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
     const source = audioCtx.createMediaElementSource(audio);
 
     analyser = audioCtx.createAnalyser();
@@ -383,6 +397,7 @@ function playBufferedAudio() {
 
     audio.onended = () => {
       URL.revokeObjectURL(audio.src);
+      audioCtx.close();
       isPlaying = false;
 
       if (audioBuffer.length >= 3) {
@@ -400,6 +415,7 @@ function playBufferedAudio() {
     audio.play().catch((err) => {
       console.error("🔊 Failed to play audio:", err);
       isPlaying = false;
+      audioCtx.close();
     });
   } catch (error) {
     console.error("🔊 Audio buffer processing failed:", error);

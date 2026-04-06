@@ -276,14 +276,22 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+  // Shared voice-stop: waits for the final AI response (stopSpokenLLM is async),
+  // then reloads messages so the DB-persisted voice turns appear in the chat.
+  const handleVoiceStop = async () => {
+    chatMessages.allowAudioRef.current = false;
+    stopAudioPlayback();
+    setIsRecording(false);
+    setShowVoiceOverlay(false);
+    chatSessions.setLoading(false);
+    await stopSpokenLLM();
+    // Give the server's async DB writes a moment to land before reloading
+    setTimeout(() => chatMessages.getMessages(), 2000);
+  };
+
   const handleVoiceToggle = () => {
     if (isRecording) {
-      chatMessages.allowAudioRef.current = false;
-      stopAudioPlayback();
-      stopSpokenLLM();
-      setIsRecording(false);
-      setShowVoiceOverlay(false);
-      chatSessions.setLoading(false);
+      handleVoiceStop();
     } else {
       chatMessages.allowAudioRef.current = true;
       setShowVoiceOverlay(true);
@@ -555,15 +563,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               <span className="text-sm font-semibold text-gray-800">Voice Mode</span>
             </div>
             <button
-              onClick={() => {
-                chatMessages.allowAudioRef.current = false;
-                chatMessages.getMessages();
-                stopAudioPlayback();
-                stopSpokenLLM();
-                setIsRecording(false);
-                setShowVoiceOverlay(false);
-                chatSessions.setLoading(false);
-              }}
+              onClick={handleVoiceStop}
               aria-label="Close voice panel"
               className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center transition-colors duration-200"
             >

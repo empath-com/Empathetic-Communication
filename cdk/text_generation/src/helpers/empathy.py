@@ -305,7 +305,7 @@ user_text: {student_response}"""
             },
             "inferenceConfig": {
                 "temperature": 0.1,
-                "maxTokens": 4000
+                "maxTokens": 10000
             }
     }
 
@@ -485,28 +485,29 @@ def build_empathy_feedback(evaluation):
         assessment = assessment.replace("lacks", "would benefit from more")
         empathy_feedback += f"{assessment}\\\\n\\\\n"
 
-    strengths = evaluation.get('strengths', [])
+    feedback = evaluation.get('feedback', {}) or {}
+    strengths = feedback.get('strengths', [])
     if strengths:
         empathy_feedback += f"**Strengths:**\\\\n"
         for strength in strengths:
             empathy_feedback += f"• {strength}\\\\n"
         empathy_feedback += "\\\\n"
 
-    areas_for_improvement = evaluation.get('areas_for_improvement', [])
+    areas_for_improvement = feedback.get('areas_for_improvement', [])
     if areas_for_improvement:
         empathy_feedback += f"**Areas for improvement:**\\\\n"
         for area in areas_for_improvement:
             empathy_feedback += f"• {area}\\\\n"
         empathy_feedback += "\\\\n"
 
-    improvement_suggestions = evaluation.get('improvement_suggestions', [])
+    improvement_suggestions = feedback.get('improvement_suggestions', [])
     if improvement_suggestions:
         empathy_feedback += f"**Coach Recommendations:**\\\\n"
         for suggestion in improvement_suggestions:
             empathy_feedback += f"• {suggestion}\\\\n"
         empathy_feedback += "\\\\n"
 
-    alternative_phrasing = evaluation.get('alternative_phrasing', '')
+    alternative_phrasing = feedback.get('alternative_phrasing', '')
     if alternative_phrasing:
         empathy_feedback += f"**Coach-Recommended Approach:** *{alternative_phrasing}*\\\\n\\\\n"
 
@@ -542,8 +543,13 @@ def handle_empathy_evaluation(
                 "body": json.dumps({"error": "No conversation history found for this session"})
             }
 
-        # Build conversation context
-        conversation_context = build_conversation_context(messages)
+        # Build conversation context, filtering out SESSION COMPLETED signals
+        # so the empathy evaluator isn't confused by the session-end marker
+        context_messages = [
+            msg for msg in messages
+            if msg.get("student_sent") or "SESSION COMPLETED" not in msg.get("message_content", "")
+        ]
+        conversation_context = build_conversation_context(context_messages)
 
         # If no specific message provided, use the latest student message
         if not message_content:

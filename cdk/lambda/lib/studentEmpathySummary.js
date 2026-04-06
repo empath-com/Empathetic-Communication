@@ -299,8 +299,13 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       }
     });
     
-    // Collect feedback data from recent evaluations only (top 3)
-    recentEmpathyData.forEach((row, index) => {
+    // Collect feedback data from recent evaluations (top 3), falling back to all
+    // evaluations if the most recent ones don't have populated feedback fields.
+    const feedbackSource = recentEmpathyData.some(
+      (row) => row.empathy_evaluation?.feedback && typeof row.empathy_evaluation.feedback === "object"
+    ) ? recentEmpathyData : allEmpathyData;
+
+    feedbackSource.forEach((row, index) => {
       const evaluation = row.empathy_evaluation;
       if (evaluation && typeof evaluation === "object" && evaluation.feedback) {
         if (typeof evaluation.feedback === "object") {
