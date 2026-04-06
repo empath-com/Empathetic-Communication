@@ -663,6 +663,7 @@ export default function useChatMessages({
       if (!socket.connected) socket.connect();
 
       const handleAudio = (data) => {
+        console.log("📡 audio-chunk received", { hasData: !!data?.data, allowAudio: allowAudioRef.current });
         if (!allowAudioRef.current || !data.data) return;
         playAudio(data.data);
       };

@@ -6,7 +6,12 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 let socket = null;
 
 export async function getSocket() {
-  if (socket?.connected) return socket;
+  if (socket) {
+    // Reuse the existing socket instance even if temporarily disconnected;
+    // creating a new one would orphan any listeners registered on the old one.
+    if (!socket.connected) socket.connect();
+    return socket;
+  }
   
   const session = await fetchAuthSession();
   const token = session.tokens?.idToken?.toString();
