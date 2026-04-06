@@ -55,6 +55,12 @@ export function filterUnwantedMessages(messagesArray) {
 
     if ((m.message_content || "").includes("Begin the conversation as the patient")) continue;
 
+    // The backend saves a [VOICE_TRANSCRIPT] message that concatenates all user
+    // speech for the whole session into one blob (used for empathy evaluation).
+    // The individual per-turn user messages are already stored separately, so
+    // skip this combined record to avoid a duplicate wall-of-text at the end.
+    if ((m.message_content || "").startsWith("[VOICE_TRANSCRIPT]")) continue;
+
     out.push({
       ...m,
       student_sent: n.hasOwnProperty("student_sent") ? n.student_sent : m.student_sent,
