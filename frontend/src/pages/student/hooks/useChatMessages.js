@@ -721,6 +721,12 @@ export default function useChatMessages({
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
 
+      // Debug: log ALL incoming socket events to confirm the correct socket is receiving them
+      socket.offAny();
+      socket.onAny((event, ...args) => {
+        console.log("🔌 SOCKET EVENT:", event, args.length > 0 ? args[0] : "");
+      });
+
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
