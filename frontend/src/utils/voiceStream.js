@@ -2,7 +2,7 @@
 
 import { getSocket } from "./socket";
 
-let audioContext;
+let audioContext;  // mic capture context (16 kHz)
 let processor;
 let input;
 let globalStream;
@@ -10,11 +10,22 @@ let novaStarted = false;
 let analyser;
 let dataArray;
 let animationId;
-let novaStartListenerAttached = false;
 
-// Track last playback to allow immediate stop
-let lastAudio = null;
-let lastAudioCtx = null;
+// Shared playback AudioContext — created once during a user gesture so Chrome's
+// autoplay policy never suspends it when we later call source.start() in a timer.
+let playbackCtx = null;
+let currentSource = null; // AudioBufferSourceNode currently playing
+
+// ─── Called from StudentChat during the voice-toggle click (user gesture) ─────
+export function initPlaybackContext() {
+  if (!playbackCtx || playbackCtx.state === "closed") {
+    playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  // Resume immediately while we're inside the user-gesture stack frame.
+  if (playbackCtx.state === "suspended") {
+    playbackCtx.resume().catch(() => {});
+  }
+}
 
 export async function startSpokenLLM(
   voice_id = "matthew",
@@ -32,13 +43,11 @@ export async function startSpokenLLM(
   // Clean up any existing listeners to prevent duplicates
   socket.off("nova-started");
 
-  // Use once instead of on to ensure the handler runs only once
   socket.once("nova-started", () => {
     if (novaStarted) return;
     console.log("✅ Nova backend ready!");
     novaStarted = true;
 
-    // Set a small delay to ensure the start-audio is processed
     setTimeout(async () => {
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000,
@@ -78,7 +87,7 @@ export async function startSpokenLLM(
           setLoading(false);
           console.error("🎤 Microphone access denied:", err);
         });
-    }, 200);  // Reduced startup delay
+    }, 200);
   });
 
   if (!socket.connected) {
@@ -94,9 +103,8 @@ export async function startSpokenLLM(
 
   console.log("🚀 Requesting Nova Sonic startup with patient context");
   socket.emit("start-nova-sonic", {
-    voice_id: voice_id,
+    voice_id,
     session_id: session_id || "default",
-    // pass patient context through to server.js -> nova_sonic.py
     patient_name,
     patient_prompt,
     llm_completion: !!llm_completion,
@@ -109,38 +117,23 @@ export async function stopSpokenLLM(waitForResponse = true) {
 
   const socket = await getSocket();
 
-  // Stop sending audio, but keep listening for response
   if (processor) {
-    try {
-      processor.disconnect();
-      console.log("✅ Processor disconnected");
-    } catch (e) {
-      console.error("❌ Error disconnecting processor:", e);
-    }
+    try { processor.disconnect(); } catch (e) { console.error("❌", e); }
     processor = null;
   }
 
   if (input) {
-    try {
-      input.disconnect();
-      console.log("✅ Input disconnected");
-    } catch (e) {
-      console.error("❌ Error disconnecting input:", e);
-    }
+    try { input.disconnect(); } catch (e) { console.error("❌", e); }
     input = null;
   }
 
-  // sending end-audio to trigger AI response
   console.log("Sending end-audio to trigger AI response...");
   socket.emit("end-audio");
 
   if (waitForResponse) {
-    console.log("WAITING FOR AI RESPONSE...");
-
-    // waiting for the response or timeout after 10 seconds
     await new Promise((resolve) => {
       let resolved = false;
-      let receivedResponse = false;  // to track if ANY response received
+      let receivedResponse = false;
       let responseTimer = null;
 
       const cleanup = () => {
@@ -153,126 +146,73 @@ export async function stopSpokenLLM(waitForResponse = true) {
         }
       };
 
-      const onAudioChunk = (data) => {
-        console.log("received audio response");
+      const onAudioChunk = () => {
         receivedResponse = true;
-
-        // once we get a response, wait for playback to finish
-        if (responseTimer) {
-          clearTimeout(responseTimer);
-        }
+        if (responseTimer) clearTimeout(responseTimer);
         responseTimer = setTimeout(() => {
-          if (!isPlaying && audioBuffer.length === 0) {
-            console.log("Audio playback completed");
-            cleanup();
-          }
+          if (!isPlaying && audioBuffer.length === 0) cleanup();
         }, 7000);
       };
 
       const onTextMessage = (data) => {
         console.log("received text response:", data.text?.substring(0, 50));
         receivedResponse = true;
-
-        // text response received, wait a bit then cleanup
-        if (responseTimer) {
-          clearTimeout(responseTimer);
-        }
-        responseTimer = setTimeout(() => {
-          console.log("Text response processed");
-          cleanup();
-        }, 1000);
+        if (responseTimer) clearTimeout(responseTimer);
+        responseTimer = setTimeout(cleanup, 1000);
       };
 
-      // listen for responses
       socket.on("audio-chunk", onAudioChunk);
       socket.on("text-message", onTextMessage);
 
-      // timeout after 10 seconds
       setTimeout(() => {
-        if (!receivedResponse) {
-          console.warn("⚠️ No response received within 10 seconds");
-        }
+        if (!receivedResponse) console.warn("⚠️ No response within 10 seconds");
         cleanup();
       }, 10000);
     });
   }
 
-  // now it's safe to clean up the rest
   if (globalStream) {
-    try {
-      globalStream.getTracks().forEach((track) => {
-        track.stop();
-        console.log("✅ Audio track stopped");
-      });
-    } catch (e) {
-      console.error("❌ Error stopping audio tracks:", e);
-    }
+    try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
     globalStream = null;
   }
 
   if (audioContext) {
-    try {
-      audioContext.close();
-      console.log("✅ Audio context closed");
-    } catch (e) {
-      console.error("❌ Error closing audio context:", e);
-    }
+    try { audioContext.close(); } catch (e) {}
     audioContext = null;
   }
 
-  const socketRef = await getSocket();
-  socketRef.off("nova-started");
+  // Close the shared playback context so it's freshly created next session
+  if (playbackCtx && playbackCtx.state !== "closed") {
+    try { playbackCtx.close(); } catch (e) {}
+    playbackCtx = null;
+  }
 
+  socket.off("nova-started");
   novaStarted = false;
   console.log("🛑 Stopped PCM voice stream");
 }
 
 export function stopAudioPlayback() {
   try {
-    // Cancel visualizer animation
     if (animationId) {
       cancelAnimationFrame(animationId);
       animationId = null;
     }
 
-    // Stop any currently playing audio element
-    if (lastAudio) {
-      try {
-        lastAudio.pause();
-        lastAudio.src && URL.revokeObjectURL(lastAudio.src);
-      } catch (e) {
-        console.error("❌ Error stopping audio element:", e);
-      }
-      lastAudio = null;
+    if (currentSource) {
+      try { currentSource.stop(); } catch (e) {}
+      currentSource = null;
     }
 
-    // Close the last audio context used for playback
-    if (lastAudioCtx && typeof lastAudioCtx.close === "function") {
-      lastAudioCtx.close().catch(() => { });
-      lastAudioCtx = null;
-    }
-
-    // Reset playback buffer state
     isPlaying = false;
     audioBuffer = [];
-
     console.log("🔇 Audio playback stopped");
   } catch (e) {
     console.error("❌ Failed to stop audio playback:", e);
   }
 }
 
-function convertFloat32ToInt16(buffer) {
-  const l = buffer.length;
-  const buf = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    let s = Math.max(-1, Math.min(1, buffer[i]));
-    buf[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return new Uint8Array(buf.buffer);
-}
-
-// Audio buffer to collect chunks before playing
+// ─── Audio buffer ──────────────────────────────────────────────────────────────
 let audioBuffer = [];
 let isPlaying = false;
 let bufferTimeout = null;
@@ -285,25 +225,16 @@ export function playAudio(audioBytes) {
     }
 
     audioBuffer.push(audioBytes);
-    console.log(
-      "🔊 Added audio chunk to buffer, current chunks:",
-      audioBuffer.length
-    );
+    console.log("🔊 Buffered chunk", audioBuffer.length);
 
-    if (bufferTimeout) {
-      clearTimeout(bufferTimeout);
-    }
-
-    const bufferThreshold = 5;
-    const initialDelay = 300;
+    if (bufferTimeout) clearTimeout(bufferTimeout);
 
     if (!isPlaying) {
-      bufferTimeout = setTimeout(playBufferedAudio, initialDelay);
-    }
-
-    if (audioBuffer.length >= bufferThreshold && !isPlaying) {
-      clearTimeout(bufferTimeout);
-      playBufferedAudio();
+      bufferTimeout = setTimeout(playBufferedAudio, 300);
+      if (audioBuffer.length >= 5) {
+        clearTimeout(bufferTimeout);
+        playBufferedAudio();
+      }
     }
   } catch (error) {
     console.error("🔊 Audio processing failed:", error);
@@ -312,179 +243,132 @@ export function playAudio(audioBytes) {
 
 async function playBufferedAudio() {
   if (audioBuffer.length === 0 || isPlaying) return;
-
   isPlaying = true;
 
   try {
+    // ── Decode base64 chunks → raw PCM bytes ──────────────────────────────
     let totalLength = 0;
     const byteArrays = audioBuffer.map((chunk) => {
       const byteChars = atob(chunk);
       const bytes = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        bytes[i] = byteChars.charCodeAt(i);
-      }
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
       totalLength += bytes.length;
       return bytes;
     });
-
-    const combinedArray = new Uint8Array(totalLength);
-    let offset = 0;
-    byteArrays.forEach((array) => {
-      combinedArray.set(array, offset);
-      offset += array.length;
-    });
-
-    const wavHeader = new ArrayBuffer(44);
-    const view = new DataView(wavHeader);
-
-    view.setUint8(0, "R".charCodeAt(0));
-    view.setUint8(1, "I".charCodeAt(0));
-    view.setUint8(2, "F".charCodeAt(0));
-    view.setUint8(3, "F".charCodeAt(0));
-    view.setUint32(4, 36 + combinedArray.length, true);
-    view.setUint8(8, "W".charCodeAt(0));
-    view.setUint8(9, "A".charCodeAt(0));
-    view.setUint8(10, "V".charCodeAt(0));
-    view.setUint8(11, "E".charCodeAt(0));
-    view.setUint8(12, "f".charCodeAt(0));
-    view.setUint8(13, "m".charCodeAt(0));
-    view.setUint8(14, "t".charCodeAt(0));
-    view.setUint8(15, " ".charCodeAt(0));
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, 24000, true);
-    view.setUint32(28, 24000 * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    view.setUint8(36, "d".charCodeAt(0));
-    view.setUint8(37, "a".charCodeAt(0));
-    view.setUint8(38, "t".charCodeAt(0));
-    view.setUint8(39, "a".charCodeAt(0));
-    view.setUint32(40, combinedArray.length, true);
-
-    const wavBlob = new Blob([wavHeader, combinedArray], { type: "audio/wav" });
-    const audio = new Audio();
-    audio.src = URL.createObjectURL(wavBlob);
-    audio.volume = 1.0;
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Browsers start AudioContext suspended — resume before routing audio through it
-    if (audioCtx.state === "suspended") {
-      await audioCtx.resume();
-    }
-    const source = audioCtx.createMediaElementSource(audio);
-
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    const bufferLength = analyser.fftSize;
-    dataArray = new Uint8Array(bufferLength);
-
-    source.connect(analyser);
-    analyser.connect(audioCtx.destination);
-
-    startWaveformVisualizer(bufferLength);
-
-    // Save refs for immediate stop later
-    lastAudio = audio;
-    lastAudioCtx = audioCtx;
-
     audioBuffer = [];
 
-    audio.onloadedmetadata = () => {
-      console.log("🔊 Audio metadata loaded, duration:", audio.duration);
+    const pcm = new Uint8Array(totalLength);
+    let off = 0;
+    for (const arr of byteArrays) { pcm.set(arr, off); off += arr.length; }
+
+    // ── Build WAV ArrayBuffer (44-byte header + PCM) ──────────────────────
+    const wav = new ArrayBuffer(44 + pcm.length);
+    const v = new DataView(wav);
+    const w = new Uint8Array(wav);
+
+    // RIFF chunk
+    w.set([82,73,70,70], 0);                          // "RIFF"
+    v.setUint32(4, 36 + pcm.length, true);            // file size - 8
+    w.set([87,65,86,69], 8);                          // "WAVE"
+    // fmt  chunk
+    w.set([102,109,116,32], 12);                      // "fmt "
+    v.setUint32(16, 16, true);                        // chunk size
+    v.setUint16(20, 1, true);                         // PCM
+    v.setUint16(22, 1, true);                         // mono
+    v.setUint32(24, 24000, true);                     // sample rate
+    v.setUint32(28, 24000 * 2, true);                 // byte rate
+    v.setUint16(32, 2, true);                         // block align
+    v.setUint16(34, 16, true);                        // bits per sample
+    // data chunk
+    w.set([100,97,116,97], 36);                       // "data"
+    v.setUint32(40, pcm.length, true);
+    w.set(pcm, 44);
+
+    // ── Get (or create) the shared playback context ────────────────────────
+    if (!playbackCtx || playbackCtx.state === "closed") {
+      playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (playbackCtx.state === "suspended") {
+      await playbackCtx.resume();
+    }
+
+    // ── Decode WAV → AudioBuffer ──────────────────────────────────────────
+    const decoded = await playbackCtx.decodeAudioData(wav);
+
+    // ── Wire: source → analyser → destination ─────────────────────────────
+    analyser = playbackCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    dataArray = new Uint8Array(analyser.fftSize);
+
+    const source = playbackCtx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(analyser);
+    analyser.connect(playbackCtx.destination);
+
+    currentSource = source;
+    startWaveformVisualizer(analyser.fftSize);
+
+    source.onended = () => {
+      currentSource = null;
+      isPlaying = false;
+      if (audioBuffer.length > 0) setTimeout(playBufferedAudio, 50);
     };
 
-    audio.onended = () => {
-      URL.revokeObjectURL(audio.src);
-      audioCtx.close();
-      isPlaying = false;
-
-      if (audioBuffer.length >= 3) {
-        setTimeout(playBufferedAudio, 50);
-      } else if (audioBuffer.length > 0) {
-        setTimeout(playBufferedAudio, 200);
-      }
-    };
-
-    audio.onerror = (e) => {
-      console.error("🔊 Audio playback error:", e);
-      isPlaying = false;
-    };
-
-    audio.play().catch((err) => {
-      console.error("🔊 Failed to play audio:", err);
-      isPlaying = false;
-      audioCtx.close();
-    });
+    source.start(0);
   } catch (error) {
-    console.error("🔊 Audio buffer processing failed:", error);
+    console.error("🔊 Playback failed:", error);
     isPlaying = false;
     audioBuffer = [];
   }
+}
 
-  function startWaveformVisualizer(bufferLength) {
-    const canvas = document.getElementById("audio-visualizer");
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const WIDTH = canvas.width;
-    const HEIGHT = canvas.height;
-    const cx = WIDTH / 2;
-    const cy = HEIGHT / 2;
-    const baseRadius = Math.min(cx, cy) * 0.6;
-    const amplitude = Math.min(cx, cy) * 1.5;
+function startWaveformVisualizer(bufferLength) {
+  const canvas = document.getElementById("audio-visualizer");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const WIDTH = canvas.width;
+  const HEIGHT = canvas.height;
+  const cx = WIDTH / 2;
+  const cy = HEIGHT / 2;
+  const baseRadius = Math.min(cx, cy) * 0.6;
+  const smoothed = new Float32Array(bufferLength).fill(baseRadius);
+
+  function draw() {
+    animationId = requestAnimationFrame(draw);
+    analyser.getByteTimeDomainData(dataArray);
+
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    ctx.beginPath();
+
+    const step = 8;
+    const avgRange = 4;
+    const amplitude = 140;
     const smoothing = 0.1;
-    const smoothed = new Float32Array(bufferLength).fill(baseRadius);
 
-    function draw() {
-      animationId = requestAnimationFrame(draw);
-      analyser.getByteTimeDomainData(dataArray);
-
-      ctx.clearRect(0, 0, WIDTH, HEIGHT);
-      ctx.beginPath();
-
-      const step = 8;
-      const avgRange = 4;
-      const amplitude = 140;
-      const smoothing = 0.1;
-
-      const getAveragedValue = (i, range = avgRange) => {
-        let sum = 0;
-        let count = 0;
-        for (let j = i - range; j <= i + range; j++) {
-          if (j >= 0 && j < bufferLength) {
-            sum += dataArray[j];
-            count++;
-          }
-        }
-        return sum / count;
-      };
-
-      {
-        /** Comment: Add visualization for audio playback **/
+    for (let i = 0; i < bufferLength; i += step) {
+      let sum = 0, count = 0;
+      for (let j = i - avgRange; j <= i + avgRange; j++) {
+        if (j >= 0 && j < bufferLength) { sum += dataArray[j]; count++; }
       }
+      const v = (sum / count) / 255;
+      const targetR = baseRadius + (v - 0.5) * amplitude * 2;
+      smoothed[i] += (targetR - smoothed[i]) * smoothing;
 
-      for (let i = 0; i < bufferLength; i += step) {
-        const v = getAveragedValue(i) / 255;
-        const targetR = baseRadius + (v - 0.5) * amplitude * 2;
-        smoothed[i] += (targetR - smoothed[i]) * smoothing;
+      const angle = (i / bufferLength) * Math.PI * 2;
+      const x = cx + smoothed[i] * Math.cos(angle);
+      const y = cy + smoothed[i] * Math.sin(angle);
 
-        const angle = (i / bufferLength) * Math.PI * 2;
-        const x = cx + smoothed[i] * Math.cos(angle);
-        const y = cy + smoothed[i] * Math.sin(angle);
-
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-
-      ctx.closePath();
-      ctx.fillStyle = "rgba(0, 255, 180, 0.8)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0, 255, 180, 0.8)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
 
-    draw();
+    ctx.closePath();
+    ctx.fillStyle = "rgba(0, 255, 180, 0.8)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 255, 180, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
+
+  draw();
 }

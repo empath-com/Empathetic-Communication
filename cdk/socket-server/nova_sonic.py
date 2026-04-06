@@ -1366,7 +1366,7 @@ Provide structured evaluation with detailed justifications for each score.
             
             # Also save to PostgreSQL chat history
             try:
-                role = "user" if is_student else "assistant"
+                role = "user" if is_student else "ai"
                 langchain_chat_history.add_message(session_id, role, content)
                 logger.info(f"💾 Saved message to PostgreSQL (session_id={session_id}, role={role})")
             except Exception as pg_error:

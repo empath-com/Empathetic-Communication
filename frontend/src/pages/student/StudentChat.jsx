@@ -6,6 +6,7 @@ import {
   startSpokenLLM,
   stopSpokenLLM,
   stopAudioPlayback,
+  initPlaybackContext,
 } from "../../utils/voiceStream";
 
 import {
@@ -293,6 +294,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     if (isRecording) {
       handleVoiceStop();
     } else {
+      // Create/resume the shared playback AudioContext NOW, while we're inside
+      // the user-gesture handler — Chrome requires this for audio to play later.
+      initPlaybackContext();
       chatMessages.allowAudioRef.current = true;
       setShowVoiceOverlay(true);
       fetchVoiceID().then((voice_id) => {
