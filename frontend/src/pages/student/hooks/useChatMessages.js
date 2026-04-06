@@ -41,6 +41,31 @@ export function normalizeVoiceLine(rawText) {
 }
 
 /**
+ * Merge streaming/cumulative voice chunks without duplicating previously seen text.
+ */
+function mergeVoiceText(existing = "", incoming = "") {
+  const a = (existing || "").trim();
+  const b = (incoming || "").trim();
+
+  if (!a) return b;
+  if (!b) return a;
+
+  if (a === b) return a;
+  if (a.endsWith(b)) return a;
+  if (b.startsWith(a)) return b;
+  if (a.includes(b)) return a;
+
+  const maxOverlap = Math.min(a.length, b.length);
+  for (let i = maxOverlap; i > 0; i--) {
+    if (a.slice(-i) === b.slice(0, i)) {
+      return `${a}${b.slice(i)}`;
+    }
+  }
+
+  return `${a} ${b}`;
+}
+
+/**
  * Filter out unwanted messages (voice transcript blocks, initial prompts, etc.).
  */
 export function filterUnwantedMessages(messagesArray) {
@@ -689,9 +714,10 @@ export default function useChatMessages({
             typeof last.message_id === "string" &&
             last.message_id.startsWith("voice_")
           ) {
+            const merged = mergeVoiceText(last.message_content, normalized.message_content);
             return [
               ...prev.slice(0, -1),
-              { ...last, message_content: last.message_content + " " + normalized.message_content },
+              { ...last, message_content: merged },
             ];
           }
           return [
@@ -720,12 +746,6 @@ export default function useChatMessages({
       socket.off("text-message");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
-
-      // Debug: log ALL incoming socket events to confirm the correct socket is receiving them
-      socket.offAny();
-      socket.onAny((event, ...args) => {
-        console.log("🔌 SOCKET EVENT:", event, args.length > 0 ? args[0] : "");
-      });
 
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
