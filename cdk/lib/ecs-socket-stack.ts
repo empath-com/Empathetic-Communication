@@ -166,6 +166,8 @@ export class EcsSocketStack extends Stack {
         APPSYNC_GRAPHQL_URL: apiServiceStack.appSyncApi.graphqlUrl,
         SOCKET_EXECUTION_ROLE_ARN: taskRole.roleArn,
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
+        // Must match the model used to embed documents in text_generation (business-lambdas.ts)
+        EMBEDDING_MODEL_ID: "amazon.titan-embed-text-v2:0",
       },
     });
 
