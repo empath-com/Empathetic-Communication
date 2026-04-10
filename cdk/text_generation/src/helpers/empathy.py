@@ -44,97 +44,92 @@ user_text: {student_response}"""
     empathy_tool = {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
-            "description": "Submit a complete and detailed structured empathy evaluation. ALL fields must be filled with meaningful content. Do not leave any field empty.",
+            "description": "Submit a complete CARE Measure empathy evaluation for a pharmacist-patient consultation. ALL fields must be filled with meaningful content. Do not leave any field empty.",
             "inputSchema": {
                 "json": {
                     "type": "object",
                     "properties": {
-                        "empathy_score": {
+                        "rapport": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10,
+                            "description": "How well the pharmacist built rapport and a trusting relationship with the patient (1-10)."
+                        },
+                        "listening": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 5,
-                            "description": "Overall empathy rating from 1 (low) to 5 (high)."
+                            "description": "Active listening skills demonstrated during the consultation (1-5)."
                         },
-                        "perspective_taking": {
+                        "whole-person": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 5
-                        },
-                        "emotional_resonance": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5
-                        },
-                        "acknowledgment": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5
-                        },
-                        "language_communication": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5
-                        },
-                        "cognitive_empathy": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5
+                            "maximum": 10,
+                            "description": "Degree to which the pharmacist treated the patient as a whole person beyond just their medication (1-10)."
                         },
                         "affective_empathy": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 5
+                            "maximum": 5,
+                            "description": "Emotional empathy and compassionate care shown toward the patient (1-5)."
                         },
-                        "realism_flag": {
-                            "type": "string",
-                            "enum": ["realistic", "unrealistic"],
-                            "description": "Indicates whether the response feels natural and realistic."
+                        "communication": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10,
+                            "description": "Overall clarity, appropriateness, and quality of communication (1-10)."
+                        },
+                        "shared_planning": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10,
+                            "description": "Collaborative planning and shared decision-making with the patient (1-10)."
                         },
                         "judge_reasoning": {
                             "type": "object",
                             "description": "Detailed justification for each score. Each field must contain specific reasoning, not generic statements.",
                             "properties": {
-                            "perspective_taking_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "emotional_resonance_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "acknowledgment_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "language_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "cognitive_empathy_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "affective_empathy_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "realism_justification": {
-                                "type": "string",
-                                "minLength": 15
-                            },
-                            "overall_assessment": {
-                                "type": "string",
-                                "minLength": 25
-                            }
+                                "rapport_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "emotional_resonance_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "listening_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "whole-person_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "affective_empathy_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "communication_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "shared_planning_justification": {
+                                    "type": "string",
+                                    "minLength": 15
+                                },
+                                "overall_assessment": {
+                                    "type": "string",
+                                    "minLength": 25
+                                }
                             },
                             "required": [
-                                "perspective_taking_justification",
+                                "rapport_justification",
                                 "emotional_resonance_justification",
-                                "acknowledgment_justification",
-                                "language_justification",
-                                "cognitive_empathy_justification",
+                                "listening_justification",
+                                "whole-person_justification",
                                 "affective_empathy_justification",
-                                "realism_justification",
+                                "communication_justification",
+                                "shared_planning_justification",
                                 "overall_assessment"
                             ]
                         },
@@ -142,142 +137,102 @@ user_text: {student_response}"""
                             "type": "object",
                             "description": "Actionable and specific feedback. Do not leave any field empty. Avoid generic statements.",
                             "properties": {
+                                "total_score": {
+                                    "type": "integer",
+                                    "description": "Sum of all dimension scores (max 50): rapport + listening + whole-person + affective_empathy + communication + shared_planning."
+                                },
                                 "strengths": {
                                     "type": "array",
-                                    "description": "List at least 2 specific strengths of the response.",
+                                    "description": "List at least 2 specific strengths with evidence from the response.",
                                     "items": {
-                                    "type": "string",
-                                    "minLength": 10
+                                        "type": "string",
+                                        "minLength": 10
                                     },
                                     "minItems": 2
                                 },
                                 "areas_for_improvement": {
                                     "type": "array",
-                                    "description": "List at least 2 concrete weaknesses.",
+                                    "description": "List at least 2 specific domains needing improvement with examples.",
                                     "items": {
-                                    "type": "string",
-                                    "minLength": 10
+                                        "type": "string",
+                                        "minLength": 10
                                     },
                                     "minItems": 2
-                                },
-                                "why_realistic": {
-                                    "type": "string",
-                                    "minLength": 15,
-                                    "description": "Explain why the response feels realistic. Required if realism_flag = realistic."
-                                },
-                                "why_unrealistic": {
-                                    "type": "string",
-                                    "minLength": 15,
-                                    "description": "Explain why the response feels unrealistic. Required if realism_flag = unrealistic."
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "Provide at least 2 actionable suggestions for improvement.",
+                                    "description": "Provide at least 2 actionable, specific improvement recommendations.",
                                     "items": {
-                                    "type": "string",
-                                    "minLength": 10
+                                        "type": "string",
+                                        "minLength": 10
                                     },
                                     "minItems": 2
                                 },
-                                "alternative_phrasing": {
+                                "forward_target": {
                                     "type": "string",
-                                    "minLength": 20,
-                                    "description": "Provide a rewritten improved version of the response."
+                                    "minLength": 10,
+                                    "description": "The one domain the pharmacist most needs to practice before the next training session."
                                 }
                             },
                             "required": [
+                                "total_score",
                                 "strengths",
                                 "areas_for_improvement",
                                 "improvement_suggestions",
-                                "alternative_phrasing"
+                                "forward_target"
                             ]
                         }
                     },
                     "required": [
-                        "empathy_score",
-                        "perspective_taking",
-                        "emotional_resonance",
-                        "acknowledgment",
-                        "language_communication",
-                        "cognitive_empathy",
+                        "rapport",
+                        "listening",
+                        "whole-person",
                         "affective_empathy",
-                        "realism_flag",
+                        "communication",
+                        "shared_planning",
                         "judge_reasoning",
                         "feedback"
                     ],
-                    "allOf": [
-                        {
-                            "if": {
-                            "properties": {
-                                "realism_flag": { "const": "realistic" }
-                            }
-                            },
-                            "then": {
-                            "properties": {
-                                "feedback": {
-                                "required": ["why_realistic"]
-                                }
-                            }
-                            }
-                        },
-                        {
-                            "if": {
-                                "properties": {
-                                    "realism_flag": { "const": "unrealistic" }
-                                }
-                            },
-                            "then": {
-                                "properties": {
-                                    "feedback": {
-                                    "required": ["why_unrealistic"]
-                                    }
-                                }
-                            }
-                        }
-                    ],
                     "examples": [
                     {
-                        "empathy_score": 4,
-                        "perspective_taking": 4,
-                        "emotional_resonance": 4,
-                        "acknowledgment": 5,
-                        "language_communication": 4,
-                        "cognitive_empathy": 4,
+                        "rapport": 7,
+                        "listening": 4,
+                        "whole-person": 6,
                         "affective_empathy": 4,
-                        "realism_flag": "realistic",
+                        "communication": 7,
+                        "shared_planning": 6,
                         "judge_reasoning": {
-                        "perspective_taking_justification": "The response demonstrates understanding of the user's situation with specific references.",
-                        "emotional_resonance_justification": "The tone aligns well with the emotional context and reflects appropriate sensitivity.",
-                        "acknowledgment_justification": "The response clearly acknowledges the user's emotional state early on.",
-                        "language_justification": "Language is clear, supportive, and avoids awkward phrasing.",
-                        "cognitive_empathy_justification": "Shows logical understanding of the user's perspective and situation.",
-                        "affective_empathy_justification": "Conveys warmth and emotional alignment with the user.",
-                        "realism_justification": "The phrasing feels natural and similar to how a human would respond.",
-                        "overall_assessment": "Overall, the response is empathetic, clear, and realistic, with only minor room for improvement."
+                            "rapport_justification": "The pharmacist greeted the patient warmly and used their name, establishing a comfortable atmosphere.",
+                            "emotional_resonance_justification": "The pharmacist acknowledged the patient's concern about side effects with genuine sensitivity.",
+                            "listening_justification": "The pharmacist paraphrased the patient's main concern before responding, demonstrating active listening.",
+                            "whole-person_justification": "The pharmacist asked about the patient's daily routine and lifestyle to tailor advice, but did not explore psychosocial factors.",
+                            "affective_empathy_justification": "Showed warmth and validation of the patient's emotional experience with the condition.",
+                            "communication_justification": "Used plain language effectively, though some technical terms were left unexplained.",
+                            "shared_planning_justification": "Offered two medication timing options and asked the patient which worked best for them.",
+                            "overall_assessment": "Overall you demonstrated solid foundational skills. Your rapport-building and active listening were highlights. To grow further, focus on integrating whole-person questions into every consultation."
                         },
                         "feedback": {
-                        "strengths": [
-                            "Clearly acknowledges the user's emotions in a direct way",
-                            "Maintains a supportive and non-judgmental tone"
-                        ],
-                        "areas_for_improvement": [
-                            "Could include more personalized details",
-                            "Emotional validation could be slightly stronger"
-                        ],
-                        "why_realistic": "The tone and phrasing resemble natural human conversation and avoid robotic patterns.",
-                        "improvement_suggestions": [
-                            "Add more explicit emotional validation statements",
-                            "Incorporate specific details from the user's situation"
-                        ],
-                        "alternative_phrasing": "I can really understand how difficult this must feel for you, and it makes sense that you're feeling this way given what you're going through."
+                            "total_score": 34,
+                            "strengths": [
+                                "Warm, patient-centred greeting established trust early in the consultation",
+                                "Offered patient choice in the treatment plan, supporting shared decision-making"
+                            ],
+                            "areas_for_improvement": [
+                                "Whole-person care: Did not explore psychosocial or lifestyle factors beyond medication timing",
+                                "Communication: Left several clinical terms unexplained"
+                            ],
+                            "improvement_suggestions": [
+                                "Ask one open-ended question about how the condition is affecting the patient's daily life",
+                                "After any clinical term, add a brief plain-language explanation"
+                            ],
+                            "forward_target": "Whole-person care — practice asking about the patient's broader life context in your next session"
                         }
                     }
                     ]
                 }
-                }
             }
         }
-   
+    }
 
     # Build request body with prompt caching and tool use for guaranteed structured output
     body = {
@@ -363,25 +318,38 @@ user_text: {student_response}"""
         logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
 
         # Coerce integer scores in case model returned strings
-        required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment',
-                           'language_communication', 'cognitive_empathy', 'affective_empathy']
-        for score_key in required_scores:
+        # (key, default_mid, max_val)
+        required_scores = [
+            ('rapport', 5, 10),
+            ('listening', 3, 5),
+            ('whole-person', 5, 10),
+            ('affective_empathy', 3, 5),
+            ('communication', 5, 10),
+            ('shared_planning', 5, 10),
+        ]
+        for score_key, default_mid, _max in required_scores:
             score_value = evaluation.get(score_key)
             if isinstance(score_value, str):
                 try:
                     evaluation[score_key] = int(score_value)
                 except (ValueError, TypeError):
-                    evaluation[score_key] = 3
+                    evaluation[score_key] = default_mid
             elif score_value is None or score_value == 0:
-                evaluation[score_key] = 3
+                evaluation[score_key] = default_mid
 
-        if 'empathy_score' in evaluation:
-            empathy_score = evaluation.get('empathy_score')
-            if isinstance(empathy_score, str):
-                try:
-                    evaluation['empathy_score'] = int(empathy_score)
-                except (ValueError, TypeError):
-                    evaluation['empathy_score'] = 3
+        # Ensure total_score in feedback is computed/coerced
+        feedback = evaluation.get('feedback', {}) or {}
+        if not feedback.get('total_score'):
+            computed_total = (
+                evaluation.get('rapport', 5) +
+                evaluation.get('listening', 3) +
+                evaluation.get('whole-person', 5) +
+                evaluation.get('affective_empathy', 3) +
+                evaluation.get('communication', 5) +
+                evaluation.get('shared_planning', 5)
+            )
+            feedback['total_score'] = computed_total
+            evaluation['feedback'] = feedback
 
         evaluation["evaluation_method"] = "LLM-as-a-Judge"
         evaluation["judge_model"] = bedrock_client["model_id"]
@@ -398,81 +366,34 @@ user_text: {student_response}"""
         logger.exception("Full traceback:")
         return None
 
-def get_empathy_level_name(score: int) -> str:
-    """Convert numeric empathy score to descriptive name."""
-    level_names = {
-        1: "Novice",
-        2: "Advanced Beginner",
-        3: "Competent",
-        4: "Proficient",
-        5: "Extending"
-    }
-    return level_names.get(score, "Competent")
-
 def build_empathy_feedback(evaluation):
-    """Build formatted empathy feedback from evaluation dict."""
+    """Build formatted CARE Measure empathy feedback from evaluation dict."""
     if not evaluation:
         return "**Empathy Coach:** System temporarily unavailable.\\\\n"
 
-    pt_score = evaluation.get('perspective_taking', 3)
-    er_score = evaluation.get('emotional_resonance', 3)
-    ack_score = evaluation.get('acknowledgment', 3)
-    lang_score = evaluation.get('language_communication', 3)
-    cognitive_score = evaluation.get('cognitive_empathy', 3)
+    rapport_score = evaluation.get('rapport', 5)
+    listening_score = evaluation.get('listening', 3)
+    whole_person_score = evaluation.get('whole-person', 5)
     affective_score = evaluation.get('affective_empathy', 3)
+    communication_score = evaluation.get('communication', 5)
+    shared_planning_score = evaluation.get('shared_planning', 5)
 
-    overall_score = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
+    feedback = evaluation.get('feedback', {}) or {}
+    total_score = feedback.get('total_score') or (
+        rapport_score + listening_score + whole_person_score +
+        affective_score + communication_score + shared_planning_score
+    )
 
-    realism_flag = evaluation.get('realism_flag', 'unknown')
+    empathy_feedback = f"**Empathy Coach (CARE Measure — Pharmacist–Patient Consultation):**\\\\n\\\\n"
+    empathy_feedback += f"**Total Score: {total_score}/50**\\\\n\\\\n"
 
-    empathy_feedback = f"**Empathy Coach:**\\\\n\\\\n"
-
-    if overall_score == 1:
-        stars = "⭐ (1/5)"
-    elif overall_score == 2:
-        stars = "⭐⭐ (2/5)"
-    elif overall_score == 3:
-        stars = "⭐⭐⭐ (3/5)"
-    elif overall_score == 4:
-        stars = "⭐⭐⭐⭐ (4/5)"
-    elif overall_score == 5:
-        stars = "⭐⭐⭐⭐⭐ (5/5)"
-    else:
-        stars = "⭐⭐⭐ (3/5)"
-
-    realism_icon = "✅" if realism_flag != "unrealistic" else ""
-
-    overall_level = get_empathy_level_name(overall_score)
-    empathy_feedback += f"**Overall Empathy Score:** {overall_level} {stars}\\\\n\\\\n"
-
-    empathy_feedback += f"**Category Breakdown:**\\\\n"
-
-    pt_level = get_empathy_level_name(pt_score)
-    pt_stars = "⭐" * pt_score + f" ({pt_score}/5)"
-    empathy_feedback += f"• Perspective-Taking: {pt_level} {pt_stars}\\\\n"
-
-    er_level = get_empathy_level_name(er_score)
-    er_stars = "⭐" * er_score + f" ({er_score}/5)"
-    empathy_feedback += f"• Emotional Resonance/Compassionate Care: {er_level} {er_stars}\\\\n"
-
-    ack_level = get_empathy_level_name(ack_score)
-    ack_stars = "⭐" * ack_score + f" ({ack_score}/5)"
-    empathy_feedback += f"• Acknowledgment of Patient's Experience: {ack_level} {ack_stars}\\\\n"
-
-    lang_level = get_empathy_level_name(lang_score)
-    lang_stars = "⭐" * lang_score + f" ({lang_score}/5)"
-    empathy_feedback += f"• Language & Communication: {lang_level} {lang_stars}\\\\n\\\\n"
-
-    cognitive_level = get_empathy_level_name(cognitive_score)
-    affective_level = get_empathy_level_name(affective_score)
-    cognitive_stars = "⭐" * cognitive_score + f" ({cognitive_score}/5)"
-    affective_stars = "⭐" * affective_score + f" ({affective_score}/5)"
-
-    empathy_feedback += f"**Empathy Type Analysis:**\\\\n"
-    empathy_feedback += f"• Cognitive Empathy (Understanding): {cognitive_level} {cognitive_stars}\\\\n"
-    empathy_feedback += f"• Affective Empathy (Feeling): {affective_level} {affective_stars}\\\\n\\\\n"
-
-    empathy_feedback += f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\\\\n\\\\n"
+    empathy_feedback += f"**CARE Dimension Breakdown:**\\\\n"
+    empathy_feedback += f"• Rapport: {rapport_score}/10\\\\n"
+    empathy_feedback += f"• Listening: {listening_score}/5\\\\n"
+    empathy_feedback += f"• Whole-Person Care: {whole_person_score}/10\\\\n"
+    empathy_feedback += f"• Affective Empathy: {affective_score}/5\\\\n"
+    empathy_feedback += f"• Communication: {communication_score}/10\\\\n"
+    empathy_feedback += f"• Shared Planning: {shared_planning_score}/10\\\\n\\\\n"
 
     judge_reasoning = evaluation.get('judge_reasoning', {})
     if judge_reasoning and 'overall_assessment' in judge_reasoning:
@@ -485,7 +406,6 @@ def build_empathy_feedback(evaluation):
         assessment = assessment.replace("lacks", "would benefit from more")
         empathy_feedback += f"{assessment}\\\\n\\\\n"
 
-    feedback = evaluation.get('feedback', {}) or {}
     strengths = feedback.get('strengths', [])
     if strengths:
         empathy_feedback += f"**Strengths:**\\\\n"
@@ -495,7 +415,7 @@ def build_empathy_feedback(evaluation):
 
     areas_for_improvement = feedback.get('areas_for_improvement', [])
     if areas_for_improvement:
-        empathy_feedback += f"**Areas for improvement:**\\\\n"
+        empathy_feedback += f"**Areas for Improvement:**\\\\n"
         for area in areas_for_improvement:
             empathy_feedback += f"• {area}\\\\n"
         empathy_feedback += "\\\\n"
@@ -507,9 +427,9 @@ def build_empathy_feedback(evaluation):
             empathy_feedback += f"• {suggestion}\\\\n"
         empathy_feedback += "\\\\n"
 
-    alternative_phrasing = feedback.get('alternative_phrasing', '')
-    if alternative_phrasing:
-        empathy_feedback += f"**Coach-Recommended Approach:** *{alternative_phrasing}*\\\\n\\\\n"
+    forward_target = feedback.get('forward_target', '')
+    if forward_target:
+        empathy_feedback += f"**Focus for Next Session:** {forward_target}\\\\n\\\\n"
 
     empathy_feedback += "---\\\\n\\\\n"
     return empathy_feedback
@@ -592,19 +512,23 @@ Additional patient context:
 
         logger.info(f"✅ Empathy evaluation completed successfully")
 
+        feedback_obj = empathy_evaluation.get('feedback', {}) or {}
+        total_score = feedback_obj.get('total_score') or (
+            empathy_evaluation.get('rapport', 5) +
+            empathy_evaluation.get('listening', 3) +
+            empathy_evaluation.get('whole-person', 5) +
+            empathy_evaluation.get('affective_empathy', 3) +
+            empathy_evaluation.get('communication', 5) +
+            empathy_evaluation.get('shared_planning', 5)
+        )
+
         return {
             "statusCode": 200,
             "body": json.dumps({
                 "empathy_evaluation": empathy_evaluation,
                 "summary": {
-                    "overall_score": round((
-                        empathy_evaluation.get('perspective_taking', 3) +
-                        empathy_evaluation.get('emotional_resonance', 3) +
-                        empathy_evaluation.get('acknowledgment', 3) +
-                        empathy_evaluation.get('language_communication', 3) +
-                        empathy_evaluation.get('cognitive_empathy', 3) +
-                        empathy_evaluation.get('affective_empathy', 3)
-                    ) / 6)
+                    "total_score": total_score,
+                    "max_score": 50
                 },
                 "empathy_feedback_markdown": empathy_feedback
             })

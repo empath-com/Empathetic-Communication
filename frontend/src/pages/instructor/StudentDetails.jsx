@@ -540,12 +540,11 @@ const StudentDetails = () => {
                 {empathySummary ? (
                   <Box>
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                      Overall Empathy Performance
+                      CARE Measure — Overall Performance
                     </Typography>
                     <Box sx={{ mb: 3 }}>
                       <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Average Empathy Score:</strong> {empathySummary.overall_score}/5
-                        ({empathySummary.overall_level})
+                        <strong>Average CARE Score:</strong> {empathySummary.overall_score} / 50
                       </Typography>
                       <Typography variant="body1" sx={{ mb: 1 }}>
                         <strong>Total Interactions:</strong> {empathySummary.total_interactions}
@@ -556,19 +555,19 @@ const StudentDetails = () => {
                     </Box>
 
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                      Category Breakdown
+                      CARE Dimension Breakdown
                     </Typography>
                     <Box sx={{ mb: 3 }}>
-                      <Typography variant="body2">• Perspective-Taking: {empathySummary.avg_perspective_taking}/5</Typography>
-                      <Typography variant="body2">• Emotional Resonance: {empathySummary.avg_emotional_resonance}/5</Typography>
-                      <Typography variant="body2">• Acknowledgment: {empathySummary.avg_acknowledgment}/5</Typography>
-                      <Typography variant="body2">• Language & Communication: {empathySummary.avg_language_communication}/5</Typography>
-                      <Typography variant="body2">• Cognitive Empathy: {empathySummary.avg_cognitive_empathy}/5</Typography>
-                      <Typography variant="body2">• Affective Empathy: {empathySummary.avg_affective_empathy}/5</Typography>
+                      <Typography variant="body2">• Rapport: {empathySummary.avg_rapport} / 10</Typography>
+                      <Typography variant="body2">• Listening: {empathySummary.avg_listening} / 5</Typography>
+                      <Typography variant="body2">• Whole-Person Care: {empathySummary.avg_whole_person} / 10</Typography>
+                      <Typography variant="body2">• Affective Empathy: {empathySummary.avg_affective_empathy} / 5</Typography>
+                      <Typography variant="body2">• Communication: {empathySummary.avg_communication} / 10</Typography>
+                      <Typography variant="body2">• Shared Planning: {empathySummary.avg_shared_planning} / 10</Typography>
                     </Box>
 
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                      Empathy Summary
+                      Summary
                     </Typography>
                     <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
                       <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>

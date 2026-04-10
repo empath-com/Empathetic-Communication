@@ -59,19 +59,17 @@ export default function useEmpathyCoach({ group, patient, session }) {
         }
         const summary = {
           overall_score: data.overall_score || 0,
-          avg_perspective_taking: data.avg_perspective_taking || 0,
-          avg_emotional_resonance: data.avg_emotional_resonance || 0,
-          avg_acknowledgment: data.avg_acknowledgment || 0,
-          avg_language_communication: data.avg_language_communication || 0,
-          avg_cognitive_empathy: data.avg_cognitive_empathy || 0,
+          avg_rapport: data.avg_rapport || 0,
+          avg_listening: data.avg_listening || 0,
+          avg_whole_person: data.avg_whole_person || 0,
           avg_affective_empathy: data.avg_affective_empathy || 0,
-          realism_assessment: data.realism_assessment || "",
-          realism_explanation: data.realism_explanation || "",
+          avg_communication: data.avg_communication || 0,
+          avg_shared_planning: data.avg_shared_planning || 0,
           summary: data.summary || "",
           strengths: data.strengths || [],
           areas_for_improvement: data.areas_for_improvement || [],
           recommendations: data.recommendations || [],
-          recommended_approach: data.recommended_approach || "",
+          forward_target: data.forward_target || "",
         };
         setEmpathySummary(summary);
         setIsEmpathyCoachOpen(true);

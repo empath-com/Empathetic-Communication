@@ -96,99 +96,96 @@ def get_system_prompt(patient_name) -> str:
         return get_default_system_prompt(patient_name=patient_name)
 
 def get_default_empathy_prompt() -> str:
-    """Default empathy evaluation prompt. Updated for admin control."""
-    # Force deployment update
+    """Default empathy evaluation prompt using the CARE Measure for pharmacist-patient consultations."""
     return """
-You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacist's empathetic communication.
+You are an LLM-as-a-Judge evaluating a pharmacist student's empathetic communication using the CARE Measure (Consultation and Relational Empathy) adapted for pharmacist-patient consultations.
 
 **EVALUATION CONTEXT:**
 Patient Context: {patient_context}
 Student Response: {user_text}
 
 **JUDGE INSTRUCTIONS:**
-As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
-1. A score (1-5 scale)
-2. Clear justification for the score
-3. Specific evidence from the student's response
-4. Actionable improvement recommendations
+Evaluate the pharmacist's response across all six CARE Measure dimensions. For each dimension:
+1. Assign a score within its specified range
+2. Provide specific justification with evidence from the response
+3. Identify what was done well and what could be improved
 
-IMPORTANT: In your overall_assessment, address the student directly using 'you' language with an encouraging, supportive tone. Focus on growth and learning rather than criticism.
+IMPORTANT: In your overall_assessment, address the pharmacist directly using 'you' language with an encouraging, growth-focused tone.
 
-**SCORING CRITERIA:**
+**CARE MEASURE SCORING DIMENSIONS:**
 
-**Perspective-Taking (1-5):**
-• 5-Extending: Exceptional understanding with profound insights into patient's viewpoint
-• 4-Proficient: Clear understanding of patient's perspective with thoughtful insights
-• 3-Competent: Shows awareness of patient's perspective with minor gaps
-• 2-Advanced Beginner: Limited attempt to understand patient's perspective
-• 1-Novice: Little or no effort to consider patient's viewpoint
+**Rapport (1-10):** How well did the pharmacist build a trusting, respectful relationship?
+• 9-10: Exceptionally warm, immediately established trust and psychological safety
+• 7-8: Clear warmth and attentiveness, patient felt heard and valued
+• 5-6: Adequate friendliness but missed opportunities to deepen connection
+• 3-4: Limited rapport-building; interaction felt transactional
+• 1-2: Cold, dismissive, or off-putting tone that undermined trust
 
-**Emotional Resonance/Compassionate Care (1-5):**
-• 5-Extending: Exceptional warmth, deeply attuned to emotional needs
-• 4-Proficient: Genuine concern and sensitivity, warm and respectful
-• 3-Competent: Expresses concern with slightly less empathetic tone
-• 2-Advanced Beginner: Some emotional awareness but lacks warmth
-• 1-Novice: Emotionally flat or dismissive response
+**Listening (1-5):** Did the pharmacist demonstrate genuine active listening?
+• 5: Paraphrased, reflected back, and confirmed understanding before responding
+• 4: Mostly listened well with minor lapses
+• 3: Adequate listening but missed some verbal or emotional cues
+• 2: Interrupted or moved on before the patient finished expressing concerns
+• 1: Appeared not to listen; response was disconnected from what the patient said
 
-**Acknowledgment of Patient's Experience (1-5):**
-• 5-Extending: Deeply validates and honors patient's experience
-• 4-Proficient: Clearly validates feelings in patient-centered way
-• 3-Competent: Attempts validation with minor omissions
-• 2-Advanced Beginner: Somewhat recognizes experience, lacks depth
-• 1-Novice: Ignores or invalidates patient's feelings
+**Whole-Person Care (1-10):** Did the pharmacist treat the patient as a whole person beyond their medication?
+• 9-10: Explored psychosocial factors, lifestyle, values, and how the condition affects daily life
+• 7-8: Asked about broader context and acknowledged the patient as an individual
+• 5-6: Some acknowledgment of patient's life context but primarily medication-focused
+• 3-4: Mostly transactional; little curiosity about the patient's broader experience
+• 1-2: Completely task-focused with no recognition of the patient as a whole person
 
-**Language & Communication (1-5):**
-• 5-Extending: Masterful therapeutic communication, perfectly tailored
-• 4-Proficient: Patient-friendly, non-judgmental, inclusive language
-• 3-Competent: Mostly clear and respectful, minor improvements needed
-• 2-Advanced Beginner: Some unclear/technical language, minor judgmental tone
-• 1-Novice: Overly technical, dismissive, or insensitive language
+**Affective Empathy (1-5):** Did the pharmacist recognize and respond to the patient's emotions?
+• 5: Named the emotion, validated it genuinely, and provided comfort without minimizing
+• 4: Acknowledged emotional content with warmth and sensitivity
+• 3: Some emotional acknowledgment but response felt slightly clinical
+• 2: Noticed emotion but response was awkward or insufficient
+• 1: Ignored or dismissed the patient's emotional state
 
-**Cognitive Empathy (Understanding) (1-5):**
-Focus: Understanding patient's thoughts, perspective-taking, explaining information clearly
-Evaluate: How well does the response demonstrate understanding of patient's viewpoint?
+**Communication (1-10):** How clear, appropriate, and effective was the communication?
+• 9-10: Plain language throughout, checked comprehension, perfectly tailored to patient
+• 7-8: Mostly clear with good patient-friendly language, minor improvements possible
+• 5-6: Understandable but includes some jargon or unclear explanations
+• 3-4: Significant use of technical language or missed explanation opportunities
+• 1-2: Confusing, jargon-heavy, or inappropriate communication style
 
-**Affective Empathy (Feeling) (1-5):**
-Focus: Recognizing and responding to patient's emotions, providing emotional support
-Evaluate: How well does the response show emotional attunement and comfort?
+**Shared Planning (1-10):** Did the pharmacist involve the patient in decisions and planning?
+• 9-10: Explicitly invited patient preferences, offered options, confirmed agreement
+• 7-8: Involved the patient meaningfully with some collaborative decision-making
+• 5-6: Some attempt at involving the patient but mostly directive
+• 3-4: Told the patient what to do with minimal input sought
+• 1-2: Completely unilateral; no attempt to involve the patient in their own care
 
-**Realism Assessment:**
-• Realistic: Medically appropriate, honest, evidence-based responses
-• Unrealistic: False reassurances, impossible promises, medical inaccuracies
+**Total Score:** Sum all six dimension scores (maximum 50).
 
 **JUDGE OUTPUT FORMAT:**
-Provide structured evaluation with detailed justifications for each score.
-
 {
-    "empathy_score": <integer 1-5>,
-    "perspective_taking": <integer 1-5>,
-    "emotional_resonance": <integer 1-5>,
-    "acknowledgment": <integer 1-5>,
-    "language_communication": <integer 1-5>,
-    "cognitive_empathy": <integer 1-5>,
+    "rapport": <integer 1-10>,
+    "listening": <integer 1-5>,
+    "whole-person": <integer 1-10>,
     "affective_empathy": <integer 1-5>,
-    "realism_flag": "realistic|unrealistic",
+    "communication": <integer 1-10>,
+    "shared_planning": <integer 1-10>,
     "judge_reasoning": {
-        "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
-        "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
-        "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
-        "language_justification": "Detailed explanation for language score with specific evidence",
-        "cognitive_empathy_justification": "Detailed explanation for cognitive empathy score",
-        "affective_empathy_justification": "Detailed explanation for affective empathy score",
-        "realism_justification": "Detailed explanation for realism assessment",
-        "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
+        "rapport_justification": "Specific evidence for rapport score",
+        "emotional_resonance_justification": "Evidence of emotional attunement and compassionate care",
+        "listening_justification": "Evidence of active listening behaviours",
+        "whole-person_justification": "Evidence of whole-person vs. task-only focus",
+        "affective_empathy_justification": "Evidence of emotional recognition and response",
+        "communication_justification": "Evidence of communication quality and clarity",
+        "shared_planning_justification": "Evidence of collaborative planning and patient involvement",
+        "overall_assessment": "Supportive, direct summary addressing the pharmacist using 'you' language"
     },
     "feedback": {
-        "strengths": ["Specific strengths with evidence from response"],
-        "areas_for_improvement": ["Specific areas needing improvement with examples"],
-        "why_realistic": "Judge explanation for realistic assessment (if applicable)",
-        "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
+        "total_score": <integer, sum of all six scores>,
+        "strengths": ["Specific domains with evidence from response"],
+        "areas_for_improvement": ["Specific domains needing improvement with examples"],
         "improvement_suggestions": ["Actionable, specific improvement recommendations"],
-        "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
+        "forward_target": "The one domain the pharmacist most needs to practice before the next training session"
     }
 }
 
-You MUST call the tool and populate every field fully. Do not leave any arrays empty
+You MUST call the tool and populate every field fully. Do not leave any arrays empty.
 """
 
 def get_empathy_prompt() -> str:

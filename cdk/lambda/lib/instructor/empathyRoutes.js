@@ -37,15 +37,14 @@ const routes = {
             response.statusCode = 200;
             response.body = JSON.stringify({
               overall_score: 0,
-              overall_level: "No Data",
               total_interactions: 0,
               empathy_interactions: 0,
-              avg_perspective_taking: 0,
-              avg_emotional_resonance: 0,
-              avg_acknowledgment: 0,
-              avg_language_communication: 0,
-              avg_cognitive_empathy: 0,
+              avg_rapport: 0,
+              avg_listening: 0,
+              avg_whole_person: 0,
               avg_affective_empathy: 0,
+              avg_communication: 0,
+              avg_shared_planning: 0,
               summary:
                 "Empathy evaluation feature not yet available. Database schema needs to be updated.",
             });
@@ -101,112 +100,77 @@ const routes = {
           response.statusCode = 200;
           response.body = JSON.stringify({
             overall_score: 0,
-            overall_level: "No Data",
             total_interactions: 0,
             empathy_interactions: 0,
-            avg_perspective_taking: 0,
-            avg_emotional_resonance: 0,
-            avg_acknowledgment: 0,
-            avg_language_communication: 0,
-            avg_cognitive_empathy: 0,
+            avg_rapport: 0,
+            avg_listening: 0,
+            avg_whole_person: 0,
             avg_affective_empathy: 0,
-            summary:
-              "No empathy evaluation data available for this student.",
+            avg_communication: 0,
+            avg_shared_planning: 0,
+            summary: "No empathy evaluation data available for this student.",
           });
           return response;
         }
 
-        // Calculate averages
-        let totalScore = 0,
-          totalPT = 0,
-          totalER = 0,
-          totalAck = 0,
-          totalLang = 0,
-          totalCog = 0,
-          totalAff = 0;
+        // Calculate CARE Measure dimension totals
+        let totalCareScore = 0,
+          totalRapport = 0,
+          totalListening = 0,
+          totalWholePerson = 0,
+          totalAffective = 0,
+          totalCommunication = 0,
+          totalSharedPlanning = 0;
         let validCount = 0;
 
         empathyData.forEach((row) => {
           const evaluation = row.empathy_evaluation;
-          if (evaluation && typeof evaluation === "object") {
-            totalScore += evaluation.empathy_score || 0;
-            totalPT += evaluation.perspective_taking || 0;
-            totalER += evaluation.emotional_resonance || 0;
-            totalAck += evaluation.acknowledgment || 0;
-            totalLang += evaluation.language_communication || 0;
-            totalCog += evaluation.cognitive_empathy || 0;
-            totalAff += evaluation.affective_empathy || 0;
+          if (evaluation && typeof evaluation === "object" &&
+              (evaluation.rapport > 0 || evaluation.listening > 0 || evaluation['whole-person'] > 0 ||
+               evaluation.affective_empathy > 0 || evaluation.communication > 0 || evaluation.shared_planning > 0)) {
+            const dimTotal = (evaluation.feedback?.total_score) ||
+              ((evaluation.rapport || 0) + (evaluation.listening || 0) + (evaluation['whole-person'] || 0) +
+               (evaluation.affective_empathy || 0) + (evaluation.communication || 0) + (evaluation.shared_planning || 0));
+            totalCareScore += dimTotal;
+            totalRapport += evaluation.rapport || 0;
+            totalListening += evaluation.listening || 0;
+            totalWholePerson += evaluation['whole-person'] || 0;
+            totalAffective += evaluation.affective_empathy || 0;
+            totalCommunication += evaluation.communication || 0;
+            totalSharedPlanning += evaluation.shared_planning || 0;
             validCount++;
           }
         });
 
-        const avgScore =
-          validCount > 0 ? (totalScore / validCount).toFixed(1) : 0;
-        const avgPT =
-          validCount > 0 ? (totalPT / validCount).toFixed(1) : 0;
-        const avgER =
-          validCount > 0 ? (totalER / validCount).toFixed(1) : 0;
-        const avgAck =
-          validCount > 0 ? (totalAck / validCount).toFixed(1) : 0;
-        const avgLang =
-          validCount > 0 ? (totalLang / validCount).toFixed(1) : 0;
-        const avgCog =
-          validCount > 0 ? (totalCog / validCount).toFixed(1) : 0;
-        const avgAff =
-          validCount > 0 ? (totalAff / validCount).toFixed(1) : 0;
+        const avgScore = validCount > 0 ? (totalCareScore / validCount).toFixed(1) : 0;
+        const avgRapport = validCount > 0 ? (totalRapport / validCount).toFixed(1) : 0;
+        const avgListening = validCount > 0 ? (totalListening / validCount).toFixed(1) : 0;
+        const avgWholePerson = validCount > 0 ? (totalWholePerson / validCount).toFixed(1) : 0;
+        const avgAffective = validCount > 0 ? (totalAffective / validCount).toFixed(1) : 0;
+        const avgCommunication = validCount > 0 ? (totalCommunication / validCount).toFixed(1) : 0;
+        const avgSharedPlanning = validCount > 0 ? (totalSharedPlanning / validCount).toFixed(1) : 0;
 
-        // Determine overall level
-        const getLevel = (score) => {
-          if (score >= 4.5) return "Extending";
-          if (score >= 3.5) return "Proficient";
-          if (score >= 2.5) return "Competent";
-          if (score >= 1.5) return "Advanced Beginner";
-          return "Novice";
-        };
+        // Identify strong and weak CARE areas (by % of max)
+        const careAreas = [
+          { name: "rapport", avg: parseFloat(avgRapport), max: 10 },
+          { name: "listening", avg: parseFloat(avgListening), max: 5 },
+          { name: "whole-person care", avg: parseFloat(avgWholePerson), max: 10 },
+          { name: "affective empathy", avg: parseFloat(avgAffective), max: 5 },
+          { name: "communication", avg: parseFloat(avgCommunication), max: 10 },
+          { name: "shared planning", avg: parseFloat(avgSharedPlanning), max: 10 },
+        ];
 
-        // Generate summary
-        const overallLevel = getLevel(parseFloat(avgScore));
+        const strengthAreas = careAreas.filter((d) => d.avg / d.max >= 0.7).map((d) => d.name).join(", ");
+        const weaknessAreas = careAreas.filter((d) => d.avg / d.max < 0.5).map((d) => d.name).join(", ");
 
-        // Determine strongest areas
-        const strengths = [
-          avgPT >= 3.5 ? "perspective-taking" : "",
-          avgER >= 3.5 ? "emotional resonance" : "",
-          avgAck >= 3.5 ? "patient acknowledgment" : "",
-          avgLang >= 3.5 ? "communication language" : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
+        const scoreLabel = parseFloat(avgScore) >= 40 ? "strong" :
+          parseFloat(avgScore) >= 30 ? "developing" :
+          parseFloat(avgScore) >= 20 ? "emerging" : "foundational";
 
-        // Determine areas for development
-        const weaknesses = [
-          avgPT < 3.5 ? "perspective-taking" : "",
-          avgER < 3.5 ? "emotional resonance" : "",
-          avgAck < 3.5 ? "patient acknowledgment" : "",
-          avgLang < 3.5 ? "communication clarity" : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
-
-        // Determine empathy profile
-        let empathySummary = "";
-        if (avgCog === avgAff) {
-          empathySummary =
-            avgCog >= 3.5
-              ? "a balanced and strong mix of cognitive (understanding) and affective (emotional connection) empathy"
-              : "a balanced but limited expression of both cognitive and affective empathy";
-        } else {
-          empathySummary =
-            avgCog > avgAff
-              ? "stronger cognitive empathy (understanding)"
-              : "stronger affective empathy (emotional connection)";
-        }
-
-        // Final summary string
         const summary =
-          `This student demonstrates ${overallLevel.toLowerCase()} empathetic communication skills with an average score of ${avgScore}/5. ` +
-          (strengths ? `Strongest areas include ${strengths}. ` : "") +
-          (weaknesses ? `Areas for development: ${weaknesses}. ` : "") +
-          `The student shows ${empathySummary} in their interactions.`;
+          `This student's average CARE Measure score is ${avgScore}/50, reflecting ${scoreLabel} empathetic communication skills. ` +
+          (strengthAreas ? `Strongest areas: ${strengthAreas}. ` : "") +
+          (weaknessAreas ? `Areas for development: ${weaknessAreas}.` : "");
 
         // Get total interactions count (only empathy-evaluated messages)
         let totalInteractions;
@@ -256,15 +220,14 @@ const routes = {
         response.statusCode = 200;
         response.body = JSON.stringify({
           overall_score: parseFloat(avgScore),
-          overall_level: overallLevel,
           total_interactions: parseInt(totalInteractions[0].count),
           empathy_interactions: validCount,
-          avg_perspective_taking: parseFloat(avgPT),
-          avg_emotional_resonance: parseFloat(avgER),
-          avg_acknowledgment: parseFloat(avgAck),
-          avg_language_communication: parseFloat(avgLang),
-          avg_cognitive_empathy: parseFloat(avgCog),
-          avg_affective_empathy: parseFloat(avgAff),
+          avg_rapport: parseFloat(avgRapport),
+          avg_listening: parseFloat(avgListening),
+          avg_whole_person: parseFloat(avgWholePerson),
+          avg_affective_empathy: parseFloat(avgAffective),
+          avg_communication: parseFloat(avgCommunication),
+          avg_shared_planning: parseFloat(avgSharedPlanning),
           summary: summary.replace(/,\s*$/, ".").replace(/,\s*\./g, "."),
           patient_name: patientName,
         });
