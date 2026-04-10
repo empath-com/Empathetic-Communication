@@ -162,7 +162,7 @@ IMPORTANT: In your overall_assessment, address the pharmacist directly using 'yo
 {
     "rapport": <integer 1-10>,
     "listening": <integer 1-5>,
-    "whole-person": <integer 1-10>,
+    "whole_person": <integer 1-10>,
     "affective_empathy": <integer 1-5>,
     "communication": <integer 1-10>,
     "shared_planning": <integer 1-10>,
@@ -170,7 +170,7 @@ IMPORTANT: In your overall_assessment, address the pharmacist directly using 'yo
         "rapport_justification": "Specific evidence for rapport score",
         "emotional_resonance_justification": "Evidence of emotional attunement and compassionate care",
         "listening_justification": "Evidence of active listening behaviours",
-        "whole-person_justification": "Evidence of whole-person vs. task-only focus",
+        "whole_person_justification": "Evidence of whole-person vs. task-only focus",
         "affective_empathy_justification": "Evidence of emotional recognition and response",
         "communication_justification": "Evidence of communication quality and clarity",
         "shared_planning_justification": "Evidence of collaborative planning and patient involvement",

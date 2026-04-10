@@ -61,7 +61,7 @@ user_text: {student_response}"""
                             "maximum": 5,
                             "description": "Active listening skills demonstrated during the consultation (1-5)."
                         },
-                        "whole-person": {
+                        "whole_person": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 10,
@@ -101,7 +101,7 @@ user_text: {student_response}"""
                                     "type": "string",
                                     "minLength": 15
                                 },
-                                "whole-person_justification": {
+                                "whole_person_justification": {
                                     "type": "string",
                                     "minLength": 15
                                 },
@@ -126,7 +126,7 @@ user_text: {student_response}"""
                                 "rapport_justification",
                                 "emotional_resonance_justification",
                                 "listening_justification",
-                                "whole-person_justification",
+                                "whole_person_justification",
                                 "affective_empathy_justification",
                                 "communication_justification",
                                 "shared_planning_justification",
@@ -186,7 +186,7 @@ user_text: {student_response}"""
                     "required": [
                         "rapport",
                         "listening",
-                        "whole-person",
+                        "whole_person",
                         "affective_empathy",
                         "communication",
                         "shared_planning",
@@ -197,7 +197,7 @@ user_text: {student_response}"""
                     {
                         "rapport": 7,
                         "listening": 4,
-                        "whole-person": 6,
+                        "whole_person": 6,
                         "affective_empathy": 4,
                         "communication": 7,
                         "shared_planning": 6,
@@ -205,7 +205,7 @@ user_text: {student_response}"""
                             "rapport_justification": "The pharmacist greeted the patient warmly and used their name, establishing a comfortable atmosphere.",
                             "emotional_resonance_justification": "The pharmacist acknowledged the patient's concern about side effects with genuine sensitivity.",
                             "listening_justification": "The pharmacist paraphrased the patient's main concern before responding, demonstrating active listening.",
-                            "whole-person_justification": "The pharmacist asked about the patient's daily routine and lifestyle to tailor advice, but did not explore psychosocial factors.",
+                            "whole_person_justification": "The pharmacist asked about the patient's daily routine and lifestyle to tailor advice, but did not explore psychosocial factors.",
                             "affective_empathy_justification": "Showed warmth and validation of the patient's emotional experience with the condition.",
                             "communication_justification": "Used plain language effectively, though some technical terms were left unexplained.",
                             "shared_planning_justification": "Offered two medication timing options and asked the patient which worked best for them.",
@@ -322,7 +322,7 @@ user_text: {student_response}"""
         required_scores = [
             ('rapport', 5, 10),
             ('listening', 3, 5),
-            ('whole-person', 5, 10),
+            ('whole_person', 5, 10),
             ('affective_empathy', 3, 5),
             ('communication', 5, 10),
             ('shared_planning', 5, 10),
@@ -343,7 +343,7 @@ user_text: {student_response}"""
             computed_total = (
                 evaluation.get('rapport', 5) +
                 evaluation.get('listening', 3) +
-                evaluation.get('whole-person', 5) +
+                evaluation.get('whole_person', 5) +
                 evaluation.get('affective_empathy', 3) +
                 evaluation.get('communication', 5) +
                 evaluation.get('shared_planning', 5)
@@ -373,7 +373,7 @@ def build_empathy_feedback(evaluation):
 
     rapport_score = evaluation.get('rapport', 5)
     listening_score = evaluation.get('listening', 3)
-    whole_person_score = evaluation.get('whole-person', 5)
+    whole_person_score = evaluation.get('whole_person', 5)
     affective_score = evaluation.get('affective_empathy', 3)
     communication_score = evaluation.get('communication', 5)
     shared_planning_score = evaluation.get('shared_planning', 5)
@@ -516,7 +516,7 @@ Additional patient context:
         total_score = feedback_obj.get('total_score') or (
             empathy_evaluation.get('rapport', 5) +
             empathy_evaluation.get('listening', 3) +
-            empathy_evaluation.get('whole-person', 5) +
+            empathy_evaluation.get('whole_person', 5) +
             empathy_evaluation.get('affective_empathy', 3) +
             empathy_evaluation.get('communication', 5) +
             empathy_evaluation.get('shared_planning', 5)

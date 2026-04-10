@@ -257,17 +257,17 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       const isEmptyObject = evaluation && typeof evaluation === "object" && Object.keys(evaluation).length === 0;
 
       const hasValidScore = evaluation && typeof evaluation === "object" && !isEmptyObject &&
-        (evaluation.rapport > 0 || evaluation.listening > 0 || evaluation['whole-person'] > 0 ||
+        (evaluation.rapport > 0 || evaluation.listening > 0 || evaluation['whole_person'] > 0 ||
          evaluation.affective_empathy > 0 || evaluation.communication > 0 || evaluation.shared_planning > 0);
 
       if (hasValidScore) {
         const dimTotal = (evaluation.feedback?.total_score) ||
-          ((evaluation.rapport || 0) + (evaluation.listening || 0) + (evaluation['whole-person'] || 0) +
+          ((evaluation.rapport || 0) + (evaluation.listening || 0) + (evaluation['whole_person'] || 0) +
            (evaluation.affective_empathy || 0) + (evaluation.communication || 0) + (evaluation.shared_planning || 0));
         totalCareScore += dimTotal;
         totalRapport += evaluation.rapport || 0;
         totalListening += evaluation.listening || 0;
-        totalWholePerson += evaluation['whole-person'] || 0;
+        totalWholePerson += evaluation['whole_person'] || 0;
         totalAffective += evaluation.affective_empathy || 0;
         totalCommunication += evaluation.communication || 0;
         totalSharedPlanning += evaluation.shared_planning || 0;
