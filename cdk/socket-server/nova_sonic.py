@@ -134,6 +134,13 @@ class NovaSonic:
         self.empathy_evaluation_in_progress = False
         # Carry buffer for bracket cues split across textOutput events
         self._bracket_carry = ""
+        # Hybrid voice mode: suppress Nova Sonic's own audio while LLaMA generates a response
+        self._suppress_nova_audio = False
+        self._hybrid_mode = os.getenv("HYBRID_VOICE_MODE", "false").lower() == "true"
+        self._llama_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
+        self._dynamodb_table_name = os.getenv("DYNAMODB_TABLE_NAME", "DynamoDB-Conversation-Table")
+        # Reference to the in-flight LLaMA task so barge-in can cancel it
+        self._llama_task = None
 
     def _ensure_session_exists(self, session_id):
         # Ensure that the session exists in the sessions table before saving messages
@@ -322,8 +329,36 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.
         """
         return system_prompt
 
+    def _get_puppet_system_prompt(self) -> str:
+        """
+        System prompt for hybrid mode.
+        Uses the full patient persona so Nova Sonic knows who it is (prevents echoing
+        user speech and prevents self-describing as a relay). LLaMA handles all reasoning;
+        the text injection directive tells Nova Sonic to speak injected text verbatim.
+        No LLaMA header tokens — Nova Sonic would speak them aloud.
+        No voice emotion guidance — injected text comes from LLaMA which doesn't add cues.
+        """
+        patient_name = self.patient_name or "a patient"
+        base = self.get_default_system_prompt(patient_name)
+        if self.patient_prompt and self.patient_prompt.strip():
+            base += f"\n\nAdditional details about your personality, symptoms or condition:\n{self.patient_prompt}"
+        base += (
+            "\n\n## Text Message Handling\n"
+            "When you receive a text message (as opposed to audio from the pharmacist), "
+            "read it aloud exactly as written — every word, in the exact order given, "
+            "without any modification, addition, or commentary."
+        )
+        return base
+
     def get_system_prompt(self, patient_name=None, patient_prompt=None, llm_completion=None):
         """Cached system prompt retrieval with medical document integration using centralized connection manager"""
+        if self._hybrid_mode:
+            if self._cached_system_prompt:
+                return self._cached_system_prompt
+            self._cached_system_prompt = self._get_puppet_system_prompt()
+            print(f"🤖 HYBRID: Using puppet system prompt for Nova Sonic", flush=True)
+            return self._cached_system_prompt
+
         if self._cached_system_prompt:
             return self._cached_system_prompt
 
@@ -541,6 +576,13 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         print(json.dumps({ "type": "text", "text": "Nova Sonic ready" }), flush=True)
 
     async def start_audio_input(self):
+        if self._hybrid_mode:
+            # Barge-in: cancel any in-flight LLaMA call and reset suppression flags
+            if self._llama_task and not self._llama_task.done():
+                self._llama_task.cancel()
+                print(f"🔇 HYBRID: Barge-in — cancelled in-flight LLaMA task", flush=True)
+            self._suppress_nova_audio = False
+
         self.audio_content_name = str(uuid.uuid4())
         self._current_user_input = ""  # Track user input for empathy evaluation
         await self.send_event({
@@ -633,7 +675,14 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
 
             if self.llm_completion:
                 asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
-            
+
+            # Hybrid mode: suppress Nova Sonic's self-generated response and
+            # call LLaMA 3 70B + pgvector RAG to produce the patient reply instead.
+            if self._hybrid_mode:
+                self._suppress_nova_audio = True
+                print(f"🤖 HYBRID: Suppressing Nova audio, handing off to LLaMA RAG...", flush=True)
+                self._llama_task = asyncio.create_task(self._call_llama_rag(captured_user_input))
+
             self._current_user_input = ""  # Reset for next input
         else:
             print(f"🔍 DEBUG: No user input to save at audio end", flush=True)
@@ -752,6 +801,10 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
 
             if self.role == "ASSISTANT":
+                # Suppress while waiting for LLaMA to finish (Nova Sonic's own reasoning response)
+                if self._suppress_nova_audio:
+                    return
+
                 # Strip bracketed vocal cues from the visible transcript.
                 # The audio renderer uses them; the text display should not show them.
                 # carry buffer handles cues split across consecutive events.
@@ -801,6 +854,10 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
 
         # audioOutput
         elif "audioOutput" in evt:
+            # Hybrid mode: discard Nova Sonic's self-generated audio while waiting
+            # for LLaMA to produce a response and inject it back.
+            if self._suppress_nova_audio:
+                return
             b64 = evt["audioOutput"]["content"]
             audio_bytes = base64.b64decode(b64)
             await self.audio_queue.put(audio_bytes)
@@ -987,6 +1044,94 @@ Provide structured evaluation with detailed justifications for each score.
             logger.error(f"Failed to save user audio message: {e}")
     
     
+    async def _call_llama_rag(self, user_text: str):
+        """
+        Hybrid mode: call LLaMA 3 70B + pgvector RAG for the transcribed user utterance,
+        then inject the response back into Nova Sonic for TTS playback.
+        Always releases _suppress_nova_audio, even on error.
+        """
+        try:
+            import rag_chain
+            print(f"🤖 HYBRID: Calling LLaMA RAG for: {user_text[:60]}...", flush=True)
+            response_text = await rag_chain.call_llama_rag(
+                user_text=user_text,
+                session_id=self.session_id,
+                patient_name=self.patient_name,
+                patient_prompt=self.patient_prompt,
+                patient_id=self.patient_id,
+                table_name=self._dynamodb_table_name,
+            )
+            if response_text and response_text.strip():
+                await self._inject_response(response_text)
+            else:
+                logger.error("🤖 HYBRID: LLaMA returned empty response, releasing suppression")
+                print(f"🤖 HYBRID: LLaMA returned empty response", flush=True)
+                self._suppress_nova_audio = False
+        except asyncio.CancelledError:
+            # Barge-in cancelled this task — release suppression and let start_audio_input take over
+            self._suppress_nova_audio = False
+            print(f"🔇 HYBRID: LLaMA task cancelled by barge-in", flush=True)
+            raise
+        except Exception as e:
+            logger.error(f"🤖 HYBRID: LLaMA RAG call failed: {e}")
+            print(f"🤖 HYBRID: LLaMA RAG call failed: {e}", flush=True)
+            self._suppress_nova_audio = False  # Always release so the session isn't stuck
+
+    async def _inject_response(self, text: str):
+        """
+        Hybrid mode: inject a LLaMA-generated response into Nova Sonic as a USER text turn
+        tagged with [PATIENT_RESPONSE: ...]. Nova Sonic's puppet system prompt causes it to
+        read the tagged text aloud verbatim, preserving barge-in support.
+
+        Saves the clean text to DB and chat history, emits it to the frontend, then releases
+        _suppress_nova_audio so the resulting audio flows to the browser.
+        """
+        inject_content_name = str(uuid.uuid4())
+
+        # Persist and display the LLaMA response (the canonical AI turn)
+        print(f"💾 HYBRID: Saving LLaMA response to DB: {text[:60]}...", flush=True)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, self._save_message_to_db, self.session_id, False, text, None
+        )
+
+        # Inject raw LLaMA text into Nova Sonic as a USER text turn.
+        # No wrapper tag — tags caused Nova Sonic's safety filters to refuse the request.
+        # The puppet system prompt tells Nova Sonic to read USER messages verbatim.
+        await self.send_event({
+            "event": {
+                "contentStart": {
+                    "promptName": self.prompt_name,
+                    "contentName": inject_content_name,
+                    "type": "TEXT",
+                    "interactive": True,
+                    "role": "USER",
+                    "textInputConfiguration": {"mediaType": "text/plain"},
+                }
+            }
+        })
+        await self.send_event({
+            "event": {
+                "textInput": {
+                    "promptName": self.prompt_name,
+                    "contentName": inject_content_name,
+                    "content": text,
+                }
+            }
+        })
+        await self.send_event({
+            "event": {
+                "contentEnd": {
+                    "promptName": self.prompt_name,
+                    "contentName": inject_content_name,
+                }
+            }
+        })
+
+        # Release suppression — Nova Sonic will now speak the injected text
+        self._suppress_nova_audio = False
+        print(f"🔊 HYBRID: Injection sent, audio suppression released", flush=True)
+
     async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
         """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
 
