@@ -40,192 +40,148 @@ user_text: {student_response}"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    # Tool schema forces the model to return structured JSON — no text parsing needed
+    # Tool schema: 10 binary CARE criteria.
+    # Each criterion is 1 (clearly demonstrated in this message) or 0 (not demonstrated).
+    # Scores are additive across all messages in a session — the summary shows totals per criterion.
     empathy_tool = {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
-            "description": "Submit a complete CARE Measure empathy evaluation for a pharmacist-patient consultation. ALL fields must be filled with meaningful content. Do not leave any field empty.",
+            "description": (
+                "Evaluate a single pharmacist message using the 10 CARE Measure criteria. "
+                "For each criterion set 1 if it is clearly demonstrated in this specific message, "
+                "or 0 if it is not. Not all criteria will apply to every message — that is expected."
+            ),
             "inputSchema": {
                 "json": {
                     "type": "object",
                     "properties": {
-                        "rapport": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10,
-                            "description": "How well the pharmacist built rapport and a trusting relationship with the patient (1-10)."
+                        "making_feel_at_ease": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist made the patient feel comfortable and at ease."
                         },
-                        "listening": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5,
-                            "description": "Active listening skills demonstrated during the consultation (1-5)."
+                        "letting_tell_story": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist gave the patient space to explain themselves without interruption."
                         },
-                        "whole_person": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10,
-                            "description": "Degree to which the pharmacist treated the patient as a whole person beyond just their medication (1-10)."
+                        "really_listening": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist demonstrated active listening (paraphrasing, reflecting, following up on what was said)."
                         },
-                        "affective_empathy": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5,
-                            "description": "Emotional empathy and compassionate care shown toward the patient (1-5)."
+                        "interested_in_whole_person": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist showed interest in the patient as a whole person, not just their medication or symptoms."
                         },
-                        "communication": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10,
-                            "description": "Overall clarity, appropriateness, and quality of communication (1-10)."
+                        "understanding_concerns": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist demonstrated they fully understood the patient's concerns."
                         },
-                        "shared_planning": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10,
-                            "description": "Collaborative planning and shared decision-making with the patient (1-10)."
+                        "showing_care_compassion": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist showed genuine care and compassion toward the patient."
+                        },
+                        "being_positive": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist maintained a positive, encouraging, and non-judgmental tone."
+                        },
+                        "explaining_clearly": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist explained information clearly in plain language the patient can understand."
+                        },
+                        "helping_take_control": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist helped the patient feel empowered to manage their own health."
+                        },
+                        "making_plan_of_action": {
+                            "type": "integer", "enum": [0, 1],
+                            "description": "1 if the pharmacist worked with the patient to make a concrete plan of action."
                         },
                         "judge_reasoning": {
                             "type": "object",
-                            "description": "Detailed justification for each score. Each field must contain specific reasoning, not generic statements.",
+                            "description": "Brief reasoning for the criteria that were or were not demonstrated.",
                             "properties": {
-                                "rapport_justification": {
+                                "criteria_observed": {
                                     "type": "string",
-                                    "minLength": 15
+                                    "minLength": 15,
+                                    "description": "One or two sentences listing which criteria were observed and citing specific phrases from the message."
                                 },
-                                "emotional_resonance_justification": {
+                                "criteria_missed": {
                                     "type": "string",
-                                    "minLength": 15
-                                },
-                                "listening_justification": {
-                                    "type": "string",
-                                    "minLength": 15
-                                },
-                                "whole_person_justification": {
-                                    "type": "string",
-                                    "minLength": 15
-                                },
-                                "affective_empathy_justification": {
-                                    "type": "string",
-                                    "minLength": 15
-                                },
-                                "communication_justification": {
-                                    "type": "string",
-                                    "minLength": 15
-                                },
-                                "shared_planning_justification": {
-                                    "type": "string",
-                                    "minLength": 15
+                                    "minLength": 15,
+                                    "description": "One or two sentences noting which applicable criteria were missing and why."
                                 },
                                 "overall_assessment": {
                                     "type": "string",
-                                    "minLength": 25
+                                    "minLength": 25,
+                                    "description": "Encouraging coach note addressing the pharmacist directly using 'you' language."
                                 }
                             },
-                            "required": [
-                                "rapport_justification",
-                                "emotional_resonance_justification",
-                                "listening_justification",
-                                "whole_person_justification",
-                                "affective_empathy_justification",
-                                "communication_justification",
-                                "shared_planning_justification",
-                                "overall_assessment"
-                            ]
+                            "required": ["criteria_observed", "criteria_missed", "overall_assessment"]
                         },
                         "feedback": {
                             "type": "object",
-                            "description": "Actionable and specific feedback. Do not leave any field empty. Avoid generic statements.",
                             "properties": {
-                                "total_score": {
-                                    "type": "integer",
-                                    "description": "Sum of all dimension scores (max 50): rapport + listening + whole-person + affective_empathy + communication + shared_planning."
-                                },
                                 "strengths": {
                                     "type": "array",
-                                    "description": "List at least 2 specific strengths with evidence from the response.",
-                                    "items": {
-                                        "type": "string",
-                                        "minLength": 10
-                                    },
-                                    "minItems": 2
-                                },
-                                "areas_for_improvement": {
-                                    "type": "array",
-                                    "description": "List at least 2 specific domains needing improvement with examples.",
-                                    "items": {
-                                        "type": "string",
-                                        "minLength": 10
-                                    },
-                                    "minItems": 2
+                                    "description": "1-2 specific things this message did well, with evidence.",
+                                    "items": {"type": "string", "minLength": 10},
+                                    "minItems": 1
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "Provide at least 2 actionable, specific improvement recommendations.",
-                                    "items": {
-                                        "type": "string",
-                                        "minLength": 10
-                                    },
-                                    "minItems": 2
+                                    "description": "1-2 concrete, actionable suggestions for this type of message.",
+                                    "items": {"type": "string", "minLength": 10},
+                                    "minItems": 1
                                 },
                                 "forward_target": {
                                     "type": "string",
                                     "minLength": 10,
-                                    "description": "The one domain the pharmacist most needs to practice before the next training session."
+                                    "description": "The single CARE criterion to practise most in the next message."
                                 }
                             },
-                            "required": [
-                                "total_score",
-                                "strengths",
-                                "areas_for_improvement",
-                                "improvement_suggestions",
-                                "forward_target"
-                            ]
+                            "required": ["strengths", "improvement_suggestions", "forward_target"]
                         }
                     },
                     "required": [
-                        "rapport",
-                        "listening",
-                        "whole_person",
-                        "affective_empathy",
-                        "communication",
-                        "shared_planning",
+                        "making_feel_at_ease",
+                        "letting_tell_story",
+                        "really_listening",
+                        "interested_in_whole_person",
+                        "understanding_concerns",
+                        "showing_care_compassion",
+                        "being_positive",
+                        "explaining_clearly",
+                        "helping_take_control",
+                        "making_plan_of_action",
                         "judge_reasoning",
                         "feedback"
                     ],
                     "examples": [
                     {
-                        "rapport": 7,
-                        "listening": 4,
-                        "whole_person": 6,
-                        "affective_empathy": 4,
-                        "communication": 7,
-                        "shared_planning": 6,
+                        "making_feel_at_ease": 1,
+                        "letting_tell_story": 1,
+                        "really_listening": 1,
+                        "interested_in_whole_person": 0,
+                        "understanding_concerns": 1,
+                        "showing_care_compassion": 1,
+                        "being_positive": 1,
+                        "explaining_clearly": 0,
+                        "helping_take_control": 0,
+                        "making_plan_of_action": 0,
                         "judge_reasoning": {
-                            "rapport_justification": "The pharmacist greeted the patient warmly and used their name, establishing a comfortable atmosphere.",
-                            "emotional_resonance_justification": "The pharmacist acknowledged the patient's concern about side effects with genuine sensitivity.",
-                            "listening_justification": "The pharmacist paraphrased the patient's main concern before responding, demonstrating active listening.",
-                            "whole_person_justification": "The pharmacist asked about the patient's daily routine and lifestyle to tailor advice, but did not explore psychosocial factors.",
-                            "affective_empathy_justification": "Showed warmth and validation of the patient's emotional experience with the condition.",
-                            "communication_justification": "Used plain language effectively, though some technical terms were left unexplained.",
-                            "shared_planning_justification": "Offered two medication timing options and asked the patient which worked best for them.",
-                            "overall_assessment": "Overall you demonstrated solid foundational skills. Your rapport-building and active listening were highlights. To grow further, focus on integrating whole-person questions into every consultation."
+                            "criteria_observed": "You greeted the patient warmly (#1), gave them space to speak (#2), paraphrased their concern (#3), acknowledged their worry with compassion (#6), and maintained a positive tone (#7).",
+                            "criteria_missed": "The response did not explain medication details clearly (#8) or invite the patient to set goals (#9). Making a plan (#10) was not yet relevant at this stage.",
+                            "overall_assessment": "You built strong rapport in this opening exchange. Focus on adding plain-language explanations as the consultation develops."
                         },
                         "feedback": {
-                            "total_score": 34,
                             "strengths": [
-                                "Warm, patient-centred greeting established trust early in the consultation",
-                                "Offered patient choice in the treatment plan, supporting shared decision-making"
-                            ],
-                            "areas_for_improvement": [
-                                "Whole-person care: Did not explore psychosocial or lifestyle factors beyond medication timing",
-                                "Communication: Left several clinical terms unexplained"
+                                "Warm greeting and open question invited the patient to share freely",
+                                "Paraphrasing ('So it sounds like...') confirmed you were listening"
                             ],
                             "improvement_suggestions": [
-                                "Ask one open-ended question about how the condition is affecting the patient's daily life",
-                                "After any clinical term, add a brief plain-language explanation"
+                                "When you next explain the medication, avoid technical terms and check comprehension",
+                                "Ask one question that connects the medication to the patient's daily life"
                             ],
-                            "forward_target": "Whole-person care — practice asking about the patient's broader life context in your next session"
+                            "forward_target": "Explaining things clearly (#8)"
                         }
                     }
                     ]
@@ -317,39 +273,21 @@ user_text: {student_response}"""
 
         logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
 
-        # Coerce integer scores in case model returned strings
-        # (key, default_mid, max_val)
-        required_scores = [
-            ('rapport', 5, 10),
-            ('listening', 3, 5),
-            ('whole_person', 5, 10),
-            ('affective_empathy', 3, 5),
-            ('communication', 5, 10),
-            ('shared_planning', 5, 10),
+        # Coerce each binary criterion: must be 0 or 1
+        binary_criteria = [
+            'making_feel_at_ease', 'letting_tell_story', 'really_listening',
+            'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
+            'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
         ]
-        for score_key, default_mid, _max in required_scores:
-            score_value = evaluation.get(score_key)
-            if isinstance(score_value, str):
+        for key in binary_criteria:
+            val = evaluation.get(key)
+            if isinstance(val, str):
                 try:
-                    evaluation[score_key] = int(score_value)
+                    evaluation[key] = 1 if int(val) >= 1 else 0
                 except (ValueError, TypeError):
-                    evaluation[score_key] = default_mid
-            elif score_value is None or score_value == 0:
-                evaluation[score_key] = default_mid
-
-        # Ensure total_score in feedback is computed/coerced
-        feedback = evaluation.get('feedback', {}) or {}
-        if not feedback.get('total_score'):
-            computed_total = (
-                evaluation.get('rapport', 5) +
-                evaluation.get('listening', 3) +
-                evaluation.get('whole_person', 5) +
-                evaluation.get('affective_empathy', 3) +
-                evaluation.get('communication', 5) +
-                evaluation.get('shared_planning', 5)
-            )
-            feedback['total_score'] = computed_total
-            evaluation['feedback'] = feedback
+                    evaluation[key] = 0
+            elif val not in (0, 1):
+                evaluation[key] = 0
 
         evaluation["evaluation_method"] = "LLM-as-a-Judge"
         evaluation["judge_model"] = bedrock_client["model_id"]
@@ -366,70 +304,68 @@ user_text: {student_response}"""
         logger.exception("Full traceback:")
         return None
 
+CARE_CRITERIA_LABELS = {
+    'making_feel_at_ease':        '1. Making you feel at ease',
+    'letting_tell_story':         '2. Letting you tell your story',
+    'really_listening':           '3. Really listening',
+    'interested_in_whole_person': '4. Being interested in you as a whole person',
+    'understanding_concerns':     '5. Fully understanding your concerns',
+    'showing_care_compassion':    '6. Showing care and compassion',
+    'being_positive':             '7. Being positive',
+    'explaining_clearly':         '8. Explaining things clearly',
+    'helping_take_control':       '9. Helping you take control',
+    'making_plan_of_action':      '10. Making a plan of action with you',
+}
+
+
 def build_empathy_feedback(evaluation):
-    """Build formatted CARE Measure empathy feedback from evaluation dict."""
+    """Build per-message empathy feedback using CARE binary criteria."""
     if not evaluation:
         return "**Empathy Coach:** System temporarily unavailable.\\\\n"
 
-    rapport_score = evaluation.get('rapport', 5)
-    listening_score = evaluation.get('listening', 3)
-    whole_person_score = evaluation.get('whole_person', 5)
-    affective_score = evaluation.get('affective_empathy', 3)
-    communication_score = evaluation.get('communication', 5)
-    shared_planning_score = evaluation.get('shared_planning', 5)
+    criteria_hit = [label for key, label in CARE_CRITERIA_LABELS.items() if evaluation.get(key) == 1]
+    criteria_missed = [label for key, label in CARE_CRITERIA_LABELS.items() if evaluation.get(key) == 0]
+    hit_count = len(criteria_hit)
 
-    feedback = evaluation.get('feedback', {}) or {}
-    total_score = feedback.get('total_score') or (
-        rapport_score + listening_score + whole_person_score +
-        affective_score + communication_score + shared_planning_score
-    )
+    empathy_feedback = f"**Empathy Coach (CARE Measure):**\\\\n\\\\n"
+    empathy_feedback += f"**Criteria demonstrated this message: {hit_count} / 10**\\\\n\\\\n"
 
-    empathy_feedback = f"**Empathy Coach (CARE Measure — Pharmacist–Patient Consultation):**\\\\n\\\\n"
-    empathy_feedback += f"**Total Score: {total_score}/50**\\\\n\\\\n"
+    if criteria_hit:
+        empathy_feedback += f"**Demonstrated:**\\\\n"
+        for label in criteria_hit:
+            empathy_feedback += f"• ✅ {label}\\\\n"
+        empathy_feedback += "\\\\n"
 
-    empathy_feedback += f"**CARE Dimension Breakdown:**\\\\n"
-    empathy_feedback += f"• Rapport: {rapport_score}/10\\\\n"
-    empathy_feedback += f"• Listening: {listening_score}/5\\\\n"
-    empathy_feedback += f"• Whole-Person Care: {whole_person_score}/10\\\\n"
-    empathy_feedback += f"• Affective Empathy: {affective_score}/5\\\\n"
-    empathy_feedback += f"• Communication: {communication_score}/10\\\\n"
-    empathy_feedback += f"• Shared Planning: {shared_planning_score}/10\\\\n\\\\n"
+    if criteria_missed:
+        empathy_feedback += f"**Not demonstrated:**\\\\n"
+        for label in criteria_missed:
+            empathy_feedback += f"• ○ {label}\\\\n"
+        empathy_feedback += "\\\\n"
 
     judge_reasoning = evaluation.get('judge_reasoning', {})
-    if judge_reasoning and 'overall_assessment' in judge_reasoning:
-        empathy_feedback += f"**Coach Assessment:**\\\\n"
+    if judge_reasoning.get('overall_assessment'):
         assessment = judge_reasoning['overall_assessment']
-        assessment = assessment.replace("The student's response", "Your response")
-        assessment = assessment.replace("The student", "You")
-        assessment = assessment.replace("demonstrates", "show")
-        assessment = assessment.replace("fails to", "could better")
-        assessment = assessment.replace("lacks", "would benefit from more")
-        empathy_feedback += f"{assessment}\\\\n\\\\n"
+        assessment = assessment.replace("The student", "You").replace("the student", "you")
+        empathy_feedback += f"**Coach:** {assessment}\\\\n\\\\n"
 
+    feedback = evaluation.get('feedback', {}) or {}
     strengths = feedback.get('strengths', [])
     if strengths:
-        empathy_feedback += f"**Strengths:**\\\\n"
-        for strength in strengths:
-            empathy_feedback += f"• {strength}\\\\n"
+        empathy_feedback += f"**What worked:**\\\\n"
+        for s in strengths:
+            empathy_feedback += f"• {s}\\\\n"
         empathy_feedback += "\\\\n"
 
-    areas_for_improvement = feedback.get('areas_for_improvement', [])
-    if areas_for_improvement:
-        empathy_feedback += f"**Areas for Improvement:**\\\\n"
-        for area in areas_for_improvement:
-            empathy_feedback += f"• {area}\\\\n"
-        empathy_feedback += "\\\\n"
-
-    improvement_suggestions = feedback.get('improvement_suggestions', [])
-    if improvement_suggestions:
-        empathy_feedback += f"**Coach Recommendations:**\\\\n"
-        for suggestion in improvement_suggestions:
-            empathy_feedback += f"• {suggestion}\\\\n"
+    suggestions = feedback.get('improvement_suggestions', [])
+    if suggestions:
+        empathy_feedback += f"**Try next time:**\\\\n"
+        for s in suggestions:
+            empathy_feedback += f"• {s}\\\\n"
         empathy_feedback += "\\\\n"
 
     forward_target = feedback.get('forward_target', '')
     if forward_target:
-        empathy_feedback += f"**Focus for Next Session:** {forward_target}\\\\n\\\\n"
+        empathy_feedback += f"**Focus for your next message:** {forward_target}\\\\n\\\\n"
 
     empathy_feedback += "---\\\\n\\\\n"
     return empathy_feedback
@@ -512,14 +448,13 @@ Additional patient context:
 
         logger.info(f"✅ Empathy evaluation completed successfully")
 
-        feedback_obj = empathy_evaluation.get('feedback', {}) or {}
-        total_score = feedback_obj.get('total_score') or (
-            empathy_evaluation.get('rapport', 5) +
-            empathy_evaluation.get('listening', 3) +
-            empathy_evaluation.get('whole_person', 5) +
-            empathy_evaluation.get('affective_empathy', 3) +
-            empathy_evaluation.get('communication', 5) +
-            empathy_evaluation.get('shared_planning', 5)
+        criteria_hit = sum(
+            empathy_evaluation.get(k, 0)
+            for k in [
+                'making_feel_at_ease', 'letting_tell_story', 'really_listening',
+                'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
+                'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
+            ]
         )
 
         return {
@@ -527,8 +462,8 @@ Additional patient context:
             "body": json.dumps({
                 "empathy_evaluation": empathy_evaluation,
                 "summary": {
-                    "total_score": total_score,
-                    "max_score": 50
+                    "criteria_hit": criteria_hit,
+                    "max_per_message": 10
                 },
                 "empathy_feedback_markdown": empathy_feedback
             })

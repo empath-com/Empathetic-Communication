@@ -283,22 +283,28 @@ export default function useChatMessages({
       if (!empathyData) return;
 
       const feedback = empathyData.feedback || {};
-      const totalScore = feedback.total_score ||
-        (empathyData.rapport || 0) + (empathyData.listening || 0) +
-        (empathyData.whole_person || 0) + (empathyData.affective_empathy || 0) +
-        (empathyData.communication || 0) + (empathyData.shared_planning || 0);
+      const criteriaHits = [
+        'making_feel_at_ease', 'letting_tell_story', 'really_listening',
+        'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
+        'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
+      ].reduce((sum, k) => sum + (empathyData[k] === 1 ? 1 : 0), 0);
 
       const transformedData = {
-        overall_score: totalScore,
-        avg_rapport: empathyData.rapport || 0,
-        avg_listening: empathyData.listening || 0,
-        avg_whole_person: empathyData.whole_person || 0,
-        avg_affective_empathy: empathyData.affective_empathy || 0,
-        avg_communication: empathyData.communication || 0,
-        avg_shared_planning: empathyData.shared_planning || 0,
+        overall_score: criteriaHits,
+        total_messages_evaluated: 1,
+        total_criteria_hits: criteriaHits,
+        making_feel_at_ease: empathyData.making_feel_at_ease || 0,
+        letting_tell_story: empathyData.letting_tell_story || 0,
+        really_listening: empathyData.really_listening || 0,
+        interested_in_whole_person: empathyData.interested_in_whole_person || 0,
+        understanding_concerns: empathyData.understanding_concerns || 0,
+        showing_care_compassion: empathyData.showing_care_compassion || 0,
+        being_positive: empathyData.being_positive || 0,
+        explaining_clearly: empathyData.explaining_clearly || 0,
+        helping_take_control: empathyData.helping_take_control || 0,
+        making_plan_of_action: empathyData.making_plan_of_action || 0,
         summary: empathyData.judge_reasoning?.overall_assessment || "",
         strengths: feedback.strengths || [],
-        areas_for_improvement: feedback.areas_for_improvement || [],
         recommendations: feedback.improvement_suggestions || [],
         forward_target: feedback.forward_target || "",
         timestamp: Date.now(),

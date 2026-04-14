@@ -303,6 +303,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         startSpokenLLM(voice_id, chatSessions.setLoading, currentSessionId, {
           patient_name: patient?.patient_name,
           patient_prompt: patient?.patient_prompt,
+          patient_id: patient?.patient_id || "",
           llm_completion: !!patient?.llm_completion,
           system_prompt: group?.system_prompt || "",
         });

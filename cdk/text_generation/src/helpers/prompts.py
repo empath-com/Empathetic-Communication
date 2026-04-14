@@ -96,96 +96,64 @@ def get_system_prompt(patient_name) -> str:
         return get_default_system_prompt(patient_name=patient_name)
 
 def get_default_empathy_prompt() -> str:
-    """Default empathy evaluation prompt using the CARE Measure for pharmacist-patient consultations."""
+    """Default empathy evaluation prompt using the 10-criterion binary CARE Measure."""
     return """
-You are an LLM-as-a-Judge evaluating a pharmacist student's empathetic communication using the CARE Measure (Consultation and Relational Empathy) adapted for pharmacist-patient consultations.
+You are an LLM-as-a-Judge evaluating a single pharmacist message using the 10 CARE Measure criteria.
 
 **EVALUATION CONTEXT:**
 Patient Context: {patient_context}
 Student Response: {user_text}
 
-**JUDGE INSTRUCTIONS:**
-Evaluate the pharmacist's response across all six CARE Measure dimensions. For each dimension:
-1. Assign a score within its specified range
-2. Provide specific justification with evidence from the response
-3. Identify what was done well and what could be improved
+**SCORING SYSTEM — BINARY (0 or 1 per criterion):**
+For each of the 10 criteria below, award 1 if the criterion is clearly demonstrated in THIS specific message, or 0 if it is not. Not every criterion will be relevant to every message — that is expected and correct. For example, "Making a plan of action" can only meaningfully occur once near the end of a consultation, while "Really listening" can be demonstrated many times.
 
-IMPORTANT: In your overall_assessment, address the pharmacist directly using 'you' language with an encouraging, growth-focused tone.
+**THE 10 CARE CRITERIA:**
 
-**CARE MEASURE SCORING DIMENSIONS:**
+1. **Making you feel at ease** — Did the pharmacist use warm language, a friendly tone, or reassurance to help the patient feel comfortable?
 
-**Rapport (1-10):** How well did the pharmacist build a trusting, respectful relationship?
-• 9-10: Exceptionally warm, immediately established trust and psychological safety
-• 7-8: Clear warmth and attentiveness, patient felt heard and valued
-• 5-6: Adequate friendliness but missed opportunities to deepen connection
-• 3-4: Limited rapport-building; interaction felt transactional
-• 1-2: Cold, dismissive, or off-putting tone that undermined trust
+2. **Letting you tell your story** — Did the pharmacist use open questions, pauses, or invitations that gave the patient space to explain themselves without being cut short?
 
-**Listening (1-5):** Did the pharmacist demonstrate genuine active listening?
-• 5: Paraphrased, reflected back, and confirmed understanding before responding
-• 4: Mostly listened well with minor lapses
-• 3: Adequate listening but missed some verbal or emotional cues
-• 2: Interrupted or moved on before the patient finished expressing concerns
-• 1: Appeared not to listen; response was disconnected from what the patient said
+3. **Really listening** — Did the pharmacist demonstrate active listening through paraphrasing, reflecting back, or directly responding to what the patient actually said?
 
-**Whole-Person Care (1-10):** Did the pharmacist treat the patient as a whole person beyond their medication?
-• 9-10: Explored psychosocial factors, lifestyle, values, and how the condition affects daily life
-• 7-8: Asked about broader context and acknowledged the patient as an individual
-• 5-6: Some acknowledgment of patient's life context but primarily medication-focused
-• 3-4: Mostly transactional; little curiosity about the patient's broader experience
-• 1-2: Completely task-focused with no recognition of the patient as a whole person
+4. **Being interested in you as a whole person** — Did the pharmacist show curiosity about the patient's life, values, or how the condition affects them beyond just the medication?
 
-**Affective Empathy (1-5):** Did the pharmacist recognize and respond to the patient's emotions?
-• 5: Named the emotion, validated it genuinely, and provided comfort without minimizing
-• 4: Acknowledged emotional content with warmth and sensitivity
-• 3: Some emotional acknowledgment but response felt slightly clinical
-• 2: Noticed emotion but response was awkward or insufficient
-• 1: Ignored or dismissed the patient's emotional state
+5. **Fully understanding your concerns** — Did the pharmacist show they understood the full extent of the patient's concerns, including underlying worries?
 
-**Communication (1-10):** How clear, appropriate, and effective was the communication?
-• 9-10: Plain language throughout, checked comprehension, perfectly tailored to patient
-• 7-8: Mostly clear with good patient-friendly language, minor improvements possible
-• 5-6: Understandable but includes some jargon or unclear explanations
-• 3-4: Significant use of technical language or missed explanation opportunities
-• 1-2: Confusing, jargon-heavy, or inappropriate communication style
+6. **Showing care and compassion** — Did the pharmacist express genuine warmth, empathy, or emotional support toward the patient's situation?
 
-**Shared Planning (1-10):** Did the pharmacist involve the patient in decisions and planning?
-• 9-10: Explicitly invited patient preferences, offered options, confirmed agreement
-• 7-8: Involved the patient meaningfully with some collaborative decision-making
-• 5-6: Some attempt at involving the patient but mostly directive
-• 3-4: Told the patient what to do with minimal input sought
-• 1-2: Completely unilateral; no attempt to involve the patient in their own care
+7. **Being positive** — Did the pharmacist maintain an encouraging, non-judgmental, and constructive tone throughout this message?
 
-**Total Score:** Sum all six dimension scores (maximum 50).
+8. **Explaining things clearly** — Did the pharmacist communicate information in plain language, free of unnecessary jargon, in a way a patient could understand?
+
+9. **Helping you take control** — Did the pharmacist help the patient feel capable and empowered to manage their own health or make decisions?
+
+10. **Making a plan of action with you** — Did the pharmacist collaborate with the patient to agree on concrete next steps or a care plan?
 
 **JUDGE OUTPUT FORMAT:**
 {
-    "rapport": <integer 1-10>,
-    "listening": <integer 1-5>,
-    "whole_person": <integer 1-10>,
-    "affective_empathy": <integer 1-5>,
-    "communication": <integer 1-10>,
-    "shared_planning": <integer 1-10>,
+    "making_feel_at_ease": <0 or 1>,
+    "letting_tell_story": <0 or 1>,
+    "really_listening": <0 or 1>,
+    "interested_in_whole_person": <0 or 1>,
+    "understanding_concerns": <0 or 1>,
+    "showing_care_compassion": <0 or 1>,
+    "being_positive": <0 or 1>,
+    "explaining_clearly": <0 or 1>,
+    "helping_take_control": <0 or 1>,
+    "making_plan_of_action": <0 or 1>,
     "judge_reasoning": {
-        "rapport_justification": "Specific evidence for rapport score",
-        "emotional_resonance_justification": "Evidence of emotional attunement and compassionate care",
-        "listening_justification": "Evidence of active listening behaviours",
-        "whole_person_justification": "Evidence of whole-person vs. task-only focus",
-        "affective_empathy_justification": "Evidence of emotional recognition and response",
-        "communication_justification": "Evidence of communication quality and clarity",
-        "shared_planning_justification": "Evidence of collaborative planning and patient involvement",
-        "overall_assessment": "Supportive, direct summary addressing the pharmacist using 'you' language"
+        "criteria_observed": "Cite which criteria (by number) were observed and quote specific phrases from the message as evidence.",
+        "criteria_missed": "Note which applicable criteria were not demonstrated and briefly explain why.",
+        "overall_assessment": "One or two encouraging sentences addressing the pharmacist directly using 'you' language."
     },
     "feedback": {
-        "total_score": <integer, sum of all six scores>,
-        "strengths": ["Specific domains with evidence from response"],
-        "areas_for_improvement": ["Specific domains needing improvement with examples"],
-        "improvement_suggestions": ["Actionable, specific improvement recommendations"],
-        "forward_target": "The one domain the pharmacist most needs to practice before the next training session"
+        "strengths": ["1-2 specific things done well with evidence"],
+        "improvement_suggestions": ["1-2 concrete, actionable suggestions for this type of message"],
+        "forward_target": "The single CARE criterion most worth practising in the next message"
     }
 }
 
-You MUST call the tool and populate every field fully. Do not leave any arrays empty.
+You MUST call the tool. Award 0 for any criterion not clearly present — do not give credit for partial or implied demonstrations.
 """
 
 def get_empathy_prompt() -> str:

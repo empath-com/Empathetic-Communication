@@ -14,53 +14,44 @@ import {
   Chip,
 } from "@mui/material";
 
-const CARE_DIMENSIONS = [
-  { key: "avg_rapport", label: "Rapport", max: 10 },
-  { key: "avg_listening", label: "Listening", max: 5 },
-  { key: "avg_whole_person", label: "Whole-Person Care", max: 10 },
-  { key: "avg_affective_empathy", label: "Affective Empathy", max: 5 },
-  { key: "avg_communication", label: "Communication", max: 10 },
-  { key: "avg_shared_planning", label: "Shared Planning", max: 10 },
+const CARE_CRITERIA = [
+  { key: "making_feel_at_ease",        label: "Making you feel at ease" },
+  { key: "letting_tell_story",         label: "Letting you tell your story" },
+  { key: "really_listening",           label: "Really listening" },
+  { key: "interested_in_whole_person", label: "Being interested in you as a whole person" },
+  { key: "understanding_concerns",     label: "Fully understanding your concerns" },
+  { key: "showing_care_compassion",    label: "Showing care and compassion" },
+  { key: "being_positive",             label: "Being positive" },
+  { key: "explaining_clearly",         label: "Explaining things clearly" },
+  { key: "helping_take_control",       label: "Helping you take control" },
+  { key: "making_plan_of_action",      label: "Making a plan of action with you" },
 ];
 
-const MAX_TOTAL = 50;
+const getHitColor = (hits, total) => {
+  if (!total) return "#9E9E9E";
+  const rate = hits / total;
+  if (rate >= 0.8) return "#4CAF50";
+  if (rate >= 0.6) return "#8BC34A";
+  if (rate >= 0.4) return "#FFC107";
+  if (rate >= 0.2) return "#FF9800";
+  return "#F44336";
+};
 
 const EmpathyCoachSummary = ({ empathyData }) => {
   if (!empathyData) {
     return <Typography>No empathy data available.</Typography>;
   }
 
-  const totalScore = parseFloat(empathyData.overall_score) || 0;
-  const pct = (totalScore / MAX_TOTAL) * 100;
-
-  const getScoreColor = (score, max) => {
-    const p = score / max;
-    if (p >= 0.9) return "#4CAF50";
-    if (p >= 0.7) return "#8BC34A";
-    if (p >= 0.5) return "#FFC107";
-    if (p >= 0.3) return "#FF9800";
-    return "#F44336";
-  };
-
-  const getOverallColor = () => getScoreColor(totalScore, MAX_TOTAL);
+  const totalMessages = empathyData.total_messages_evaluated || 0;
+  const totalHits = empathyData.total_criteria_hits || 0;
 
   return (
     <Box sx={{ width: "100%", p: 2 }}>
-      {/* Total Score Header */}
+      {/* Header */}
       <Box sx={{ mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          CARE Measure Total Score: {totalScore} / {MAX_TOTAL}
+          CARE Measure — {totalHits} criteria demonstrated across {totalMessages} message{totalMessages !== 1 ? "s" : ""}
         </Typography>
-        <LinearProgress
-          variant="determinate"
-          value={pct}
-          sx={{
-            height: 10,
-            borderRadius: 5,
-            backgroundColor: "#e0e0e0",
-            "& .MuiLinearProgress-bar": { backgroundColor: getOverallColor() },
-          }}
-        />
       </Box>
 
       <Divider sx={{ my: 2 }} />
@@ -77,32 +68,35 @@ const EmpathyCoachSummary = ({ empathyData }) => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {/* Dimension Breakdown */}
+            {/* Criteria Breakdown */}
             <TableRow>
               <TableCell
                 component="th"
                 scope="row"
                 sx={{ width: "30%", borderRight: "1px solid rgba(224,224,224,1)", verticalAlign: "top" }}
               >
-                <Typography variant="subtitle1">Dimension Scores</Typography>
+                <Typography variant="subtitle1">Criterion Hits</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  out of {totalMessages} message{totalMessages !== 1 ? "s" : ""}
+                </Typography>
               </TableCell>
               <TableCell sx={{ verticalAlign: "top" }}>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                  {CARE_DIMENSIONS.map(({ key, label, max }) => {
-                    const val = parseFloat(empathyData[key]) || 0;
-                    const dimPct = (val / max) * 100;
-                    const color = getScoreColor(val, max);
+                  {CARE_CRITERIA.map(({ key, label }) => {
+                    const hits = empathyData[key] || 0;
+                    const pct = totalMessages > 0 ? (hits / totalMessages) * 100 : 0;
+                    const color = getHitColor(hits, totalMessages);
                     return (
                       <Box key={key}>
                         <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3 }}>
                           <Typography variant="body2">{label}</Typography>
-                          <Typography variant="body2" sx={{ fontWeight: "bold" }}>
-                            {val}/{max}
+                          <Typography variant="body2" sx={{ fontWeight: "bold", ml: 1, whiteSpace: "nowrap" }}>
+                            {hits} / {totalMessages}
                           </Typography>
                         </Box>
                         <LinearProgress
                           variant="determinate"
-                          value={dimPct}
+                          value={pct}
                           sx={{
                             height: 6,
                             borderRadius: 3,
@@ -153,28 +147,6 @@ const EmpathyCoachSummary = ({ empathyData }) => {
                   </Box>
                 ) : (
                   <Typography>No specific strengths identified yet.</Typography>
-                )}
-              </TableCell>
-            </TableRow>
-
-            {/* Areas for Improvement */}
-            <TableRow>
-              <TableCell
-                component="th"
-                scope="row"
-                sx={{ borderRight: "1px solid rgba(224,224,224,1)", verticalAlign: "top" }}
-              >
-                <Typography variant="subtitle1">Areas for Improvement</Typography>
-              </TableCell>
-              <TableCell sx={{ verticalAlign: "top" }}>
-                {empathyData.areas_for_improvement && empathyData.areas_for_improvement.length > 0 ? (
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    {empathyData.areas_for_improvement.map((a, i) => (
-                      <Typography key={i}>• {a}</Typography>
-                    ))}
-                  </Box>
-                ) : (
-                  <Typography>No specific areas identified yet.</Typography>
                 )}
               </TableCell>
             </TableRow>

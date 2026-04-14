@@ -544,26 +544,36 @@ const StudentDetails = () => {
                     </Typography>
                     <Box sx={{ mb: 3 }}>
                       <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Average CARE Score:</strong> {empathySummary.overall_score} / 50
+                        <strong>Total Criteria Hits:</strong> {empathySummary.total_criteria_hits || empathySummary.overall_score}
                       </Typography>
                       <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Total Interactions:</strong> {empathySummary.total_interactions}
+                        <strong>Messages Evaluated:</strong> {empathySummary.total_messages_evaluated || empathySummary.empathy_interactions}
                       </Typography>
                       <Typography variant="body1" sx={{ mb: 2 }}>
-                        <strong>Interactions with Empathy Feedback:</strong> {empathySummary.empathy_interactions}
+                        <strong>Total Interactions:</strong> {empathySummary.total_interactions}
                       </Typography>
                     </Box>
 
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                      CARE Dimension Breakdown
+                      CARE Criterion Breakdown (hits / messages)
                     </Typography>
                     <Box sx={{ mb: 3 }}>
-                      <Typography variant="body2">• Rapport: {empathySummary.avg_rapport} / 10</Typography>
-                      <Typography variant="body2">• Listening: {empathySummary.avg_listening} / 5</Typography>
-                      <Typography variant="body2">• Whole-Person Care: {empathySummary.avg_whole_person} / 10</Typography>
-                      <Typography variant="body2">• Affective Empathy: {empathySummary.avg_affective_empathy} / 5</Typography>
-                      <Typography variant="body2">• Communication: {empathySummary.avg_communication} / 10</Typography>
-                      <Typography variant="body2">• Shared Planning: {empathySummary.avg_shared_planning} / 10</Typography>
+                      {[
+                        ['making_feel_at_ease',        'Making you feel at ease'],
+                        ['letting_tell_story',         'Letting you tell your story'],
+                        ['really_listening',           'Really listening'],
+                        ['interested_in_whole_person', 'Being interested in you as a whole person'],
+                        ['understanding_concerns',     'Fully understanding your concerns'],
+                        ['showing_care_compassion',    'Showing care and compassion'],
+                        ['being_positive',             'Being positive'],
+                        ['explaining_clearly',         'Explaining things clearly'],
+                        ['helping_take_control',       'Helping you take control'],
+                        ['making_plan_of_action',      'Making a plan of action with you'],
+                      ].map(([key, label]) => (
+                        <Typography key={key} variant="body2">
+                          • {label}: {empathySummary[key] || 0} / {empathySummary.total_messages_evaluated || 0}
+                        </Typography>
+                      ))}
                     </Box>
 
                     <Typography variant="h6" sx={{ mb: 2 }}>

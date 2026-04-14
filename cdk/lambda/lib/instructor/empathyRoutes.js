@@ -1,3 +1,40 @@
+const BINARY_CRITERIA = [
+  'making_feel_at_ease', 'letting_tell_story', 'really_listening',
+  'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
+  'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
+];
+
+const CRITERIA_LABELS = {
+  making_feel_at_ease:        'Making you feel at ease',
+  letting_tell_story:         'Letting you tell your story',
+  really_listening:           'Really listening',
+  interested_in_whole_person: 'Being interested in you as a whole person',
+  understanding_concerns:     'Fully understanding your concerns',
+  showing_care_compassion:    'Showing care and compassion',
+  being_positive:             'Being positive',
+  explaining_clearly:         'Explaining things clearly',
+  helping_take_control:       'Helping you take control',
+  making_plan_of_action:      'Making a plan of action with you',
+};
+
+const EMPTY_SUMMARY = {
+  overall_score: 0,
+  total_messages_evaluated: 0,
+  total_criteria_hits: 0,
+  total_interactions: 0,
+  empathy_interactions: 0,
+  making_feel_at_ease: 0,
+  letting_tell_story: 0,
+  really_listening: 0,
+  interested_in_whole_person: 0,
+  understanding_concerns: 0,
+  showing_care_compassion: 0,
+  being_positive: 0,
+  explaining_clearly: 0,
+  helping_take_control: 0,
+  making_plan_of_action: 0,
+};
+
 const routes = {
   "GET /instructor/empathy_summary": async ({ event, sqlConnection, response }) => {
     if (
@@ -31,22 +68,11 @@ const routes = {
           `;
 
           if (columnCheck.length === 0) {
-            console.log(
-              "empathy_evaluation column does not exist in messages table"
-            );
+            console.log("empathy_evaluation column does not exist in messages table");
             response.statusCode = 200;
             response.body = JSON.stringify({
-              overall_score: 0,
-              total_interactions: 0,
-              empathy_interactions: 0,
-              avg_rapport: 0,
-              avg_listening: 0,
-              avg_whole_person: 0,
-              avg_affective_empathy: 0,
-              avg_communication: 0,
-              avg_shared_planning: 0,
-              summary:
-                "Empathy evaluation feature not yet available. Database schema needs to be updated.",
+              ...EMPTY_SUMMARY,
+              summary: "Empathy evaluation feature not yet available. Database schema needs to be updated.",
             });
             return response;
           }
@@ -99,78 +125,45 @@ const routes = {
         if (!empathyData || empathyData.length === 0) {
           response.statusCode = 200;
           response.body = JSON.stringify({
-            overall_score: 0,
-            total_interactions: 0,
-            empathy_interactions: 0,
-            avg_rapport: 0,
-            avg_listening: 0,
-            avg_whole_person: 0,
-            avg_affective_empathy: 0,
-            avg_communication: 0,
-            avg_shared_planning: 0,
+            ...EMPTY_SUMMARY,
             summary: "No empathy evaluation data available for this student.",
           });
           return response;
         }
 
-        // Calculate CARE Measure dimension totals
-        let totalCareScore = 0,
-          totalRapport = 0,
-          totalListening = 0,
-          totalWholePerson = 0,
-          totalAffective = 0,
-          totalCommunication = 0,
-          totalSharedPlanning = 0;
+        // Accumulate binary criterion hit counts across all evaluated messages
+        const criteriaTotals = Object.fromEntries(BINARY_CRITERIA.map(k => [k, 0]));
         let validCount = 0;
+        let forwardTarget = "";
 
         empathyData.forEach((row) => {
           const evaluation = row.empathy_evaluation;
           if (evaluation && typeof evaluation === "object" &&
-              (evaluation.rapport > 0 || evaluation.listening > 0 || evaluation['whole_person'] > 0 ||
-               evaluation.affective_empathy > 0 || evaluation.communication > 0 || evaluation.shared_planning > 0)) {
-            const dimTotal = (evaluation.feedback?.total_score) ||
-              ((evaluation.rapport || 0) + (evaluation.listening || 0) + (evaluation['whole_person'] || 0) +
-               (evaluation.affective_empathy || 0) + (evaluation.communication || 0) + (evaluation.shared_planning || 0));
-            totalCareScore += dimTotal;
-            totalRapport += evaluation.rapport || 0;
-            totalListening += evaluation.listening || 0;
-            totalWholePerson += evaluation['whole_person'] || 0;
-            totalAffective += evaluation.affective_empathy || 0;
-            totalCommunication += evaluation.communication || 0;
-            totalSharedPlanning += evaluation.shared_planning || 0;
+              typeof evaluation.making_feel_at_ease === "number") {
+            BINARY_CRITERIA.forEach(k => {
+              criteriaTotals[k] += evaluation[k] === 1 ? 1 : 0;
+            });
+            if (evaluation.feedback?.forward_target && !forwardTarget) {
+              forwardTarget = evaluation.feedback.forward_target;
+            }
             validCount++;
           }
         });
 
-        const avgScore = validCount > 0 ? (totalCareScore / validCount).toFixed(1) : 0;
-        const avgRapport = validCount > 0 ? (totalRapport / validCount).toFixed(1) : 0;
-        const avgListening = validCount > 0 ? (totalListening / validCount).toFixed(1) : 0;
-        const avgWholePerson = validCount > 0 ? (totalWholePerson / validCount).toFixed(1) : 0;
-        const avgAffective = validCount > 0 ? (totalAffective / validCount).toFixed(1) : 0;
-        const avgCommunication = validCount > 0 ? (totalCommunication / validCount).toFixed(1) : 0;
-        const avgSharedPlanning = validCount > 0 ? (totalSharedPlanning / validCount).toFixed(1) : 0;
+        const totalCriteriaHits = BINARY_CRITERIA.reduce((sum, k) => sum + criteriaTotals[k], 0);
 
-        // Identify strong and weak CARE areas (by % of max)
-        const careAreas = [
-          { name: "rapport", avg: parseFloat(avgRapport), max: 10 },
-          { name: "listening", avg: parseFloat(avgListening), max: 5 },
-          { name: "whole-person care", avg: parseFloat(avgWholePerson), max: 10 },
-          { name: "affective empathy", avg: parseFloat(avgAffective), max: 5 },
-          { name: "communication", avg: parseFloat(avgCommunication), max: 10 },
-          { name: "shared planning", avg: parseFloat(avgSharedPlanning), max: 10 },
-        ];
+        const criteriaByRate = BINARY_CRITERIA
+          .map(k => ({ label: CRITERIA_LABELS[k], rate: validCount > 0 ? criteriaTotals[k] / validCount : 0 }))
+          .sort((a, b) => b.rate - a.rate);
 
-        const strengthAreas = careAreas.filter((d) => d.avg / d.max >= 0.7).map((d) => d.name).join(", ");
-        const weaknessAreas = careAreas.filter((d) => d.avg / d.max < 0.5).map((d) => d.name).join(", ");
-
-        const scoreLabel = parseFloat(avgScore) >= 40 ? "strong" :
-          parseFloat(avgScore) >= 30 ? "developing" :
-          parseFloat(avgScore) >= 20 ? "emerging" : "foundational";
+        const topCriteria = criteriaByRate.filter(c => c.rate >= 0.7).map(c => c.label).join(", ");
+        const lowCriteria = criteriaByRate.filter(c => c.rate < 0.3).map(c => c.label).join(", ");
 
         const summary =
-          `This student's average CARE Measure score is ${avgScore}/50, reflecting ${scoreLabel} empathetic communication skills. ` +
-          (strengthAreas ? `Strongest areas: ${strengthAreas}. ` : "") +
-          (weaknessAreas ? `Areas for development: ${weaknessAreas}.` : "");
+          `Across ${validCount} evaluated message${validCount !== 1 ? "s" : ""}, this student demonstrated CARE criteria ${totalCriteriaHits} time${totalCriteriaHits !== 1 ? "s" : ""} in total. ` +
+          (topCriteria ? `Most consistent areas: ${topCriteria}. ` : "") +
+          (lowCriteria ? `Areas to develop: ${lowCriteria}. ` : "") +
+          (forwardTarget ? `Focus for next session: ${forwardTarget}.` : "");
 
         // Get total interactions count (only empathy-evaluated messages)
         let totalInteractions;
@@ -219,16 +212,13 @@ const routes = {
 
         response.statusCode = 200;
         response.body = JSON.stringify({
-          overall_score: parseFloat(avgScore),
+          overall_score: totalCriteriaHits,
+          total_messages_evaluated: validCount,
+          total_criteria_hits: totalCriteriaHits,
           total_interactions: parseInt(totalInteractions[0].count),
           empathy_interactions: validCount,
-          avg_rapport: parseFloat(avgRapport),
-          avg_listening: parseFloat(avgListening),
-          avg_whole_person: parseFloat(avgWholePerson),
-          avg_affective_empathy: parseFloat(avgAffective),
-          avg_communication: parseFloat(avgCommunication),
-          avg_shared_planning: parseFloat(avgSharedPlanning),
-          summary: summary.replace(/,\s*$/, ".").replace(/,\s*\./g, "."),
+          ...criteriaTotals,
+          summary,
           patient_name: patientName,
         });
       } catch (err) {

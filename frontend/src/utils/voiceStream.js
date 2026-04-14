@@ -109,6 +109,7 @@ export async function startSpokenLLM(
   const {
     patient_name = "",
     patient_prompt = "",
+    patient_id = "",
     llm_completion = false,
     system_prompt = "",
   } = options || {};
@@ -119,6 +120,7 @@ export async function startSpokenLLM(
     session_id: session_id || "default",
     patient_name,
     patient_prompt,
+    patient_id,
     llm_completion: !!llm_completion,
     system_prompt,
   });
