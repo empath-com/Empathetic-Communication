@@ -282,24 +282,25 @@ export default function useChatMessages({
       const empathyData = data.empathy_evaluation;
       if (!empathyData) return;
 
+      const feedback = empathyData.feedback || {};
+      const totalScore = feedback.total_score ||
+        (empathyData.rapport || 0) + (empathyData.listening || 0) +
+        (empathyData.whole_person || 0) + (empathyData.affective_empathy || 0) +
+        (empathyData.communication || 0) + (empathyData.shared_planning || 0);
+
       const transformedData = {
-        overall_score: empathyData.empathy_score || 3,
-        avg_perspective_taking: empathyData.perspective_taking || 3,
-        avg_emotional_resonance: empathyData.emotional_resonance || 3,
-        avg_acknowledgment: empathyData.acknowledgment || 3,
-        avg_language_communication: empathyData.language_communication || 3,
-        avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-        avg_affective_empathy: empathyData.affective_empathy || 3,
-        realism_assessment:
-          empathyData.realism_flag === "realistic"
-            ? "Your responses are generally realistic!"
-            : "Your response is unrealistic!!",
-        realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-        coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
-        strengths: empathyData.feedback?.strengths || [],
-        areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-        recommendations: empathyData.feedback?.improvement_suggestions || [],
-        recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+        overall_score: totalScore,
+        avg_rapport: empathyData.rapport || 0,
+        avg_listening: empathyData.listening || 0,
+        avg_whole_person: empathyData.whole_person || 0,
+        avg_affective_empathy: empathyData.affective_empathy || 0,
+        avg_communication: empathyData.communication || 0,
+        avg_shared_planning: empathyData.shared_planning || 0,
+        summary: empathyData.judge_reasoning?.overall_assessment || "",
+        strengths: feedback.strengths || [],
+        areas_for_improvement: feedback.areas_for_improvement || [],
+        recommendations: feedback.improvement_suggestions || [],
+        forward_target: feedback.forward_target || "",
         timestamp: Date.now(),
       };
       setRealtimeEmpathy((prev) => [...prev, transformedData]);
@@ -535,6 +536,7 @@ export default function useChatMessages({
         setNovaTextInput("");
 
         const message = messageData[0].message_content;
+        const messageId = messageData[0].message_id;
 
         const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT}student/text_generation?simulation_group_id=${encodeURIComponent(
           group.simulation_group_id
@@ -544,7 +546,7 @@ export default function useChatMessages({
           patient.patient_id
         )}&session_name=${encodeURIComponent(
           newSessionObj.session_name
-        )}&stream=true`;
+        )}&message_id=${encodeURIComponent(messageId)}&stream=true`;
 
         if (empathyEnabled) {
           pendingEmpathyRef.current = {

@@ -94,6 +94,7 @@ def generate_streaming_response(
     llm_completion: bool = False,
     current_session_name: str = "New chat",
     debug_prompt: str = None,
+    message_id: str = None,
 ) -> str:
     """
     Streams an answer via AppSync directly (no threading needed with self-invocation pattern).
@@ -111,7 +112,14 @@ def generate_streaming_response(
         should_evaluate = len(query.strip()) > 0 and not is_greeting
         logger.info(f"🔍 IS_GREETING: {is_greeting}, SHOULD_EVALUATE: {should_evaluate}")
 
-        student_message_id = save_message_to_db(session_id, True, query, None)
+        # If the frontend already created the message (via POST /student/create_message),
+        # reuse that message_id to avoid a duplicate row in the DB.
+        if message_id:
+            student_message_id = message_id
+            logger.info(f"🔗 Reusing existing student message_id: {student_message_id}")
+        else:
+            student_message_id = save_message_to_db(session_id, True, query, None)
+            logger.info(f"🔗 Saved new student message_id: {student_message_id}")
 
         # Publish debug prompt event so frontend can log the full prompt
         if debug_prompt:
@@ -186,6 +194,24 @@ def generate_streaming_response(
             "session_name": new_session_name,
         })
         save_message_to_db(session_id, False, full_response, None)
+
+        # Evaluate empathy inline for the student message if enabled.
+        # This runs in the async Lambda invocation so it does not block the UI.
+        if empathy_enabled and should_evaluate and student_message_id and bedrock_client:
+            try:
+                logger.info(f"🧠 INLINE EMPATHY EVALUATION for message {student_message_id}")
+                from .empathy import handle_empathy_evaluation
+                handle_empathy_evaluation(
+                    session_id=session_id,
+                    patient_id=None,
+                    message_content=query,
+                    bedrock_client=bedrock_client,
+                    patient_prompt=patient_prompt or "",
+                    message_id=student_message_id,
+                )
+                logger.info(f"✅ INLINE EMPATHY SAVED for message {student_message_id}")
+            except Exception as empathy_err:
+                logger.error(f"❌ Inline empathy evaluation failed (non-fatal): {empathy_err}")
 
         logger.info(f"✅ STREAMING COMPLETED for session: {session_id}, length: {len(full_response)}")
 

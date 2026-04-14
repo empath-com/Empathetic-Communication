@@ -448,12 +448,14 @@ def handler_text_generation(event, context):
             session_id = event.get("session_id", "")
             patient_id = event.get("patient_id", "")
             session_name = event.get("session_name", "New Chat")
+            message_id = event.get("message_id") or None
         else:
             query_params = event.get("queryStringParameters", {}) or {}
             simulation_group_id = query_params.get("simulation_group_id", "")
             session_id = query_params.get("session_id", "")
             patient_id = query_params.get("patient_id", "")
             session_name = query_params.get("session_name", "New Chat")
+            message_id = query_params.get("message_id") or None
 
         if not simulation_group_id or not session_id or not patient_id:
             return {
@@ -495,6 +497,7 @@ def handler_text_generation(event, context):
                 "patient_id": patient_id,
                 "session_name": session_name,
                 "message_content": question,
+                "message_id": message_id,
                 "stream": True
             }
 
@@ -673,6 +676,7 @@ def handler_text_generation(event, context):
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
                 current_session_name=session_name,
+                message_id=message_id,
             )
         except Exception as e:
             logger.error(f"Error getting response: {e}")

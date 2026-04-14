@@ -239,6 +239,7 @@ def get_response(
     bedrock_client=None,
     empathy_enabled: bool = False,
     current_session_name: str = "New chat",
+    message_id: str = None,
 ) -> dict:
     """
     Generates a response to a query using the LLM and a history-aware retriever for context.
@@ -337,6 +338,7 @@ def get_response(
                 llm_completion=llm_completion,
                 current_session_name=current_session_name,
                 debug_prompt=final_system_prompt,
+                message_id=message_id,
             )
             # For streaming, response is saved directly via AppSync
             # Return immediately with status message
