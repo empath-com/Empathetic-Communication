@@ -59,7 +59,8 @@
       "Bash(set PYTHONIOENCODING=UTF-8)",
       "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output json)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//c/Users/Peter/AppData/Local/Temp/**)"
     ],
     "deny": [
       "Bash(cdk deploy:*)",

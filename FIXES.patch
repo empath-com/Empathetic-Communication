@@ -1,0 +1,16 @@
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          overall_score: Math.round(averageScore * 10) / 10,  // Average across 1-5 scale
+          total_messages_evaluated: 1,
+          total_criteria_hits: totalCriteriaHits,  // Sum of 1-5 scores
+          total_interactions: allEmpathyData.length,
+          empathy_interactions: 1,
+          is_1_to_5_scale: true,  // Signal that criteria scores are 1-5, not binary hits
+          ...latestCriteria,
+          summary,
+          strengths: uniqueStrengths.length > 0 ? uniqueStrengths : null,
+          recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
+          forward_target: forwardTarget,
+        }),
+      };

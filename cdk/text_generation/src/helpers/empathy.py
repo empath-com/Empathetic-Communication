@@ -1,4 +1,5 @@
 import boto3
+import hashlib
 import json
 import logging
 import re
@@ -20,6 +21,14 @@ MAX_PATIENT_CONTEXT_CHARS = 1200
 EMPATHY_MAX_OUTPUT_TOKENS = 900
 MAX_SYSTEM_PROMPT_CHARS = 7000
 MAX_GROUNDING_RETRIES = 1
+DEBUG_LOG_FULL_PROMPTS = False
+
+STATIC_GROUNDING_INSTRUCTIONS = """Grounding rules (mandatory):
+- Evaluate ONLY using evidence in TRANSCRIPT.
+- Do not invent quotes, symptoms, medications, events, names, or non-verbal cues.
+- If evidence is missing for a criterion, state that explicitly in justification.
+- Keep output concise: one short paragraph for overall assessment and 1-2 sentences per item.
+"""
 
 
 class LLM_evaluation(BaseModel):
@@ -115,20 +124,26 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
         logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
         static_system_prompt = get_default_empathy_prompt()
 
-    # Build dynamic user prompt with hard grounding constraints to reduce hallucination.
-    dynamic_user_prompt = f"""You must evaluate ONLY using evidence in TRANSCRIPT.
-Do not invent quotes, symptoms, medications, or events not present in TRANSCRIPT.
-If a criterion lacks evidence, state that explicitly in the justification.
-Keep responses concise: one short paragraph for overall assessment and 1-2 sentences per item.
-
-PATIENT_CONTEXT:
+    # Keep cacheable text in system prompt; keep dynamic prompt focused on request-specific context.
+    cached_system_prompt = f"{static_system_prompt}\n\n{STATIC_GROUNDING_INSTRUCTIONS}"
+    dynamic_user_prompt = f"""PATIENT_CONTEXT:
 {patient_context}
 
 TRANSCRIPT_START
 {student_response}
 TRANSCRIPT_END"""
 
-    logger.info(f"✅ Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
+    system_hash = hashlib.sha256(cached_system_prompt.encode("utf-8")).hexdigest()[:12]
+    dynamic_hash = hashlib.sha256(dynamic_user_prompt.encode("utf-8")).hexdigest()[:12]
+    logger.info(
+        f"✅ Using prompt caching - Cached system: {len(cached_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars"
+    )
+    logger.info(f"🧩 Prompt hashes - system={system_hash}, dynamic={dynamic_hash}")
+
+    if DEBUG_LOG_FULL_PROMPTS:
+        logger.info(f"📋 PATIENT CONTEXT:\n{patient_context}")
+        logger.info(f"📋 SYSTEM PROMPT:\n{cached_system_prompt}")
+        logger.info(f"📋 USER PROMPT:\n{dynamic_user_prompt}")
 
     # CRITICAL VALIDATION: Ensure the user text is included
     if student_response not in dynamic_user_prompt:
@@ -308,7 +323,7 @@ STRICT RETRY MODE:
             body = {
                 "system": [
                     {
-                        "text": static_system_prompt,
+                        "text": cached_system_prompt,
                         "cachePoint": {
                             "type": "default"
                         }
@@ -356,20 +371,20 @@ STRICT RETRY MODE:
 
             result = json.loads(response["body"].read())
 
-        # Log cache usage
-        usage = result.get("usage", {})
+            # Log cache usage
+            usage = result.get("usage", {})
 
-        logger.info(f"FULL USAGE OBJECT: {usage}")
+            logger.info(f"FULL USAGE OBJECT: {usage}")
 
-        cache_read = usage.get('cacheReadInputTokenCount', 0)
-        cache_write = usage.get('cacheWriteInputTokenCount', 0)
+            cache_read = usage.get('cacheReadInputTokenCount', 0)
+            cache_write = usage.get('cacheWriteInputTokenCount', 0)
 
-        if cache_read > 0:
-            logger.info(f"✅ CACHE HIT! Read {cache_read} tokens from cache")
-        elif cache_write > 0:
-            logger.info(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache")
+            if cache_read > 0:
+                logger.info(f"✅ CACHE HIT! Read {cache_read} tokens from cache")
+            elif cache_write > 0:
+                logger.info(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache")
 
-        logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+            logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
 
             # Extract structured output from tool use response
             content_blocks = result.get("output", {}).get("message", {}).get("content", [])
@@ -414,7 +429,7 @@ STRICT RETRY MODE:
 
             if issue and attempt >= MAX_GROUNDING_RETRIES:
                 logger.error(f"❌ Grounding issue persists after retry ({issue}); applying safe fallback text")
-                _apply_grounded_fallback(evaluation)
+                _apply_grounded_text_fallback(evaluation)
 
             evaluation["evaluation_method"] = "LLM-as-a-Judge"
             evaluation["judge_model"] = bedrock_client["model_id"]
