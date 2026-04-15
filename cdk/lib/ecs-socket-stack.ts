@@ -168,7 +168,8 @@ export class EcsSocketStack extends Stack {
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         // Must match the model used to embed documents in text_generation (business-lambdas.ts)
         EMBEDDING_MODEL_ID: "amazon.titan-embed-text-v2:0",
-        // Hybrid voice mode: LLaMA handles reasoning, Nova Sonic handles STT/TTS only
+        // Hybrid voice mode: LLaMA handles reasoning, Nova Sonic handles STT/TTS only.
+        // Chain is pre-warmed during session startup to reduce first-turn latency.
         HYBRID_VOICE_MODE: "true",
         LLAMA_MODEL_ID: "meta.llama3-70b-instruct-v1:0",
         DYNAMODB_TABLE_NAME: "DynamoDB-Conversation-Table",

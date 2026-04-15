@@ -572,8 +572,26 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         # Start processing responses
         self.response = asyncio.create_task(self._process_responses())
 
+        # Pre-warm LLaMA chain in background so first-turn latency is low.
+        # Session startup (~8s) gives the chain time to build before the user speaks.
+        if self._hybrid_mode and self.patient_id:
+            asyncio.create_task(self._prewarm_llama_chain())
+
         print(f"✅ Nova Sonic session started (Prompt ID: {self.prompt_name})", flush=True)
         print(json.dumps({ "type": "text", "text": "Nova Sonic ready" }), flush=True)
+
+    async def _prewarm_llama_chain(self):
+        """Build and cache the LLaMA RAG chain in the background during session startup."""
+        try:
+            import rag_chain
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, rag_chain.ensure_chain,
+                self.patient_id, self.patient_name, self.patient_prompt, self._dynamodb_table_name,
+            )
+            print(f"🤖 HYBRID: LLaMA chain pre-warmed for patient_id={self.patient_id!r}", flush=True)
+        except Exception as e:
+            print(f"🤖 HYBRID: Chain pre-warm failed (will retry on first turn): {e}", flush=True)
 
     async def start_audio_input(self):
         if self._hybrid_mode:
@@ -676,11 +694,11 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             if self.llm_completion:
                 asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
 
-            # Hybrid mode: suppress Nova Sonic's self-generated response and
-            # call LLaMA 3 70B + pgvector RAG to produce the patient reply instead.
+            # Hybrid mode: call LLaMA 3 70B + pgvector RAG to produce the patient reply.
+            # Suppression is set inside _call_llama_rag ONLY after the chain is confirmed
+            # available, so Nova Sonic's own response is not silently discarded when LLaMA fails.
             if self._hybrid_mode:
-                self._suppress_nova_audio = True
-                print(f"🤖 HYBRID: Suppressing Nova audio, handing off to LLaMA RAG...", flush=True)
+                print(f"🤖 HYBRID: Handing off to LLaMA RAG...", flush=True)
                 self._llama_task = asyncio.create_task(self._call_llama_rag(captured_user_input))
 
             self._current_user_input = ""  # Reset for next input
@@ -1048,11 +1066,30 @@ Provide structured evaluation with detailed justifications for each score.
         """
         Hybrid mode: call LLaMA 3 70B + pgvector RAG for the transcribed user utterance,
         then inject the response back into Nova Sonic for TTS playback.
-        Always releases _suppress_nova_audio, even on error.
+
+        Suppression is enabled ONLY after we successfully build the LLaMA chain.
+        If chain build fails, we leave Nova Sonic's own response unblocked (fallback).
         """
         try:
             import rag_chain
-            print(f"🤖 HYBRID: Calling LLaMA RAG for: {user_text[:60]}...", flush=True)
+            print(f"🤖 HYBRID: Building LLaMA chain for patient_id={self.patient_id!r}...", flush=True)
+
+            # Attempt to build / retrieve the cached chain BEFORE suppressing Nova Sonic.
+            # build_chain is synchronous; run it in the executor to avoid blocking the loop.
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                rag_chain.ensure_chain,
+                self.patient_id,
+                self.patient_name,
+                self.patient_prompt,
+                self._dynamodb_table_name,
+            )
+
+            # Chain is ready — now suppress Nova Sonic's own audio and call LLaMA.
+            self._suppress_nova_audio = True
+            print(f"🤖 HYBRID: Chain ready, suppressing Nova audio, calling LLaMA...", flush=True)
+
             response_text = await rag_chain.call_llama_rag(
                 user_text=user_text,
                 session_id=self.session_id,

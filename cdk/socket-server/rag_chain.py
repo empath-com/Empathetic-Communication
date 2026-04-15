@@ -185,6 +185,33 @@ def _build_chain(
     )
 
 
+def ensure_chain(
+    patient_id: str,
+    patient_name: str,
+    patient_prompt: str,
+    table_name: str,
+) -> None:
+    """
+    Synchronously build and cache the LLaMA chain for the given patient_id.
+    Raises if the chain cannot be built (e.g. missing env vars, DB unreachable).
+    Called from nova_sonic.py via run_in_executor BEFORE audio suppression is enabled,
+    so a build failure falls back to Nova Sonic's own response rather than silent failure.
+    """
+    llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
+    cache_key = patient_id or "default"
+    if cache_key not in _chain_cache:
+        logger.info(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id!r}")
+        print(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id!r}", flush=True)
+        _chain_cache[cache_key] = _build_chain(
+            patient_name=patient_name,
+            patient_prompt=patient_prompt,
+            patient_id=patient_id,
+            llm_model_id=llm_model_id,
+            table_name=table_name,
+        )
+        logger.info(f"🤖 RAG_CHAIN: Chain built successfully for patient_id={patient_id!r}")
+
+
 async def call_llama_rag(
     user_text: str,
     session_id: str,
@@ -202,26 +229,9 @@ async def call_llama_rag(
 
     Returns the plain-text patient response.
     """
-    llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
-    cache_key = patient_id or "default"
-
-    if cache_key not in _chain_cache:
-        logger.info(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id}")
-        print(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id}", flush=True)
-        try:
-            _chain_cache[cache_key] = _build_chain(
-                patient_name=patient_name,
-                patient_prompt=patient_prompt,
-                patient_id=patient_id,
-                llm_model_id=llm_model_id,
-                table_name=table_name,
-            )
-            logger.info(f"🤖 RAG_CHAIN: Chain built successfully for patient_id={patient_id}")
-        except Exception as e:
-            logger.error(f"🤖 RAG_CHAIN: Failed to build chain: {e}")
-            raise
-
-    chain = _chain_cache[cache_key]
+    # ensure_chain may have already built and cached the chain; this is a no-op if so.
+    ensure_chain(patient_id, patient_name, patient_prompt, table_name)
+    chain = _chain_cache[patient_id or "default"]
 
     def _invoke():
         return chain.invoke(

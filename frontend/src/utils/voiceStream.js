@@ -179,9 +179,9 @@ export async function stopSpokenLLM(waitForResponse = true) {
       socket.on("text-message", onTextMessage);
 
       setTimeout(() => {
-        if (!receivedResponse) console.warn("⚠️ No response within 10 seconds");
+        if (!receivedResponse) console.warn("⚠️ No response within 60 seconds");
         cleanup();
-      }, 10000);
+      }, 60000);
     });
   }
 

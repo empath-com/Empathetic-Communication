@@ -63,21 +63,23 @@ def create_dynamodb_history_table(table_name: str) -> bool:
 def get_conversation_history(session_id: str) -> list:
     """
     Retrieve conversation history for a session from PostgreSQL.
-    Returns list of messages in chronological order: [{"student_sent": bool, "message_content": str}, ...]
+    Returns list of messages in chronological order:
+    [{"message_id": str, "student_sent": bool, "message_content": str}, ...]
     """
     try:
         logger.info(f"📖 Retrieving conversation history for session: {session_id}")
         with get_db_cursor() as cursor:
             cursor.execute(
-                'SELECT student_sent, message_content, time_sent FROM "messages" WHERE session_id = %s ORDER BY time_sent ASC',
+                'SELECT message_id, student_sent, message_content, time_sent FROM "messages" WHERE session_id = %s ORDER BY time_sent ASC',
                 (session_id,)
             )
             rows = cursor.fetchall()
 
             messages = []
             for row in rows:
-                student_sent, message_content, time_sent = row
+                message_id, student_sent, message_content, time_sent = row
                 messages.append({
+                    "message_id": str(message_id),
                     "student_sent": student_sent,
                     "message_content": message_content,
                     "time_sent": time_sent

@@ -280,12 +280,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // Shared voice-stop: waits for the final AI response (stopSpokenLLM is async),
   // then reloads messages so the DB-persisted voice turns appear in the chat.
   const handleVoiceStop = async () => {
-    chatMessages.allowAudioRef.current = false;
+    // Keep allowAudioRef = true while waiting so audio-chunk events from LLaMA
+    // are still played back by the useChatMessages handler. Only block after done.
     stopAudioPlayback();
     setIsRecording(false);
     setShowVoiceOverlay(false);
     chatSessions.setLoading(false);
     await stopSpokenLLM();
+    chatMessages.allowAudioRef.current = false;
     // Give the server's async DB writes a moment to land before reloading
     setTimeout(() => chatMessages.getMessages(), 2000);
   };

@@ -38,6 +38,10 @@ const EMPTY_SUMMARY = {
   making_plan_of_action: 0,
 };
 
+// When true, summary is derived from the latest evaluated student message only.
+// This matches thread-level empathy evaluation where the latest row represents the full thread state.
+const USE_LATEST_THREAD_EVALUATION_SUMMARY = true;
+
 const studentEmpathySummary = async (event, sqlConnection) => {
   console.log("[studentEmpathySummary] Incoming event:", JSON.stringify(event));
   
@@ -147,9 +151,6 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       throw queryError;
     }
     
-    // Get recent evaluations for feedback text (top 3)
-    const recentEmpathyData = allEmpathyData.slice(0, 3);
-
     if (!allEmpathyData || allEmpathyData.length === 0) {
       console.log("[studentEmpathySummary] No empathy data found, returning empty summary");
       return {
@@ -157,6 +158,67 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         body: JSON.stringify({ ...EMPTY_SUMMARY, summary: "No empathy evaluation data available yet." }),
       };
     }
+
+    if (USE_LATEST_THREAD_EVALUATION_SUMMARY) {
+      console.log("[studentEmpathySummary] Using latest-thread empathy summary mode");
+      const latestEvaluation = allEmpathyData[0]?.empathy_evaluation;
+
+      if (!latestEvaluation || typeof latestEvaluation !== "object") {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ ...EMPTY_SUMMARY, summary: "No valid empathy evaluation data available yet." }),
+        };
+      }
+
+      // For 1-5 scale: extract criterion scores
+      const latestCriteria = Object.fromEntries(
+        BINARY_CRITERIA.map((k) => {
+          const score = latestEvaluation[k];
+          // Map 1-5 scale to normalized value (1=1, 5=5)
+          return [k, typeof score === "number" ? Math.max(1, Math.min(5, score)) : 3];
+        })
+      );
+      
+      // Calculate average across all 10 criteria (1-5 scale)
+      const totalCriteriaHits = BINARY_CRITERIA.reduce((sum, k) => sum + latestCriteria[k], 0);
+      const averageScore = totalCriteriaHits / BINARY_CRITERIA.length;
+
+      const feedback = latestEvaluation.feedback && typeof latestEvaluation.feedback === "object"
+        ? latestEvaluation.feedback
+        : {};
+      const uniqueStrengths = Array.isArray(feedback.strengths) ? [...new Set(feedback.strengths)] : [];
+      const uniqueRecommendations = Array.isArray(feedback.improvement_suggestions)
+        ? [...new Set(feedback.improvement_suggestions)]
+        : [];
+      const forwardTarget = feedback.forward_target || null;
+
+      const judgeSummary = latestEvaluation.judge_reasoning && typeof latestEvaluation.judge_reasoning === "object"
+        ? latestEvaluation.judge_reasoning.overall_assessment
+        : "";
+
+      const summary = judgeSummary
+        ? `${judgeSummary} Latest full-thread score: ${averageScore.toFixed(1)}/5.0 across all CARE criteria.`
+        : `Latest full-thread empathy evaluation average: ${averageScore.toFixed(1)}/5.0 across all CARE criteria.`;
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          overall_score: Math.round(averageScore * 10) / 10,  // Average across 1-5 scale
+          total_messages_evaluated: 1,
+          total_criteria_hits: totalCriteriaHits,  // Sum of 1-5 scores
+          total_interactions: allEmpathyData.length,
+          empathy_interactions: 1,
+          ...latestCriteria,
+          summary,
+          strengths: uniqueStrengths.length > 0 ? uniqueStrengths : null,
+          recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
+          forward_target: forwardTarget,
+        }),
+      };
+    }
+
+    // Get recent evaluations for feedback text (top 3)
+    const recentEmpathyData = allEmpathyData.slice(0, 3);
 
     // Accumulate binary criterion hit counts across all evaluated messages
     const criteriaTotals = Object.fromEntries(BINARY_CRITERIA.map(k => [k, 0]));

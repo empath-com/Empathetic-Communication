@@ -96,64 +96,120 @@ def get_system_prompt(patient_name) -> str:
         return get_default_system_prompt(patient_name=patient_name)
 
 def get_default_empathy_prompt() -> str:
-    """Default empathy evaluation prompt using the 10-criterion binary CARE Measure."""
+    """Default empathy evaluation prompt using 1-5 scale CARE Measure for full conversation thread."""
     return """
-You are an LLM-as-a-Judge evaluating a single pharmacist message using the 10 CARE Measure criteria.
+You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacist's empathetic communication.
 
 **EVALUATION CONTEXT:**
 Patient Context: {patient_context}
-Student Response: {user_text}
+Pharmacist Response(s): {user_text}
 
-**SCORING SYSTEM — BINARY (0 or 1 per criterion):**
-For each of the 10 criteria below, award 1 if the criterion is clearly demonstrated in THIS specific message, or 0 if it is not. Not every criterion will be relevant to every message — that is expected and correct. For example, "Making a plan of action" can only meaningfully occur once near the end of a consultation, while "Really listening" can be demonstrated many times.
+**JUDGE INSTRUCTIONS:**
+Evaluate the pharmacist's response(s) across all 10 empathy criteria on a 1-5 scale. For each criterion, provide:
+1. A score (1-5)
+2. Clear justification for the score
+3. Specific evidence from the pharmacist's response
+4. Actionable improvement recommendations
 
-**THE 10 CARE CRITERIA:**
+**THE 10 CARE CRITERIA WITH 1-5 SCORING:**
 
-1. **Making you feel at ease** — Did the pharmacist use warm language, a friendly tone, or reassurance to help the patient feel comfortable?
+**1. Making you feel at ease**
+- 1 — Emerging: Distant or abrupt; limited effort to build comfort
+- 2 — Developing: Basic greeting; somewhat impersonal
+- 3 — Competent: Polite and respectful; neutral tone
+- 4 — Proficient: Warm and friendly; helps you feel comfortable
+- 5 — Advanced: Highly welcoming; consistently puts you at ease
 
-2. **Letting you tell your story** — Did the pharmacist use open questions, pauses, or invitations that gave the patient space to explain themselves without being cut short?
+**2. Letting you tell your story**
+- 1 — Emerging: Frequently interrupts; controls conversation
+- 2 — Developing: Occasionally interrupts; limits expression
+- 3 — Competent: Allows some speaking but redirects early
+- 4 — Proficient: Gives time to speak with minimal interruption
+- 5 — Advanced: Fully allows expression; actively invites your perspective
 
-3. **Really listening** — Did the pharmacist demonstrate active listening through paraphrasing, reflecting back, or directly responding to what the patient actually said?
+**3. Really listening**
+- 1 — Emerging: Appears distracted; misses key points
+- 2 — Developing: Inconsistent attention; limited acknowledgment
+- 3 — Competent: Listens but with minimal engagement
+- 4 — Proficient: Attentive; uses cues like nodding or summarizing
+- 5 — Advanced: Fully engaged; accurately reflects and responds
 
-4. **Being interested in you as a whole person** — Did the pharmacist show curiosity about the patient's life, values, or how the condition affects them beyond just the medication?
+**4. Being interested in you as a whole person**
+- 1 — Emerging: Focuses only on task; ignores personal context
+- 2 — Developing: Minimal acknowledgment of context
+- 3 — Competent: Some recognition but not explored
+- 4 — Proficient: Asks about relevant personal/lifestyle factors
+- 5 — Advanced: Integrates your context meaningfully into care
 
-5. **Fully understanding your concerns** — Did the pharmacist show they understood the full extent of the patient's concerns, including underlying worries?
+**5. Fully understanding your concerns**
+- 1 — Emerging: Misses or misinterprets main concerns
+- 2 — Developing: Partial understanding; key issues overlooked
+- 3 — Competent: Understands basic concerns
+- 4 — Proficient: Clear understanding; checks for accuracy
+- 5 — Advanced: Fully understands and validates priorities
 
-6. **Showing care and compassion** — Did the pharmacist express genuine warmth, empathy, or emotional support toward the patient's situation?
+**6. Showing care and compassion**
+- 1 — Emerging: Limited or no expression of empathy
+- 2 — Developing: Basic empathy; somewhat generic
+- 3 — Competent: Some empathy shown but not sustained
+- 4 — Proficient: Clear and appropriate empathy
+- 5 — Advanced: Consistently genuine and personalized compassion
 
-7. **Being positive** — Did the pharmacist maintain an encouraging, non-judgmental, and constructive tone throughout this message?
+**7. Being positive**
+- 1 — Emerging: Tone may feel discouraging or uncertain
+- 2 — Developing: Limited reassurance
+- 3 — Competent: Neutral with some reassurance
+- 4 — Proficient: Encouraging and appropriately reassuring
+- 5 — Advanced: Supportive, motivating, and realistic
 
-8. **Explaining things clearly** — Did the pharmacist communicate information in plain language, free of unnecessary jargon, in a way a patient could understand?
+**8. Explaining things clearly**
+- 1 — Emerging: Difficult to follow; unclear explanations
+- 2 — Developing: Partially clear; some confusion remains
+- 3 — Competent: Basic explanations; generally understandable
+- 4 — Proficient: Clear and well-organized explanations
+- 5 — Advanced: Very clear; checks understanding effectively
 
-9. **Helping you take control** — Did the pharmacist help the patient feel capable and empowered to manage their own health or make decisions?
+**9. Helping you to take control**
+- 1 — Emerging: Does not involve you in decisions
+- 2 — Developing: Limited involvement; few options discussed
+- 3 — Competent: Some involvement but mostly directed
+- 4 — Proficient: Encourages participation and shared decisions
+- 5 — Advanced: Fully empowers confidence and self-management
 
-10. **Making a plan of action with you** — Did the pharmacist collaborate with the patient to agree on concrete next steps or a care plan?
+**10. Making a plan of action with you**
+- 1 — Emerging: Plan is unclear or absent
+- 2 — Developing: Plan is vague or one-sided
+- 3 — Competent: Basic plan provided
+- 4 — Proficient: Clear plan developed with your input
+- 5 — Advanced: Collaborative, specific plan with follow-up guidance
 
-**JUDGE OUTPUT FORMAT:**
-{
-    "making_feel_at_ease": <0 or 1>,
-    "letting_tell_story": <0 or 1>,
-    "really_listening": <0 or 1>,
-    "interested_in_whole_person": <0 or 1>,
-    "understanding_concerns": <0 or 1>,
-    "showing_care_compassion": <0 or 1>,
-    "being_positive": <0 or 1>,
-    "explaining_clearly": <0 or 1>,
-    "helping_take_control": <0 or 1>,
-    "making_plan_of_action": <0 or 1>,
-    "judge_reasoning": {
-        "criteria_observed": "Cite which criteria (by number) were observed and quote specific phrases from the message as evidence.",
-        "criteria_missed": "Note which applicable criteria were not demonstrated and briefly explain why.",
-        "overall_assessment": "One or two encouraging sentences addressing the pharmacist directly using 'you' language."
-    },
-    "feedback": {
-        "strengths": ["1-2 specific things done well with evidence"],
-        "improvement_suggestions": ["1-2 concrete, actionable suggestions for this type of message"],
-        "forward_target": "The single CARE criterion most worth practising in the next message"
-    }
-}
+**IMPORTANT:** In your overall_assessment, you MUST:
+1. Address the pharmacist directly using 'you' language with an encouraging, supportive tone
+2. Discuss all 6 empathy domains and provide specific examples from the conversation to support each score:
+   - **Rapport** (Criteria 1-2): warmth, comfort, space for expression
+   - **Listening** (Criteria 3): active engagement, reflection, acknowledgment
+   - **Whole-person care** (Criteria 4-5): holistic interest, understanding concerns
+   - **Affective empathy** (Criteria 6): genuine compassion and care
+   - **Communication** (Criteria 7-8): positive tone, clear explanations
+   - **Shared planning** (Criteria 9-10): empowerment, collaboration on action steps
+3. Cite specific phrases or interactions from the conversation as evidence
+4. Focus on growth and learning rather than criticism
+5. Be 400-600 words to ensure comprehensive coverage
 
-You MUST call the tool. Award 0 for any criterion not clearly present — do not give credit for partial or implied demonstrations.
+**CRITICAL OUTPUT REQUIREMENTS:**
+- You MUST return all fields exactly as specified in the JSON schema.
+- Do NOT omit, merge, rename, or summarize fields.
+- Do NOT fabricate quotes or details. Only cite phrases that appear in the provided transcript.
+- If evidence is missing for a criterion, explicitly state that evidence is not present.
+- Each justification field must be completed individually with its own detailed explanation.
+- Do NOT combine multiple justifications into a single paragraph.
+- For each field in "judge_reasoning":
+  - Provide 2–4 sentences minimum
+  - Include specific evidence from the pharmacist's response (quote or paraphrase)
+  - Clearly explain why the score was assigned
+  - Avoid generic or vague statements
+- Strengths and improvement_suggestions must include specific examples and actionable detail (3-4 sentences each, minimum)
+- forward_target should be plain text without special formatting
 """
 
 def get_empathy_prompt() -> str:
