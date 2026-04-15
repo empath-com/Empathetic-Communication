@@ -174,14 +174,23 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       const latestCriteria = Object.fromEntries(
         BINARY_CRITERIA.map((k) => {
           const score = latestEvaluation[k];
-          // Map 1-5 scale to normalized value (1=1, 5=5)
           return [k, typeof score === "number" ? Math.max(1, Math.min(5, score)) : 3];
         })
       );
-      
-      // Calculate average across all 10 criteria (1-5 scale)
+
+      // Calculate average across all 10 criteria (1-5 scale) for overall_score
       const totalCriteriaHits = BINARY_CRITERIA.reduce((sum, k) => sum + latestCriteria[k], 0);
       const averageScore = totalCriteriaHits / BINARY_CRITERIA.length;
+
+      // Aggregate 10 criteria into 6 domains
+      const domainScores = {
+        rapport:          latestCriteria.making_feel_at_ease + latestCriteria.letting_tell_story,
+        listening:        latestCriteria.really_listening,
+        whole_person:     latestCriteria.interested_in_whole_person + latestCriteria.understanding_concerns,
+        affective_empathy: latestCriteria.showing_care_compassion,
+        communication:    latestCriteria.being_positive + latestCriteria.explaining_clearly,
+        shared_planning:  latestCriteria.helping_take_control + latestCriteria.making_plan_of_action,
+      };
 
       const feedback = latestEvaluation.feedback && typeof latestEvaluation.feedback === "object"
         ? latestEvaluation.feedback
@@ -203,13 +212,13 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       return {
         statusCode: 200,
         body: JSON.stringify({
-          overall_score: Math.round(averageScore * 10) / 10,  // Average across 1-5 scale
+          overall_score: Math.round(averageScore * 10) / 10,
           total_messages_evaluated: 1,
-          total_criteria_hits: totalCriteriaHits,  // Sum of 1-5 scores
+          total_criteria_hits: totalCriteriaHits,
           total_interactions: allEmpathyData.length,
           empathy_interactions: 1,
           is_1_to_5_scale: true,
-          ...latestCriteria,
+          ...domainScores,
           summary,
           strengths: uniqueStrengths.length > 0 ? uniqueStrengths : null,
           recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
