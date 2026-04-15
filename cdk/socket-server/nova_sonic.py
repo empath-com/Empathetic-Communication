@@ -648,6 +648,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         # Trigger empathy evaluation for the completed user audio input if enabled
         if hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip():
             print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[END_AUDIO] Full transcript: {self._current_user_input}"}), flush=True)
             logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
             
             # incrementing sequence number
@@ -699,6 +700,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             # available, so Nova Sonic's own response is not silently discarded when LLaMA fails.
             if self._hybrid_mode:
                 print(f"🤖 HYBRID: Handing off to LLaMA RAG...", flush=True)
+                print(json.dumps({"type": "debug", "text": f"[HYBRID] Calling LLaMA RAG with: {captured_user_input[:80]}"}), flush=True)
                 self._llama_task = asyncio.create_task(self._call_llama_rag(captured_user_input))
 
             self._current_user_input = ""  # Reset for next input
@@ -836,17 +838,20 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
 
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
-                # print(json.dumps({"type": "text", "text": text}), flush=True) <- we don't want to send this concatenated text to the frontend
-                
+                # Forward transcription to frontend as a debug message so you can
+                # see what Nova Sonic is hearing in real-time in the browser console.
+                if text and text.strip():
+                    print(json.dumps({"type": "debug", "text": f"[TRANSCRIPT] {text}"}), flush=True)
+
                 # CRITICAL FIX: Accumulate user input for empathy evaluation
                 if not hasattr(self, '_current_user_input'):
                     self._current_user_input = ""
-                
+
                 # CRITICAL: Ensure we're accumulating the actual text
                 if text and text.strip():
                     self._current_user_input += text
-                    print(f"🔍 DEBUG: Accumulated user input now: {len(self._current_user_input)} chars", flush=True)
-                
+                    print(json.dumps({"type": "debug", "text": f"[ACCUMULATED] {len(self._current_user_input)} chars: {self._current_user_input[:80]}"}), flush=True)
+
                 # no evaluation/DB save here, evaluation will be done ONCE in end_audio_input() with complete text
 
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")

@@ -754,11 +754,13 @@ export default function useChatMessages({
       socket.off("text-message");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
+      socket.off("nova-debug");
 
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
+      socket.on("nova-debug", (data) => console.log("🐞 NOVA:", data.message));
     };
     setupSocketListeners();
   }, []);

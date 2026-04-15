@@ -1,6 +1,7 @@
 import boto3
 import json
 import logging
+import re
 from pydantic import BaseModel, Field
 
 from .prompts import get_empathy_prompt, get_default_empathy_prompt
@@ -12,10 +13,86 @@ logger.setLevel(logging.INFO)
 # Toggle to evaluate the full thread (up to message_id) instead of only one message.
 USE_THREAD_UP_TO_MESSAGE_ID_FOR_EVAL = True
 
+# Guardrails to keep empathy calls fast and avoid API timeout.
+MAX_THREAD_MESSAGES_FOR_EVAL = 12
+MAX_TRANSCRIPT_CHARS_FOR_EVAL = 6000
+MAX_PATIENT_CONTEXT_CHARS = 1200
+EMPATHY_MAX_OUTPUT_TOKENS = 900
+MAX_SYSTEM_PROMPT_CHARS = 7000
+MAX_GROUNDING_RETRIES = 1
+
 
 class LLM_evaluation(BaseModel):
     response: str = Field(description="Assessment of the student's answer with a follow-up question.")
     verdict: str = Field(description="'True' if the student has properly diagnosed the patient, 'False' otherwise.")
+
+
+def _collect_text_fragments(value) -> list:
+    fragments = []
+    if isinstance(value, str):
+        fragments.append(value)
+    elif isinstance(value, dict):
+        for v in value.values():
+            fragments.extend(_collect_text_fragments(v))
+    elif isinstance(value, list):
+        for v in value:
+            fragments.extend(_collect_text_fragments(v))
+    return fragments
+
+
+def _grounding_issue(evaluation: dict, transcript: str):
+    transcript_lower = (transcript or "").lower()
+    eval_text = "\n".join(_collect_text_fragments(evaluation)).lower()
+
+    # Claims like "nodding" are impossible unless explicitly present in transcript text.
+    nonverbal_terms = [
+        "nodding", "nod", "eye contact", "body language", "facial expression",
+        "tone of voice", "looked", "smiled", "gestured", "posture"
+    ]
+    for term in nonverbal_terms:
+        if term in eval_text and term not in transcript_lower:
+            return f"unsupported nonverbal claim: '{term}'"
+
+    # Detect invented names such as "Matthew's concerns" when name is absent from transcript.
+    allowed_names = {"you", "patient", "pharmacist", "ai", "student", "care"}
+    for match in re.finditer(r"\b([A-Z][a-z]{2,})'s\b", "\n".join(_collect_text_fragments(evaluation))):
+        name = match.group(1)
+        if name.lower() not in allowed_names and name.lower() not in transcript_lower:
+            return f"invented name not in transcript: '{name}'"
+
+    return None
+
+
+def _apply_grounded_text_fallback(evaluation: dict):
+    """If model output still contains unsupported claims, replace narrative text with safe grounded text."""
+    fallback_line = "Assessment grounded only in provided transcript text. No explicit additional evidence is present."
+    reasoning = evaluation.get("judge_reasoning") or {}
+    for key in [
+        "making_feel_at_ease_justification",
+        "letting_tell_story_justification",
+        "really_listening_justification",
+        "interested_in_whole_person_justification",
+        "understanding_concerns_justification",
+        "showing_care_compassion_justification",
+        "being_positive_justification",
+        "explaining_clearly_justification",
+        "helping_take_control_justification",
+        "making_plan_of_action_justification",
+    ]:
+        reasoning[key] = fallback_line
+    reasoning["overall_assessment"] = (
+        "Your coaching summary is limited to the transcript provided. "
+        "Focus on explicit reflective responses and collaborative planning in your next message."
+    )
+    evaluation["judge_reasoning"] = reasoning
+
+    feedback = evaluation.get("feedback") or {}
+    feedback["strengths"] = ["You acknowledged the patient and invited them to continue sharing."]
+    feedback["improvement_suggestions"] = [
+        "Use explicit reflective phrases tied to the patient's exact words, then propose one collaborative next step."
+    ]
+    feedback["forward_target"] = "Collaborative planning with explicit transcript-grounded reflections"
+    evaluation["feedback"] = feedback
 
 
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
@@ -28,6 +105,12 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     try:
         static_system_prompt = get_empathy_prompt()
         logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+        # Oversized admin prompts can increase latency significantly; fall back to default prompt.
+        if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+            logger.warning(
+                f"⚠️ Empathy prompt too long ({len(static_system_prompt)} chars), using default prompt"
+            )
+            static_system_prompt = get_default_empathy_prompt()
     except Exception as prompt_error:
         logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
         static_system_prompt = get_default_empathy_prompt()
@@ -36,6 +119,7 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     dynamic_user_prompt = f"""You must evaluate ONLY using evidence in TRANSCRIPT.
 Do not invent quotes, symptoms, medications, or events not present in TRANSCRIPT.
 If a criterion lacks evidence, state that explicitly in the justification.
+Keep responses concise: one short paragraph for overall assessment and 1-2 sentences per item.
 
 PATIENT_CONTEXT:
 {patient_context}
@@ -111,58 +195,58 @@ TRANSCRIPT_END"""
                             "properties": {
                                 "making_feel_at_ease_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "letting_tell_story_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "really_listening_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "interested_in_whole_person_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "understanding_concerns_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "showing_care_compassion_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "being_positive_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "explaining_clearly_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "helping_take_control_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "making_plan_of_action_justification": {
                                     "type": "string",
-                                    "minLength": 50,
-                                    "description": "2-4 sentences explaining the score with specific evidence from the conversation."
+                                    "minLength": 20,
+                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "overall_assessment": {
                                     "type": "string",
-                                    "minLength": 400,
-                                    "description": "Comprehensive coach assessment (400-600 words) addressing the pharmacist directly using 'you' language. MUST discuss all 6 empathy domains with specific examples from the conversation: (1) Rapport (warmth, space for expression), (2) Listening (active engagement, reflection), (3) Whole-person care (holistic interest, concerns), (4) Affective empathy (compassion, care), (5) Communication (positive tone, clarity), (6) Shared planning (empowerment, collaboration). Cite specific phrases as evidence. Focus on growth and learning."
+                                    "minLength": 80,
+                                    "description": "Brief coach summary addressing the pharmacist directly using 'you' language, grounded in transcript evidence."
                                 }
                             },
                             "required": ["making_feel_at_ease_justification", "letting_tell_story_justification", "really_listening_justification", "interested_in_whole_person_justification", "understanding_concerns_justification", "showing_care_compassion_justification", "being_positive_justification", "explaining_clearly_justification", "helping_take_control_justification", "making_plan_of_action_justification", "overall_assessment"]
@@ -172,20 +256,20 @@ TRANSCRIPT_END"""
                             "properties": {
                                 "strengths": {
                                     "type": "array",
-                                    "description": "2-3 specific strengths demonstrated, each 3-4 sentences with detailed examples from the conversation. Include what was done well and why it was effective.",
-                                    "items": {"type": "string", "minLength": 80},
-                                    "minItems": 2
+                                    "description": "1-2 specific strengths with concise evidence from the conversation.",
+                                    "items": {"type": "string", "minLength": 20},
+                                    "minItems": 1
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "2-3 concrete, actionable improvement suggestions, each 3-4 sentences with specific examples of how to apply them. Include specific phrases or approaches the pharmacist could use.",
-                                    "items": {"type": "string", "minLength": 80},
-                                    "minItems": 2
+                                    "description": "1-2 concise actionable improvement suggestions with evidence-based rationale.",
+                                    "items": {"type": "string", "minLength": 20},
+                                    "minItems": 1
                                 },
                                 "forward_target": {
                                     "type": "string",
-                                    "minLength": 15,
-                                    "description": "Plain text (no special formatting or symbols) describing the single CARE criterion or skill to focus on in the next patient interaction, with brief explanation of why it would be valuable to practice."
+                                    "minLength": 8,
+                                    "description": "Plain text describing the single CARE criterion or skill to focus on next."
                                 }
                             },
                             "required": ["strengths", "improvement_suggestions", "forward_target"]
@@ -210,58 +294,67 @@ TRANSCRIPT_END"""
         }
     }
 
-    # Build request body with prompt caching and tool use for guaranteed structured output
-    body = {
-            "system": [
-                {
-                    "text": static_system_prompt,
-                    "cachePoint": {
-                        "type": "default"
-                    }
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "text": dynamic_user_prompt
-                        }
-                    ]
-                }
-            ],
-            "toolConfig": {
-                "tools": [empathy_tool],
-                "toolChoice": {"tool": {"name": "submit_empathy_evaluation"}},
-            },
-            "inferenceConfig": {
-                "temperature": 0.1,
-                "maxTokens": 10000
-            }
-    }
+    strict_retry_addendum = """
+
+STRICT RETRY MODE:
+- TEXT-ONLY CHANNEL: do NOT mention nodding, eye contact, body language, facial expressions, or tone unless explicitly written in transcript.
+- Do NOT introduce names unless they appear verbatim in transcript.
+- If uncertain, state evidence is not present.
+"""
 
     try:
-        logger.info(f"🚀 CALLING BEDROCK MODEL: {bedrock_client['model_id']}")
-        try:
-            response = bedrock_client["client"].invoke_model(
-                modelId="amazon.nova-lite-v1:0",
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(body)
-            )
-            logger.info("✅ BEDROCK MODEL CALL SUCCESSFUL")
-        except Exception as model_error:
-            logger.warning(f"Nova Lite failed in deployment region, trying us-east-1: {model_error}")
-            fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-            response = fallback_client.invoke_model(
-                modelId="amazon.nova-lite-v1:0",
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(body)
-            )
-            logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
+        for attempt in range(MAX_GROUNDING_RETRIES + 1):
+            prompt_for_attempt = dynamic_user_prompt + (strict_retry_addendum if attempt > 0 else "")
+            body = {
+                "system": [
+                    {
+                        "text": static_system_prompt,
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    }
+                ],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": prompt_for_attempt
+                            }
+                        ]
+                    }
+                ],
+                "toolConfig": {
+                    "tools": [empathy_tool],
+                    "toolChoice": {"tool": {"name": "submit_empathy_evaluation"}},
+                },
+                "inferenceConfig": {
+                    "temperature": 0.1,
+                    "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS
+                }
+            }
 
-        result = json.loads(response["body"].read())
+            logger.info(f"🚀 CALLING BEDROCK MODEL: {bedrock_client['model_id']} (attempt {attempt + 1})")
+            try:
+                response = bedrock_client["client"].invoke_model(
+                    modelId="amazon.nova-lite-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+                logger.info("✅ BEDROCK MODEL CALL SUCCESSFUL")
+            except Exception as model_error:
+                logger.warning(f"Nova Lite failed in deployment region, trying us-east-1: {model_error}")
+                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                response = fallback_client.invoke_model(
+                    modelId="amazon.nova-lite-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+                logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
+
+            result = json.loads(response["body"].read())
 
         # Log cache usage
         usage = result.get("usage", {})
@@ -278,44 +371,55 @@ TRANSCRIPT_END"""
 
         logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
 
-         # Extract structured output from tool use response
-        content_blocks = result.get("output", {}).get("message", {}).get("content", [])
-        evaluation = None
-        for block in content_blocks:
-            tool_use = block.get("toolUse", {})
-            if tool_use.get("name") == "submit_empathy_evaluation":
-                evaluation = tool_use.get("input", {})
-                break
+            # Extract structured output from tool use response
+            content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+            evaluation = None
+            for block in content_blocks:
+                tool_use = block.get("toolUse", {})
+                if tool_use.get("name") == "submit_empathy_evaluation":
+                    evaluation = tool_use.get("input", {})
+                    break
 
-        if not evaluation:
-            logger.error(f"❌ NO TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
-            return None
+            if not evaluation:
+                logger.error(f"❌ NO TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
+                if attempt >= MAX_GROUNDING_RETRIES:
+                    return None
+                continue
 
-        logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
+            logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
 
-        # Coerce each criterion to 1-5 scale
-        criteria = [
-            'making_feel_at_ease', 'letting_tell_story', 'really_listening',
-            'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
-            'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
-        ]
-        for key in criteria:
-            val = evaluation.get(key)
-            if isinstance(val, str):
-                try:
-                    score = int(val)
-                    evaluation[key] = max(1, min(5, score))  # Clamp to 1-5
-                except (ValueError, TypeError):
-                    evaluation[key] = 3  # Default to midpoint if invalid
-            elif isinstance(val, int):
-                evaluation[key] = max(1, min(5, val))  # Clamp to 1-5
-            else:
-                evaluation[key] = 3  # Default to midpoint if missing
+            # Coerce each criterion to 1-5 scale
+            criteria = [
+                'making_feel_at_ease', 'letting_tell_story', 'really_listening',
+                'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
+                'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
+            ]
+            for key in criteria:
+                val = evaluation.get(key)
+                if isinstance(val, str):
+                    try:
+                        score = int(val)
+                        evaluation[key] = max(1, min(5, score))  # Clamp to 1-5
+                    except (ValueError, TypeError):
+                        evaluation[key] = 3  # Default to midpoint if invalid
+                elif isinstance(val, int):
+                    evaluation[key] = max(1, min(5, val))  # Clamp to 1-5
+                else:
+                    evaluation[key] = 3  # Default to midpoint if missing
 
-        evaluation["evaluation_method"] = "LLM-as-a-Judge"
-        evaluation["judge_model"] = bedrock_client["model_id"]
-        logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
-        return evaluation
+            issue = _grounding_issue(evaluation, student_response)
+            if issue and attempt < MAX_GROUNDING_RETRIES:
+                logger.warning(f"⚠️ Grounding issue detected ({issue}); retrying with strict prompt")
+                continue
+
+            if issue and attempt >= MAX_GROUNDING_RETRIES:
+                logger.error(f"❌ Grounding issue persists after retry ({issue}); applying safe fallback text")
+                _apply_grounded_fallback(evaluation)
+
+            evaluation["evaluation_method"] = "LLM-as-a-Judge"
+            evaluation["judge_model"] = bedrock_client["model_id"]
+            logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
+            return evaluation
 
     except json.JSONDecodeError as e:
         logger.error(f"❌ JSON DECODE ERROR: {e}")
@@ -453,7 +557,14 @@ def handle_empathy_evaluation(
                     f"⚠️ message_id {message_id} not found in session history; using full filtered history"
                 )
 
-        conversation_context = build_conversation_context(scoped_messages)
+        eval_messages = scoped_messages
+        if USE_THREAD_UP_TO_MESSAGE_ID_FOR_EVAL and message_id and len(scoped_messages) > MAX_THREAD_MESSAGES_FOR_EVAL:
+            eval_messages = scoped_messages[-MAX_THREAD_MESSAGES_FOR_EVAL:]
+            logger.info(
+                f"🧵 Trimmed scoped messages from {len(scoped_messages)} to {len(eval_messages)} for empathy evaluation"
+            )
+
+        conversation_context = build_conversation_context(eval_messages)
 
         # If no specific message provided, use the latest student message
         if not message_content:
@@ -480,16 +591,26 @@ def handle_empathy_evaluation(
                 "body": json.dumps({"error": "No student message found to evaluate"})
             }
 
-        # Construct patient context with conversation history
-        patient_context = f"""{conversation_context}
-Additional patient context:
-{patient_prompt}"""
+        # Keep patient context compact; transcript is passed separately as evaluation_input.
+        compact_patient_prompt = (patient_prompt or "").strip()
+        if len(compact_patient_prompt) > MAX_PATIENT_CONTEXT_CHARS:
+            compact_patient_prompt = compact_patient_prompt[:MAX_PATIENT_CONTEXT_CHARS]
+            logger.info(f"✂️ Trimmed patient prompt context to {MAX_PATIENT_CONTEXT_CHARS} chars")
+
+        patient_context = f"Additional patient context:\n{compact_patient_prompt}"
 
         evaluation_input = message_content
         if USE_THREAD_UP_TO_MESSAGE_ID_FOR_EVAL and message_id:
             evaluation_input = conversation_context.strip()
             logger.info(
                 f"🧵 Using full scoped thread as empathy evaluation input (chars={len(evaluation_input)})"
+            )
+
+        if len(evaluation_input) > MAX_TRANSCRIPT_CHARS_FOR_EVAL:
+            # Keep the most recent part of the thread (typically most relevant for scoring).
+            evaluation_input = evaluation_input[-MAX_TRANSCRIPT_CHARS_FOR_EVAL:]
+            logger.info(
+                f"✂️ Trimmed transcript input to last {MAX_TRANSCRIPT_CHARS_FOR_EVAL} chars for latency control"
             )
 
         # Evaluate empathy for the message

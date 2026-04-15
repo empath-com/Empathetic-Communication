@@ -194,7 +194,7 @@ Evaluate the pharmacist's response(s) across all 10 empathy criteria on a 1-5 sc
    - **Shared planning** (Criteria 9-10): empowerment, collaboration on action steps
 3. Cite specific phrases or interactions from the conversation as evidence
 4. Focus on growth and learning rather than criticism
-5. Be 400-600 words to ensure comprehensive coverage
+5. Keep it concise (about 80-160 words)
 
 **CRITICAL OUTPUT REQUIREMENTS:**
 - You MUST return all fields exactly as specified in the JSON schema.
@@ -204,11 +204,11 @@ Evaluate the pharmacist's response(s) across all 10 empathy criteria on a 1-5 sc
 - Each justification field must be completed individually with its own detailed explanation.
 - Do NOT combine multiple justifications into a single paragraph.
 - For each field in "judge_reasoning":
-  - Provide 2–4 sentences minimum
+    - Provide 1-2 concise sentences
   - Include specific evidence from the pharmacist's response (quote or paraphrase)
   - Clearly explain why the score was assigned
   - Avoid generic or vague statements
-- Strengths and improvement_suggestions must include specific examples and actionable detail (3-4 sentences each, minimum)
+- Strengths and improvement_suggestions should be concise and actionable with at least one concrete example
 - forward_target should be plain text without special formatting
 """
 
@@ -257,7 +257,13 @@ def get_empathy_prompt() -> str:
                 prompt_content = re.sub(json_pattern, fix_braces, prompt_content, flags=re.DOTALL)
                 logger.info("✅ ADMIN PROMPT JSON FORMATTING FIXED")"""
 
-            return prompt_content + "\n\nYou MUST call the tool and populate every field fully. Do not leave any arrays empty"
+            return prompt_content + (
+                "\n\nYou MUST call the tool and populate every field fully. Do not leave any arrays empty."
+                "\nGrounding rules (mandatory):"
+                "\n- Use only transcript evidence; do not invent names, medications, symptoms, or events."
+                "\n- Do not mention non-verbal cues (nodding, eye contact, body language, facial expression, tone) unless explicitly present in transcript text."
+                "\n- If evidence is missing, say evidence is not present."
+            )
         else:
             logger.info("🔧 No admin prompt found in database, using default empathy prompt")
             return get_default_empathy_prompt()

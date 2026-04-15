@@ -167,6 +167,7 @@ io.on("connection", (socket) => {
             // ─ Debug messages ───────────────────────────────────────────
             else if (parsed.type === "debug") {
               console.log("🐞 NOVA DEBUG:", parsed.text);
+              socket.emit("nova-debug", { message: parsed.text, timestamp: Date.now() });
             }
             // ─ Voice empathy evaluation results ──────────────────────────
             else if (parsed.type === "voice_empathy_result") {
