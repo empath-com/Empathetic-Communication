@@ -10,7 +10,6 @@ import {
   TableHead,
   TableRow,
   LinearProgress,
-  Divider,
 } from "@mui/material";
 
 const DOMAINS = [
@@ -35,28 +34,33 @@ const EmpathyCoachSummary = ({ empathyData }) => {
     return <Typography>No empathy data available.</Typography>;
   }
 
+  const overallScore = empathyData.overall_score || 0;
+  const overallPct = (overallScore / 5) * 100;
+  const overallColor = getScoreColor(overallScore);
+
   return (
     <Box sx={{ width: "100%", p: 2 }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          CARE Measure — Average score: {empathyData.overall_score || 0}/5.0
-        </Typography>
-      </Box>
 
-      <Divider sx={{ my: 2 }} />
+      {/* Overall score bar */}
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>Overall Score</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>{overallScore} / 5.0</Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={overallPct}
+          sx={{
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: "#e0e0e0",
+            "& .MuiLinearProgress-bar": { backgroundColor: overallColor, borderRadius: 7 },
+          }}
+        />
+      </Box>
 
       <TableContainer component={Paper} elevation={3}>
         <Table sx={{ borderCollapse: "collapse" }}>
-          <TableHead>
-            <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-              <TableCell colSpan={2}>
-                <Typography variant="h6">
-                  CARE Measure — Pharmacist–Patient Consultation
-                </Typography>
-              </TableCell>
-            </TableRow>
-          </TableHead>
           <TableBody>
             {/* Criteria Breakdown */}
             <TableRow>
@@ -155,6 +159,22 @@ const EmpathyCoachSummary = ({ empathyData }) => {
                 )}
               </TableCell>
             </TableRow>
+
+            {/* Focus for Next Session */}
+            {empathyData.forward_target && (
+              <TableRow>
+                <TableCell
+                  component="th"
+                  scope="row"
+                  sx={{ borderRight: "1px solid rgba(224,224,224,1)", verticalAlign: "top" }}
+                >
+                  <Typography variant="subtitle1">Focus for Next Session</Typography>
+                </TableCell>
+                <TableCell sx={{ verticalAlign: "top" }}>
+                  <Typography>{empathyData.forward_target}</Typography>
+                </TableCell>
+              </TableRow>
+            )}
 
           </TableBody>
         </Table>
