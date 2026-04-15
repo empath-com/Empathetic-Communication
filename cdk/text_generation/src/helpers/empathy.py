@@ -210,57 +210,57 @@ TRANSCRIPT_END"""
                             "properties": {
                                 "making_feel_at_ease_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "letting_tell_story_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "really_listening_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "interested_in_whole_person_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "understanding_concerns_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "showing_care_compassion_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "being_positive_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "explaining_clearly_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "helping_take_control_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "making_plan_of_action_justification": {
                                     "type": "string",
-                                    "minLength": 20,
+                                    "minLength": 5,
                                     "description": "1-2 concise sentences explaining the score with evidence from the conversation."
                                 },
                                 "overall_assessment": {
                                     "type": "string",
-                                    "minLength": 80,
+                                    "minLength": 20,
                                     "description": "Brief coach summary addressing the pharmacist directly using 'you' language, grounded in transcript evidence."
                                 }
                             },
@@ -272,18 +272,18 @@ TRANSCRIPT_END"""
                                 "strengths": {
                                     "type": "array",
                                     "description": "1-2 specific strengths with concise evidence from the conversation.",
-                                    "items": {"type": "string", "minLength": 20},
+                                    "items": {"type": "string", "minLength": 10},
                                     "minItems": 1
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
                                     "description": "1-2 concise actionable improvement suggestions with evidence-based rationale.",
-                                    "items": {"type": "string", "minLength": 20},
+                                    "items": {"type": "string", "minLength": 10},
                                     "minItems": 1
                                 },
                                 "forward_target": {
                                     "type": "string",
-                                    "minLength": 8,
+                                    "minLength": 3,
                                     "description": "Plain text describing the single CARE criterion or skill to focus on next."
                                 }
                             },
