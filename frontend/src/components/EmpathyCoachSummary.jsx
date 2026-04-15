@@ -11,7 +11,6 @@ import {
   TableRow,
   LinearProgress,
   Divider,
-  Chip,
 } from "@mui/material";
 
 const CARE_CRITERIA = [
@@ -82,17 +81,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
           <TableBody>
             {/* Criteria Breakdown */}
             <TableRow>
-              <TableCell
-                component="th"
-                scope="row"
-                sx={{ width: "30%", borderRight: "1px solid rgba(224,224,224,1)", verticalAlign: "top" }}
-              >
-                <Typography variant="subtitle1">{is1to5Scale ? "Criterion Scores" : "Criterion Hits"}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {is1to5Scale ? "on 1-5 scale" : `out of ${totalMessages} message${totalMessages !== 1 ? "s" : ""}`}
-                </Typography>
-              </TableCell>
-              <TableCell sx={{ verticalAlign: "top" }}>
+              <TableCell colSpan={2} sx={{ verticalAlign: "top" }}>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                   {CARE_CRITERIA.map(({ key, label }) => {
                     const score = empathyData[key] || 0;
@@ -195,26 +184,6 @@ const EmpathyCoachSummary = ({ empathyData }) => {
               </TableCell>
             </TableRow>
 
-            {/* Forward Target */}
-            {empathyData.forward_target && (
-              <TableRow>
-                <TableCell
-                  component="th"
-                  scope="row"
-                  sx={{ borderRight: "1px solid rgba(224,224,224,1)", verticalAlign: "top" }}
-                >
-                  <Typography variant="subtitle1">Next Focus</Typography>
-                </TableCell>
-                <TableCell sx={{ verticalAlign: "top" }}>
-                  <Chip
-                    label={empathyData.forward_target}
-                    color="primary"
-                    variant="outlined"
-                    sx={{ maxWidth: "100%" }}
-                  />
-                </TableCell>
-              </TableRow>
-            )}
           </TableBody>
         </Table>
       </TableContainer>

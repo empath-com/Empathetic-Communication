@@ -208,6 +208,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
           total_criteria_hits: totalCriteriaHits,  // Sum of 1-5 scores
           total_interactions: allEmpathyData.length,
           empathy_interactions: 1,
+          is_1_to_5_scale: true,
           ...latestCriteria,
           summary,
           strengths: uniqueStrengths.length > 0 ? uniqueStrengths : null,
