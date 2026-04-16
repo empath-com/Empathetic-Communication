@@ -168,6 +168,12 @@ io.on("connection", (socket) => {
             else if (parsed.type === "debug") {
               console.log("🐞 NOVA DEBUG:", parsed.text);
               socket.emit("nova-debug", { message: parsed.text, timestamp: Date.now() });
+              // "Nova Sonic ready" may arrive as a debug message
+              if (parsed.text && parsed.text.includes("Nova Sonic ready")) {
+                novaReady = true;
+                console.log("✅ NOVA SONIC READY - Voice empathy evaluation enabled");
+                socket.emit("nova-started", { status: "Nova Sonic session started" });
+              }
             }
             // ─ Voice empathy evaluation results ──────────────────────────
             else if (parsed.type === "voice_empathy_result") {
@@ -181,9 +187,7 @@ io.on("connection", (socket) => {
               if (parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
                 console.log("✅ NOVA SONIC READY - Voice empathy evaluation enabled");
-                socket.emit("nova-started", {
-                  status: "Nova Sonic session started",
-                });
+                socket.emit("nova-started", { status: "Nova Sonic session started" });
               }
             }
             // ─ Empathy feedback ──────────────────────────────────────────

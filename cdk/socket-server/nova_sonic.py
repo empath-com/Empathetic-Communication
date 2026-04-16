@@ -128,6 +128,8 @@ class NovaSonic:
         self._bedrock_client = None
         self._chat_context = None
         self._current_user_input = ""
+        self._current_assistant_text = ""      # Accumulated text for current assistant turn
+        self._current_assistant_message_id = None  # DB row being updated each chunk
         # Adding evaluation sequence tracking to prevent stale overwrites
         self._empathy_eval_sequence = 0
         # Empathy evaluation tracking
@@ -586,7 +588,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             asyncio.create_task(self._prewarm_llama_chain())
 
         print(f"✅ Nova Sonic session started (Prompt ID: {self.prompt_name})", flush=True)
-        print(json.dumps({ "type": "text", "text": "Nova Sonic ready" }), flush=True)
+        print(json.dumps({ "type": "debug", "text": "Nova Sonic ready" }), flush=True)
 
     async def _prewarm_llama_chain(self):
         """Build and cache the LLaMA RAG chain in the background during session startup."""
@@ -806,6 +808,17 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             # Reset bracket carry buffer at the start of each new content block
             if self.role == "ASSISTANT":
                 self._bracket_carry = ""
+                self._current_assistant_text = ""
+                self._current_assistant_message_id = None  # New turn — new DB row
+            elif self.role == "USER":
+                # Turn complete — finalise langchain history with the full text, then reset
+                if self._current_assistant_text.strip():
+                    try:
+                        langchain_chat_history.add_message(self.session_id, "ai", self._current_assistant_text.strip())
+                    except Exception as lc_err:
+                        logger.error(f"💾 langchain add_message failed: {lc_err}")
+                self._current_assistant_text = ""
+                self._current_assistant_message_id = None
             # optional SPECULATIVE check
             if "additionalModelFields" in content_start:
                 fields = json.loads(content_start["additionalModelFields"])
@@ -839,7 +852,22 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 display_text, self._bracket_carry = strip_vocal_cues(text, self._bracket_carry)
                 print(f"Assistant: {display_text}", flush=True)
                 print(json.dumps({"type": "text", "text": display_text}), flush=True)
-                
+
+                # Save each chunk: INSERT on first, UPDATE on subsequent chunks
+                if display_text:
+                    self._current_assistant_text += display_text
+                    try:
+                        if self._current_assistant_message_id is None:
+                            self._current_assistant_message_id = self._insert_assistant_chunk(
+                                self.session_id, self._current_assistant_text
+                            )
+                        else:
+                            self._update_assistant_chunk(
+                                self._current_assistant_message_id, self._current_assistant_text
+                            )
+                    except Exception as db_err:
+                        print(f"❌ Assistant chunk save failed: {db_err}", flush=True)
+
                 # If diagnosis achieved, signal completion
                 if diagnosis_achieved and self.llm_completion:
                     print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
@@ -864,24 +892,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
 
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
 
-            # Mirror to PostgreSQL — store clean text without vocal cues
-            try:
-                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
-                #langchain_chat_history.add_message(self.session_id, normalized_role, text)
-
-                # Save ALL messages to messages table (both USER and ASSISTANT)
-                if self.role and self.role.upper() == "ASSISTANT":
-                    print(f"💾 SAVING ASSISTANT MESSAGE TO DB: {display_text[:50]}...", flush=True)
-                    self._save_message_to_db(self.session_id, False, display_text, None)
-
-                elif self.role and self.role.upper() == "USER":
-                    print(f"💾 SAVING USER MESSAGE TO DB (BACKUP): {text[:50]}...", flush=True)
-                    # Backup save in case async save fails
-                    self._save_message_to_db(self.session_id, True, text, None)
-
-                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
-            except Exception as e:
-                print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
+            logger.info(f"💬 [textOutput] {self.role.upper() if self.role else '?'} | {self.session_id} | {text[:30]}")
 
         # audioOutput
         elif "audioOutput" in evt:
@@ -1605,6 +1616,39 @@ Provide structured evaluation with detailed justifications for each score.
             logger.error(f"Error building empathy feedback: {e}")
             return None
     
+    def _insert_assistant_chunk(self, session_id, content):
+        """INSERT the first chunk of an assistant turn; returns the new message_id."""
+        conn = get_pg_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO messages (session_id, student_sent, message_content, time_sent)
+                   VALUES (%s, %s, %s, %s) RETURNING message_id""",
+                (session_id, False, content, datetime.now())
+            )
+            message_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            print(f"💾 ASSISTANT INSERT: message_id={message_id}, len={len(content)}", flush=True)
+            return message_id
+        finally:
+            return_pg_connection(conn)
+
+    def _update_assistant_chunk(self, message_id, content):
+        """UPDATE the existing assistant row with the latest accumulated content."""
+        conn = get_pg_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE messages SET message_content = %s WHERE message_id = %s",
+                (content, message_id)
+            )
+            conn.commit()
+            cursor.close()
+            print(f"💾 ASSISTANT UPDATE: message_id={message_id}, len={len(content)}", flush=True)
+        finally:
+            return_pg_connection(conn)
+
     def _save_message_to_db(self, session_id, is_student, content, empathy_data):
         """Save message to database using centralized voice connection manager"""
         try:

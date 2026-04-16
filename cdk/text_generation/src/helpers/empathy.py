@@ -18,7 +18,7 @@ USE_THREAD_UP_TO_MESSAGE_ID_FOR_EVAL = True
 MAX_THREAD_MESSAGES_FOR_EVAL = 12
 MAX_TRANSCRIPT_CHARS_FOR_EVAL = 6000
 MAX_PATIENT_CONTEXT_CHARS = 1200
-EMPATHY_MAX_OUTPUT_TOKENS = 900
+EMPATHY_MAX_OUTPUT_TOKENS = 2000
 MAX_SYSTEM_PROMPT_CHARS = 7000
 MAX_GROUNDING_RETRIES = 1
 DEBUG_LOG_FULL_PROMPTS = False
@@ -153,12 +153,16 @@ TRANSCRIPT_END"""
     # Tool schema: 10 CARE criteria scored 1-5 scale.
     # Each criterion is scored 1-5: 1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced.
     # Scores reflect the entire conversation thread, not individual messages.
+    # Shared justification instruction embedded in each field description.
+    # Kept short to minimise schema token count (minLength/minItems not used — Nova Lite ignores them and can error).
+    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other criteria."
     empathy_tool = {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
             "description": (
-                "Evaluate the pharmacist's communication using the 10 CARE Measure criteria, "
-                "each scored on a 1-5 scale. Assess the entire conversation thread holistically."
+                "Evaluate the pharmacist using 10 CARE criteria, each scored 1-5 "
+                "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
+                "Populate every field. Do not omit, merge, or rename any field."
             ),
             "inputSchema": {
                 "json": {
@@ -166,125 +170,97 @@ TRANSCRIPT_END"""
                     "properties": {
                         "making_feel_at_ease": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: warmth and comfort-building efforts toward the patient."
+                            "description": "Score 1-5: warmth and comfort-building toward the patient."
                         },
                         "letting_tell_story": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: space and opportunity given for patient self-expression."
+                            "description": "Score 1-5: space given for patient self-expression."
                         },
                         "really_listening": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: active listening demonstrated through paraphrasing, reflecting, and engagement."
+                            "description": "Score 1-5: active listening via paraphrasing, reflecting, engagement."
                         },
                         "interested_in_whole_person": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: curiosity and attention to holistic patient context beyond immediate symptoms."
+                            "description": "Score 1-5: curiosity about holistic patient context beyond symptoms."
                         },
                         "understanding_concerns": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: depth of understanding and validation of patient's full concerns."
+                            "description": "Score 1-5: depth of understanding and validation of patient concerns."
                         },
                         "showing_care_compassion": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: genuine empathy and emotional support expressed to the patient."
+                            "description": "Score 1-5: genuine empathy and emotional support shown to patient."
                         },
                         "being_positive": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: encouraging, reassuring, and non-judgmental tone throughout."
+                            "description": "Score 1-5: encouraging, reassuring, non-judgmental tone."
                         },
                         "explaining_clearly": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: clarity and accessibility of explanations in plain language."
+                            "description": "Score 1-5: clarity of explanations in plain language."
                         },
                         "helping_take_control": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: empowerment and involvement in decision-making."
+                            "description": "Score 1-5: patient empowerment and involvement in decisions."
                         },
                         "making_plan_of_action": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: collaborative, clear planning and next steps agreed with patient."
+                            "description": "Score 1-5: collaborative planning and agreed next steps."
                         },
                         "judge_reasoning": {
                             "type": "object",
-                            "description": "Detailed justifications for each score.",
+                            "description": "Separate justification for each criterion. Every field is required. Do not combine justifications.",
                             "properties": {
-                                "making_feel_at_ease_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "letting_tell_story_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "really_listening_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "interested_in_whole_person_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "understanding_concerns_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "showing_care_compassion_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "being_positive_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "explaining_clearly_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "helping_take_control_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
-                                "making_plan_of_action_justification": {
-                                    "type": "string",
-                                    "minLength": 5,
-                                    "description": "1-2 concise sentences explaining the score with evidence from the conversation."
-                                },
+                                "making_feel_at_ease_justification":        {"type": "string", "description": _J},
+                                "letting_tell_story_justification":         {"type": "string", "description": _J},
+                                "really_listening_justification":           {"type": "string", "description": _J},
+                                "interested_in_whole_person_justification": {"type": "string", "description": _J},
+                                "understanding_concerns_justification":     {"type": "string", "description": _J},
+                                "showing_care_compassion_justification":    {"type": "string", "description": _J},
+                                "being_positive_justification":             {"type": "string", "description": _J},
+                                "explaining_clearly_justification":         {"type": "string", "description": _J},
+                                "helping_take_control_justification":       {"type": "string", "description": _J},
+                                "making_plan_of_action_justification":      {"type": "string", "description": _J},
                                 "overall_assessment": {
                                     "type": "string",
-                                    "minLength": 20,
-                                    "description": "Brief coach summary addressing the pharmacist directly using 'you' language, grounded in transcript evidence."
+                                    "description": (
+                                        "Brief coach summary using 'you'. "
+                                        "Do not repeat individual justifications. "
+                                        "Highlight the key pattern across the conversation."
+                                    )
                                 }
                             },
-                            "required": ["making_feel_at_ease_justification", "letting_tell_story_justification", "really_listening_justification", "interested_in_whole_person_justification", "understanding_concerns_justification", "showing_care_compassion_justification", "being_positive_justification", "explaining_clearly_justification", "helping_take_control_justification", "making_plan_of_action_justification", "overall_assessment"]
+                            "required": [
+                                "making_feel_at_ease_justification",
+                                "letting_tell_story_justification",
+                                "really_listening_justification",
+                                "interested_in_whole_person_justification",
+                                "understanding_concerns_justification",
+                                "showing_care_compassion_justification",
+                                "being_positive_justification",
+                                "explaining_clearly_justification",
+                                "helping_take_control_justification",
+                                "making_plan_of_action_justification",
+                                "overall_assessment"
+                            ]
                         },
                         "feedback": {
                             "type": "object",
                             "properties": {
                                 "strengths": {
                                     "type": "array",
-                                    "description": "1-2 specific strengths with concise evidence from the conversation.",
-                                    "items": {"type": "string", "minLength": 10},
-                                    "minItems": 1
+                                    "description": "1-2 specific strengths with transcript evidence.",
+                                    "items": {"type": "string"}
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "1-2 concise actionable improvement suggestions with evidence-based rationale.",
-                                    "items": {"type": "string", "minLength": 10},
-                                    "minItems": 1
+                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
+                                    "items": {"type": "string"}
                                 },
                                 "forward_target": {
                                     "type": "string",
-                                    "minLength": 3,
-                                    "description": "Plain text describing the single CARE criterion or skill to focus on next."
+                                    "description": "The single CARE criterion or skill to focus on next."
                                 }
                             },
                             "required": ["strengths", "improvement_suggestions", "forward_target"]
