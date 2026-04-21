@@ -243,6 +243,11 @@ io.on("connection", (socket) => {
                 socket.emit("diagnosis-complete", { message: "Session completed successfully" });
               }
             }
+            // ─ Voice user message (saved to DB, frontend triggers empathy eval) ─
+            else if (parsed.type === "user_message") {
+              console.log("🎤 VOICE USER MESSAGE:", parsed.text?.substring(0, 50));
+              socket.emit("voice-user-message", { text: parsed.text, message_id: parsed.message_id });
+            }
           } catch {
             // Plain‑text fallback
             console.log("[python]", line);

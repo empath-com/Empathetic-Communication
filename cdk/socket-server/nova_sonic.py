@@ -645,11 +645,35 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         }
         })
     
+    def _save_user_message_to_db(self, session_id: str, content: str):
+        """INSERT a student voice message; returns message_id or None on failure."""
+        conn = get_pg_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO messages (session_id, student_sent, message_content, time_sent)
+                   VALUES (%s, %s, %s, %s) RETURNING message_id""",
+                (session_id, True, content, datetime.now())
+            )
+            message_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            print(f"💾 USER INSERT: message_id={message_id}", flush=True)
+            return message_id
+        except Exception as e:
+            print(f"❌ USER INSERT FAILED: {e}", flush=True)
+            logger.error(f"Failed to save user voice message: {e}")
+            return None
+        finally:
+            return_pg_connection(conn)
+
     async def _handle_user_turn_complete(self):
         """
         Called whenever a user speaking turn ends — either because Nova Sonic started
         responding (ASSISTANT contentStart) or because the session ended (end_audio_input).
-        Saves the turn to DB, triggers empathy eval, and (in hybrid mode) calls LLaMA RAG.
+        Saves the turn to DB, emits user_message event so the frontend can trigger empathy
+        evaluation via the REST endpoint (same flow as text chat), and (in hybrid mode)
+        calls LLaMA RAG.
         Idempotent: no-op if _current_user_input is empty.
         """
         if not (hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip()):
@@ -659,9 +683,8 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         self._current_user_input = ""  # Reset immediately to prevent double-processing
 
         self._empathy_eval_sequence += 1
-        current_sequence = self._empathy_eval_sequence
 
-        logger.info(f"🎤 USER TURN COMPLETE | seq={current_sequence} | {captured_user_input[:50]}...")
+        logger.info(f"🎤 USER TURN COMPLETE | {captured_user_input[:50]}...")
         print(json.dumps({"type": "debug", "text": f"[TURN_COMPLETE] {captured_user_input[:80]}"}), flush=True)
 
         # Save to langchain with prefix for RAG context filtering
@@ -672,20 +695,10 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         except Exception as e:
             print(f"Failed to save to Langchain chat history: {e}", flush=True)
 
-        patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-
-        async def safe_empathy_eval():
-            try:
-                result = await self._evaluate_empathy(captured_user_input, patient_context)
-                if result:
-                    print(f"🧠 VOICE EMPATHY: Evaluation completed (seq={current_sequence})", flush=True)
-                else:
-                    print(f"🧠 VOICE EMPATHY: Evaluation returned None (seq={current_sequence})", flush=True)
-            except Exception as e:
-                print(f"🧠 VOICE EMPATHY: seq={current_sequence} failed: {e}", flush=True)
-                logger.error(f"Voice empathy evaluation error: {e}")
-
-        asyncio.create_task(safe_empathy_eval())
+        # Save to messages DB and notify frontend so it can call the empathy endpoint
+        loop = asyncio.get_event_loop()
+        message_id = await loop.run_in_executor(None, self._save_user_message_to_db, self.session_id, captured_user_input)
+        print(json.dumps({"type": "user_message", "text": captured_user_input, "message_id": message_id}), flush=True)
 
         if self.llm_completion:
             asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))

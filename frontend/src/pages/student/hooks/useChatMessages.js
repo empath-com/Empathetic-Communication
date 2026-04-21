@@ -171,10 +171,20 @@ export default function useChatMessages({
   // Voice refs
   const allowAudioRef = useRef(false);
 
+  // Stable refs so socket listeners (set up once) always see fresh values
+  const patientRef = useRef(patient);
+  const groupRef = useRef(group);
+  const sessionRef = useRef(session);
+  const callEmpathyEvaluationRef = useRef(null);
+
   // Keep empathyEnabledRef in sync
   useEffect(() => {
     empathyEnabledRef.current = empathyEnabled;
   }, [empathyEnabled]);
+
+  useEffect(() => { patientRef.current = patient; }, [patient]);
+  useEffect(() => { groupRef.current = group; }, [group]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
 
   // --- Scroll to bottom on new messages ---
   useEffect(() => {
@@ -314,6 +324,9 @@ export default function useChatMessages({
       console.error("Empathy evaluation failed:", e);
     }
   };
+
+  // Keep callEmpathyEvaluationRef pointing at the latest closure
+  useEffect(() => { callEmpathyEvaluationRef.current = callEmpathyEvaluation; });
 
   // --- AppSync subscription ---
   const subscribeToStream = (sessionId) => {
@@ -750,17 +763,48 @@ export default function useChatMessages({
         alert("Session completed successfully!");
       };
 
+      const handleVoiceUserMessage = (data) => {
+        const { text, message_id } = data;
+        if (!text) return;
+
+        // Add the student's utterance to the chat
+        setMessages((prev) => [
+          ...prev,
+          {
+            message_id: message_id || `voice_user_${Date.now()}`,
+            student_sent: true,
+            message_content: text,
+            time_sent: new Date().toISOString(),
+          },
+        ]);
+
+        // Trigger empathy evaluation via the REST endpoint (mirrors text-chat flow)
+        const sid = sessionRef.current?.session_id;
+        if (empathyEnabledRef.current && patientRef.current && groupRef.current && sid) {
+          callEmpathyEvaluationRef.current(
+            {
+              messageContent: text,
+              patientId: patientRef.current.patient_id,
+              groupId: groupRef.current.simulation_group_id,
+            },
+            sid
+          );
+        }
+      };
+
       socket.off("audio-chunk");
       socket.off("text-message");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
       socket.off("nova-debug");
+      socket.off("voice-user-message");
 
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
       socket.on("nova-debug", (data) => console.log("🐞 NOVA:", data.message));
+      socket.on("voice-user-message", handleVoiceUserMessage);
     };
     setupSocketListeners();
   }, []);
