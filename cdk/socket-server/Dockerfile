@@ -14,6 +14,7 @@ RUN npm install
 
 # Copy Python files and install requirements
 COPY *.py ./
+COPY helpers/ ./helpers/
 COPY requirements.txt ./
 
 # Upgrade pip and setuptools, clear cache, then install requirements

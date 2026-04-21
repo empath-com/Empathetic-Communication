@@ -597,7 +597,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None, rag_chain.ensure_chain,
-                self.patient_id, self.patient_name, self.patient_prompt, self._dynamodb_table_name,
+                self.patient_id, self.patient_name, self.patient_prompt, self.extra_system_prompt, self._dynamodb_table_name,
             )
             print(f"🤖 HYBRID: LLaMA chain pre-warmed for patient_id={self.patient_id!r}", flush=True)
         except Exception as e:
@@ -645,6 +645,56 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         }
         })
     
+    async def _handle_user_turn_complete(self):
+        """
+        Called whenever a user speaking turn ends — either because Nova Sonic started
+        responding (ASSISTANT contentStart) or because the session ended (end_audio_input).
+        Saves the turn to DB, triggers empathy eval, and (in hybrid mode) calls LLaMA RAG.
+        Idempotent: no-op if _current_user_input is empty.
+        """
+        if not (hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip()):
+            return
+
+        captured_user_input = self._current_user_input
+        self._current_user_input = ""  # Reset immediately to prevent double-processing
+
+        self._empathy_eval_sequence += 1
+        current_sequence = self._empathy_eval_sequence
+
+        logger.info(f"🎤 USER TURN COMPLETE | seq={current_sequence} | {captured_user_input[:50]}...")
+        print(json.dumps({"type": "debug", "text": f"[TURN_COMPLETE] {captured_user_input[:80]}"}), flush=True)
+
+        # Save to langchain with prefix for RAG context filtering
+        prefixed_user_input = f"[VOICE_TRANSCRIPT]{captured_user_input}"
+        try:
+            langchain_chat_history.add_message(self.session_id, "user", prefixed_user_input)
+            logger.info(f"LANGCHAIN USER (prefixed) | {self.session_id} | {captured_user_input[:30]}...")
+        except Exception as e:
+            print(f"Failed to save to Langchain chat history: {e}", flush=True)
+
+        patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
+
+        async def safe_empathy_eval():
+            try:
+                result = await self._evaluate_empathy(captured_user_input, patient_context)
+                if result:
+                    print(f"🧠 VOICE EMPATHY: Evaluation completed (seq={current_sequence})", flush=True)
+                else:
+                    print(f"🧠 VOICE EMPATHY: Evaluation returned None (seq={current_sequence})", flush=True)
+            except Exception as e:
+                print(f"🧠 VOICE EMPATHY: seq={current_sequence} failed: {e}", flush=True)
+                logger.error(f"Voice empathy evaluation error: {e}")
+
+        asyncio.create_task(safe_empathy_eval())
+
+        if self.llm_completion:
+            asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
+
+        if self._hybrid_mode:
+            print(f"🤖 HYBRID: Handing off to LLaMA RAG...", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[HYBRID] Calling LLaMA RAG with: {captured_user_input[:80]}"}), flush=True)
+            self._llama_task = asyncio.create_task(self._call_llama_rag(captured_user_input))
+
     async def end_audio_input(self):
         await self.send_event({
         "event": {
@@ -654,68 +704,10 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             }
         }
         })
-        
-        # Trigger empathy evaluation for the completed user audio input if enabled
-        if hasattr(self, '_current_user_input') and self._current_user_input and self._current_user_input.strip():
-            print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
-            print(json.dumps({"type": "debug", "text": f"[END_AUDIO] Full transcript: {self._current_user_input}"}), flush=True)
-            logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
-            
-            # incrementing sequence number
-            self._empathy_eval_sequence += 1
-            current_sequence = self._empathy_eval_sequence
-
-            # capturing the user input BEFORE creating async task to prevent race condition
-            captured_user_input = self._current_user_input
-            print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
-
-            # adding prefix here for frontend filtering
-            prefixed_user_input = f"[VOICE_TRANSCRIPT]{captured_user_input}"
-            
-            # Save user message to DB (CRITICAL for empathy coach review)
-            print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
-            asyncio.create_task(self._save_user_message_async(prefixed_user_input))
-
-            # ALSO saving to langchain chat history WITH prefix
-            try:
-                langchain_chat_history.add_message(self.session_id, "user", prefixed_user_input)
-                logger.info(f"LANGCHAIN USER (prefixed) | {self.session_id} | {captured_user_input[:30]}...")
-            except Exception as e:
-                print(f"Failed to save to Langchain chat history: {e}", flush=True)
-            
-            # CRITICAL: Direct empathy evaluation for voice input
-            print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
-            patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            
-            # Create empathy evaluation task with proper error handling
-            async def safe_empathy_eval():
-                try:
-                    print(f"🧠 VOICE EMPATHY: Starting evaluation task", flush=True)
-                    result = await self._evaluate_empathy(captured_user_input, patient_context)
-                    if result:
-                        print(f"🧠 VOICE EMPATHY: Evaluation completed successfully", flush=True)
-                    else:
-                        print(f"🧠 VOICE EMPATHY: Evaluation returned None", flush=True)
-                except Exception as e:
-                    print(f"🧠 VOICE EMPATHY: Evaluation Sequence {current_sequence} failed with error: {e}", flush=True)
-                    logger.error(f"Voice empathy evaluation error: {e}")
-            
-            asyncio.create_task(safe_empathy_eval())
-
-            if self.llm_completion:
-                asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
-
-            # Hybrid mode: call LLaMA 3 70B + pgvector RAG to produce the patient reply.
-            # Suppression is set inside _call_llama_rag ONLY after the chain is confirmed
-            # available, so Nova Sonic's own response is not silently discarded when LLaMA fails.
-            if self._hybrid_mode:
-                print(f"🤖 HYBRID: Handing off to LLaMA RAG...", flush=True)
-                print(json.dumps({"type": "debug", "text": f"[HYBRID] Calling LLaMA RAG with: {captured_user_input[:80]}"}), flush=True)
-                self._llama_task = asyncio.create_task(self._call_llama_rag(captured_user_input))
-
-            self._current_user_input = ""  # Reset for next input
-        else:
-            print(f"🔍 DEBUG: No user input to save at audio end", flush=True)
+        # Save whatever remains in the current turn (final utterance before session end).
+        # Mid-session turns are already handled by _handle_user_turn_complete via
+        # the ASSISTANT contentStart event in _handle_event.
+        await self._handle_user_turn_complete()
 
     async def end_session(self):
         # promptEnd
@@ -807,11 +799,16 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             self.role = content_start.get("role")
             # Reset bracket carry buffer at the start of each new content block
             if self.role == "ASSISTANT":
+                # Nova Sonic is starting its response — the user's speaking turn is done.
+                # Save whatever the user said before processing the assistant's reply.
+                await self._handle_user_turn_complete()
+                # Each sentence arrives as its own content block — only reset the
+                # bracket carry buffer, NOT the message accumulator or DB row ID.
+                # The ID is kept alive so all chunks within a turn UPDATE the same row.
                 self._bracket_carry = ""
-                self._current_assistant_text = ""
-                self._current_assistant_message_id = None  # New turn — new DB row
             elif self.role == "USER":
-                # Turn complete — finalise langchain history with the full text, then reset
+                # User is speaking — the previous AI turn is complete.
+                # Finalise langchain with the full accumulated text then reset.
                 if self._current_assistant_text.strip():
                     try:
                         langchain_chat_history.add_message(self.session_id, "ai", self._current_assistant_text.strip())
@@ -853,15 +850,18 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 print(f"Assistant: {display_text}", flush=True)
                 print(json.dumps({"type": "text", "text": display_text}), flush=True)
 
-                # Save each chunk: INSERT on first, UPDATE on subsequent chunks
+                # Save each chunk: INSERT on first, UPDATE on subsequent chunks.
+                # Always start the accumulator fresh on a new INSERT to prevent
+                # stale content from a previous turn being doubled in the new row.
                 if display_text:
-                    self._current_assistant_text += display_text
                     try:
                         if self._current_assistant_message_id is None:
+                            self._current_assistant_text = display_text
                             self._current_assistant_message_id = self._insert_assistant_chunk(
                                 self.session_id, self._current_assistant_text
                             )
                         else:
+                            self._current_assistant_text += display_text
                             self._update_assistant_chunk(
                                 self._current_assistant_message_id, self._current_assistant_text
                             )
@@ -1107,6 +1107,7 @@ Provide structured evaluation with detailed justifications for each score.
                 self.patient_id,
                 self.patient_name,
                 self.patient_prompt,
+                self.extra_system_prompt,
                 self._dynamodb_table_name,
             )
 
@@ -1119,6 +1120,7 @@ Provide structured evaluation with detailed justifications for each score.
                 session_id=self.session_id,
                 patient_name=self.patient_name,
                 patient_prompt=self.patient_prompt,
+                group_prompt=self.extra_system_prompt,
                 patient_id=self.patient_id,
                 table_name=self._dynamodb_table_name,
             )
