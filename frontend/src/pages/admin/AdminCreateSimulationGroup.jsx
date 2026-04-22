@@ -45,8 +45,10 @@ function formatInstructors(instructorsArray) {
 
 export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
   const [simulationGroupName, setSimulationGroupName] = useState("");
+  const simulatedRole = import.meta.env.VITE_SIMULATED_ROLE || "patient";
+  const practitionerRole = import.meta.env.VITE_PRACTITIONER_ROLE || "pharmacist";
   const [simulationGroupPrompt, setSimulationGroupPrompt] = useState(
-    `Pretend to be a patient with the context you are given. You are helping the pharmacist practice their skills interacting with a patient. Engage with the pharmacist by describing your symptoms to provide them hints on what condition(s) you have. If you feel like the pharmacist is going down the wrong path, nudge them in the right direction by giving them more information. This is to help the pharmacist identify the proper diagnosis of the patient you are pretending to be.`
+    `Pretend to be a ${simulatedRole} with the context you are given. You are helping the ${practitionerRole} practice their skills interacting with a ${simulatedRole}. Engage with the ${practitionerRole} by describing your situation to provide them hints. If you feel like the ${practitionerRole} is going down the wrong path, nudge them in the right direction by giving them more information.`
   );
   const [groupDescription, setGroupDescription] = useState("");
   const [isActive, setIsActive] = useState(true);

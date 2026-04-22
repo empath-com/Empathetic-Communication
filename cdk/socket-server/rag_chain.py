@@ -27,6 +27,9 @@ from helpers.vectorstore import get_vectorstore_retriever
 
 logger = logging.getLogger(__name__)
 
+SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
+PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
+
 # Chain cache keyed by (patient_id, group_prompt) — one chain per patient/group combination.
 # Built once at session start (prewarm) and reused for all turns within that session.
 _chain_cache: dict = {}
@@ -91,12 +94,14 @@ def _build_chain(
     # Load system prompt from DB; fall back to hardcoded default — same as conversation.py
     system_prompt = get_system_prompt(patient_name)
 
+    role = SIMULATED_ROLE
+    pro = PRACTITIONER_ROLE
     final_system_prompt = f"""
 <|begin_of_text|>
-<|start_header_id|>patient<|end_header_id|>
+<|start_header_id|>{role}<|end_header_id|>
 
-CRITICAL: You are {patient_name or 'the patient'}, a PATIENT seeking help from a pharmacist.
-NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
+CRITICAL: You are {patient_name or f'the {role}'}, a {role.upper()} seeking help from a {pro}.
+NEVER act as an expert or {pro}. ALWAYS respond as a {role}.
 
 {system_prompt}
 {group_prompt or ''}

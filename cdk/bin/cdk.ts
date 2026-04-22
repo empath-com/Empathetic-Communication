@@ -24,6 +24,11 @@ const githubBranch = "main";
 // Enable with: --context idleMode=true
 const idleMode = app.node.tryGetContext("idleMode") === "true";
 
+// Role labels — override for non-pharmacy use cases:
+//   --context simulatedRole=client --context practitionerRole=counselor
+const simulatedRole: string = app.node.tryGetContext("simulatedRole") || "patient";
+const practitionerRole: string = app.node.tryGetContext("practitionerRole") || "pharmacist";
+
 const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, idleMode, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, idleMode, {
   env,
@@ -35,6 +40,8 @@ const apiStack = new ApiServiceStack(
   vpcStack,
   null, // ecsSocketStack will be passed later
   idleMode,
+  simulatedRole,
+  practitionerRole,
   { env }
 );
 // Defining the new CI/CD Stack
@@ -63,6 +70,8 @@ const ecsSocketStack = new EcsSocketStack(
   dbStack,
   apiStack,
   idleMode,
+  simulatedRole,
+  practitionerRole,
   { env }
 );
 const dbFlowStack = new DBFlowStack(
@@ -80,6 +89,8 @@ const amplifyStack = new AmplifyStack(
   apiStack,
   ecsSocketStack,
   apiStack, // Pass apiStack instead of appSyncStack since AppSync is now part of it
+  simulatedRole,
+  practitionerRole,
   {
     env,
   }

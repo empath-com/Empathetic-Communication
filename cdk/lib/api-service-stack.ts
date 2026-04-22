@@ -43,6 +43,8 @@ export class ApiServiceStack extends cdk.Stack {
     vpcStack: VpcStack,
     ecsSocketStack: any = null,
     idleMode: boolean = false,
+    simulatedRole: string = "patient",
+    practitionerRole: string = "pharmacist",
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -107,6 +109,8 @@ export class ApiServiceStack extends cdk.Stack {
       powertoolsLayer: layers.powertoolsLayer,
       corsAllowedOrigin,
       appSyncApi: this.appSyncApi,
+      simulatedRole,
+      practitionerRole,
     });
 
     // Set USER_POOL environment on student and instructor functions

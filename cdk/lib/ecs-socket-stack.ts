@@ -25,6 +25,8 @@ export class EcsSocketStack extends Stack {
     db: DatabaseStack,
     apiServiceStack: any,
     idleMode: boolean = false,
+    simulatedRole: string = "patient",
+    practitionerRole: string = "pharmacist",
     props?: StackProps
   ) {
     super(scope, id, props);
@@ -200,6 +202,8 @@ export class EcsSocketStack extends Stack {
         HYBRID_VOICE_MODE: "true",
         LLAMA_MODEL_ID: "meta.llama3-70b-instruct-v1:0",
         DYNAMODB_TABLE_NAME: "DynamoDB-Conversation-Table",
+        SIMULATED_ROLE: simulatedRole,
+        PRACTITIONER_ROLE: practitionerRole,
         // Guardrail that disables PROMPT_ATTACK detection for Nova Sonic voice sessions
         NOVA_GUARDRAIL_ID: novaGuardrail.attrGuardrailId,
         NOVA_GUARDRAIL_VERSION: novaGuardrailVersion.attrVersion,

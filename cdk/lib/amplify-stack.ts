@@ -19,6 +19,8 @@ export class AmplifyStack extends cdk.Stack {
     apiStack: ApiServiceStack,
     ecsSocketStack: EcsSocketStack,
     apiStackForAppSync: ApiServiceStack, // This is the same as apiStack now
+    simulatedRole: string = "patient",
+    practitionerRole: string = "pharmacist",
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -86,6 +88,8 @@ export class AmplifyStack extends cdk.Stack {
         // WebSocket URL specified via deployment parameter
         VITE_SOCKET_URL: socketUrl,
         VITE_APPSYNC_GRAPHQL_URL: apiStack.appSyncApi.graphqlUrl,
+        VITE_SIMULATED_ROLE: simulatedRole,
+        VITE_PRACTITIONER_ROLE: practitionerRole,
       },
       buildSpec: BuildSpec.fromObjectToYaml(amplifyYaml),
     });

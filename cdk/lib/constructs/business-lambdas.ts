@@ -20,6 +20,8 @@ export interface BusinessLambdasProps {
   powertoolsLayer: lambda.ILayerVersion;
   corsAllowedOrigin: cdk.CfnParameter;
   appSyncApi: appsync.GraphqlApi;
+  simulatedRole: string;
+  practitionerRole: string;
 }
 
 export interface BusinessLambdasResult {
@@ -50,6 +52,8 @@ export function createBusinessLambdas(
     powertoolsLayer,
     corsAllowedOrigin,
     appSyncApi,
+    simulatedRole,
+    practitionerRole,
   } = props;
 
   // S3 Buckets
@@ -256,6 +260,8 @@ export function createBusinessLambdas(
         APPSYNC_GRAPHQL_URL: appSyncApi.graphqlUrl,
         APPSYNC_API_ID: appSyncApi.apiId,
         BEDROCK_TIMEOUT_SECONDS: "90",
+        SIMULATED_ROLE: simulatedRole,
+        PRACTITIONER_ROLE: practitionerRole,
       },
     }
   );
