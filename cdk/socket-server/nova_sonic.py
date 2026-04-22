@@ -582,10 +582,21 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         # Start processing responses
         self.response = asyncio.create_task(self._process_responses())
 
+        # Log key env vars so CloudWatch shows the runtime configuration
+        print(json.dumps({"type": "debug", "text": (
+            f"[SESSION_CONFIG] hybrid={self._hybrid_mode}, "
+            f"patient_id={self.patient_id!r}, patient_name={self.patient_name!r}, "
+            f"llm_completion={self.llm_completion}, "
+            f"dynamodb_table={self._dynamodb_table_name!r}"
+        )}), flush=True)
+        print(f"🚀 SESSION_CONFIG: hybrid={self._hybrid_mode}, patient_id={self.patient_id!r}, patient_name={self.patient_name!r}", flush=True)
+
         # Pre-warm LLaMA chain in background so first-turn latency is low.
         # Session startup (~8s) gives the chain time to build before the user speaks.
         if self._hybrid_mode and self.patient_id:
             asyncio.create_task(self._prewarm_llama_chain())
+        elif self._hybrid_mode and not self.patient_id:
+            print(f"⚠️ HYBRID: patient_id is empty — LLaMA chain will have no document collection to query!", flush=True)
 
         print(f"✅ Nova Sonic session started (Prompt ID: {self.prompt_name})", flush=True)
         print(json.dumps({ "type": "debug", "text": "Nova Sonic ready" }), flush=True)
@@ -1109,7 +1120,7 @@ Provide structured evaluation with detailed justifications for each score.
         """
         try:
             import rag_chain
-            print(f"🤖 HYBRID: Building LLaMA chain for patient_id={self.patient_id!r}...", flush=True)
+            print(f"🤖 HYBRID: _call_llama_rag — patient_id={self.patient_id!r}, input={user_text[:80]!r}", flush=True)
 
             # Attempt to build / retrieve the cached chain BEFORE suppressing Nova Sonic.
             # build_chain is synchronous; run it in the executor to avoid blocking the loop.
@@ -1138,10 +1149,11 @@ Provide structured evaluation with detailed justifications for each score.
                 table_name=self._dynamodb_table_name,
             )
             if response_text and response_text.strip():
+                print(f"🤖 HYBRID: LLaMA OK ({len(response_text)} chars), injecting into Nova Sonic", flush=True)
                 await self._inject_response(response_text)
             else:
                 logger.error("🤖 HYBRID: LLaMA returned empty response, releasing suppression")
-                print(f"🤖 HYBRID: LLaMA returned empty response", flush=True)
+                print(f"🤖 HYBRID: LLaMA returned EMPTY response — Nova Sonic fallback released", flush=True)
                 self._suppress_nova_audio = False
         except asyncio.CancelledError:
             # Barge-in cancelled this task — release suppression and let start_audio_input take over

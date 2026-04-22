@@ -1,7 +1,6 @@
 import logging
 from typing import Optional
 
-import psycopg2
 from langchain_aws import BedrockEmbeddings
 from langchain_postgres import PGVector
 
@@ -64,4 +63,4 @@ def get_vectorstore(
 
     except Exception as e:
         logger.error(f"Error initializing vector store: {e}")
-        return None
+        raise RuntimeError(f"VectorStore init failed for collection={collection_name!r}: {e}") from e

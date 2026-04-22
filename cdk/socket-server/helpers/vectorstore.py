@@ -1,3 +1,4 @@
+import logging
 from typing import Dict
 
 from langchain_core.vectorstores import VectorStoreRetriever
@@ -5,6 +6,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever
 
 from helpers.helper import get_vectorstore
+
+logger = logging.getLogger(__name__)
 
 def get_vectorstore_retriever(
     llm,
@@ -22,15 +25,31 @@ def get_vectorstore_retriever(
     Returns:
     VectorStoreRetriever: A history-aware retriever instance.
     """
+    collection_name = vectorstore_config_dict['collection_name']
+    host = vectorstore_config_dict['host']
+    logger.info(f"🔍 VECTORSTORE: Connecting — collection={collection_name!r}, host={host!r}")
+    print(f"🔍 VECTORSTORE: Connecting — collection={collection_name!r}, host={host!r}", flush=True)
+
     vectorstore, _ = get_vectorstore(
-        collection_name=vectorstore_config_dict['collection_name'],
+        collection_name=collection_name,
         embeddings=embeddings,
         dbname=vectorstore_config_dict['dbname'],
         user=vectorstore_config_dict['user'],
         password=vectorstore_config_dict['password'],
-        host=vectorstore_config_dict['host'],
+        host=host,
         port=int(vectorstore_config_dict['port'])
     )
+
+    # Quick sanity-check: count docs in this collection so we know if retrieval will work
+    try:
+        test_docs = vectorstore.similarity_search("symptoms condition medical history", k=3)
+        print(f"🔍 VECTORSTORE: Test search for collection={collection_name!r} → {len(test_docs)} doc(s) returned", flush=True)
+        logger.info(f"🔍 VECTORSTORE: Test search found {len(test_docs)} docs for collection={collection_name!r}")
+        if test_docs:
+            print(f"🔍 VECTORSTORE: First doc preview: {test_docs[0].page_content[:120]!r}", flush=True)
+    except Exception as vtest_e:
+        print(f"❌ VECTORSTORE: Test search FAILED for collection={collection_name!r}: {vtest_e}", flush=True)
+        logger.error(f"VECTORSTORE: Test search failed: {vtest_e}")
 
     retriever = vectorstore.as_retriever()
 

@@ -140,6 +140,10 @@ def ensure_chain(
     so a build failure falls back to Nova Sonic's own response rather than silent failure.
     """
     llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
+    rds_endpoint = os.getenv("RDS_PROXY_ENDPOINT", "")
+    sm_secret = os.getenv("SM_DB_CREDENTIALS", "")
+    print(f"🤖 RAG_CHAIN: ensure_chain — patient_id={patient_id!r}, name={patient_name!r}, model={llm_model_id!r}", flush=True)
+    print(f"🤖 RAG_CHAIN: env — RDS_PROXY_ENDPOINT={'SET' if rds_endpoint else 'MISSING'}, SM_DB_CREDENTIALS={'SET' if sm_secret else 'MISSING'}", flush=True)
     cache_key = (patient_id or "default", group_prompt or "")
     if cache_key not in _chain_cache:
         logger.info(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id!r}")
@@ -153,6 +157,9 @@ def ensure_chain(
             table_name=table_name,
         )
         logger.info(f"🤖 RAG_CHAIN: Chain built for patient_id={patient_id!r}")
+        print(f"🤖 RAG_CHAIN: Chain successfully built for patient_id={patient_id!r}", flush=True)
+    else:
+        print(f"🤖 RAG_CHAIN: Cache hit for patient_id={patient_id!r}", flush=True)
 
 
 async def call_llama_rag(
@@ -178,7 +185,9 @@ async def call_llama_rag(
         )["answer"]
 
     logger.info(f"🤖 RAG_CHAIN: Invoking LLaMA for session={session_id}, input={user_text[:60]}...")
+    print(f"🤖 RAG_CHAIN: Invoking LLaMA — session={session_id}, input={user_text[:80]!r}", flush=True)
     loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, _invoke)
-    logger.info(f"🤖 RAG_CHAIN: Response received: {response[:80]}...")
-    return response
+    result = await loop.run_in_executor(None, _invoke)
+    logger.info(f"🤖 RAG_CHAIN: Response received: {result[:80]}...")
+    print(f"🤖 RAG_CHAIN: LLaMA response ({len(result)} chars): {result[:120]!r}", flush=True)
+    return result
