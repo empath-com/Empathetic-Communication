@@ -22,7 +22,7 @@ const ChatTopBar = ({ handleSignOut }) => {
         </div>
         <div style={{ textAlign: "left" }} className="flex flex-col">
           <h1 className="text-xl font-semibold text-gray-900">AI {roleLabel}</h1>
-          <p className="text-sm text-gray-500">Interactive simulation</p>
+          <p className="text-sm text-gray-500">Interactive simulation...</p>
         </div>
       </div>
 
