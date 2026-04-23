@@ -97,16 +97,21 @@ def get_conversation_history(session_id: str) -> list:
 
 def build_conversation_context(messages: list) -> str:
     """
-    Build a formatted conversation context string from message history.
+    Build a formatted conversation context string from message history for empathy evaluation.
+    Practitioner (student) messages are labelled for scoring; simulated-role messages are
+    labelled as context-only so the evaluator does not score them.
     """
     if not messages:
         return ""
 
+    pro_label = PRACTITIONER_ROLE.capitalize()
+    role_label = f"{SIMULATED_ROLE.capitalize()} [context only — do not score]"
+
     context = "CONVERSATION HISTORY:\n"
     for msg in messages:
-        role = "Student" if msg.get("student_sent") else "AI Patient"
+        label = pro_label if msg.get("student_sent") else role_label
         content = msg.get("message_content", "")
-        context += f"\n{role}: {content}"
+        context += f"\n{label}: {content}"
 
     context += "\n\n"
     logger.info(f"✅ Built conversation context of {len(context)} characters")

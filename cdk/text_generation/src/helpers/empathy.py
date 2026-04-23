@@ -530,12 +530,19 @@ def handle_empathy_evaluation(
                 "body": json.dumps({"error": "No conversation history found for this session"})
             }
 
-        # Build conversation context, filtering out SESSION COMPLETED signals
-        # so the empathy evaluator isn't confused by the session-end marker.
-        context_messages = [
-            msg for msg in messages
-            if msg.get("student_sent") or "SESSION COMPLETED" not in msg.get("message_content", "")
-        ]
+        # Build conversation context, filtering out:
+        # - SESSION COMPLETED signals from AI messages
+        # - The initial kick-off prompt ("Begin the conversation as the ...") which is a
+        #   system-generated trigger, not a real practitioner utterance to score.
+        def _is_scoreable(msg):
+            content = msg.get("message_content", "")
+            if msg.get("student_sent") and content.strip().startswith("Begin the conversation as the"):
+                return False
+            if not msg.get("student_sent") and "SESSION COMPLETED" in content:
+                return False
+            return True
+
+        context_messages = [msg for msg in messages if _is_scoreable(msg)]
 
         # If message_id is provided, scope context to messages up to and including that row.
         scoped_messages = context_messages
@@ -586,6 +593,13 @@ def handle_empathy_evaluation(
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": "No student message found to evaluate"})
+            }
+
+        if message_content.strip().startswith("Begin the conversation as the"):
+            logger.info("⏭️ Skipping empathy evaluation — message is the initial conversation trigger")
+            return {
+                "statusCode": 200,
+                "body": json.dumps({"skipped": True, "reason": "Initial trigger message is not scored"})
             }
 
         # Keep patient context compact; transcript is passed separately as evaluation_input.

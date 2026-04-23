@@ -139,6 +139,8 @@ class NovaSonic:
         self.empathy_evaluation_in_progress = False
         # Carry buffer for bracket cues split across textOutput events
         self._bracket_carry = ""
+        # Carry buffer for incomplete bracket at end of a LLaMA injection (prepended to the next)
+        self._llama_bracket_carry = ""
         # Hybrid voice mode: suppress Nova Sonic's own audio while LLaMA generates a response
         self._suppress_nova_audio = False
         self._hybrid_mode = os.getenv("HYBRID_VOICE_MODE", "false").lower() == "true"
@@ -1178,13 +1180,29 @@ Provide structured evaluation with detailed justifications for each score.
 
     async def _inject_response(self, text: str):
         """
-        Hybrid mode: inject a LLaMA-generated response into Nova Sonic as a USER text turn
-        tagged with [PATIENT_RESPONSE: ...]. Nova Sonic's puppet system prompt causes it to
-        read the tagged text aloud verbatim, preserving barge-in support.
+        Hybrid mode: inject a LLaMA-generated response into Nova Sonic as a USER text turn.
 
         Saves the clean text to DB and chat history, emits it to the frontend, then releases
         _suppress_nova_audio so the resulting audio flows to the browser.
         """
+        # Prepend any incomplete bracket fragment carried from the previous LLaMA response.
+        # e.g. previous ended with "[sighs", this response starts with " softly] I think..."
+        if self._llama_bracket_carry:
+            text = self._llama_bracket_carry + text
+            self._llama_bracket_carry = ""
+
+        # If this response ends with an incomplete bracket, carry the fragment forward
+        # to the next injection rather than letting Nova Sonic read it as literal text.
+        open_pos = text.rfind("[")
+        if open_pos != -1 and "]" not in text[open_pos:]:
+            self._llama_bracket_carry = text[open_pos:]
+            text = text[:open_pos].rstrip()
+            print(f"🤖 HYBRID: Carrying incomplete bracket to next injection: {self._llama_bracket_carry!r}", flush=True)
+
+        if not text:
+            print(f"🤖 HYBRID: Injection skipped — text empty after bracket carry", flush=True)
+            self._suppress_nova_audio = False
+            return
         inject_content_name = str(uuid.uuid4())
 
         # Persist and display the LLaMA response (the canonical AI turn)

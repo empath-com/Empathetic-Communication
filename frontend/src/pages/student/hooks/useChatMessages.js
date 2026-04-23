@@ -78,7 +78,7 @@ export function filterUnwantedMessages(messagesArray) {
     const n = normalizeVoiceLine(m?.message_content);
     if (!n) continue;
 
-    if ((m.message_content || "").includes("Begin the conversation as the patient")) continue;
+    if ((m.message_content || "").includes("Begin the conversation as the")) continue;
 
     // The backend saves a [VOICE_TRANSCRIPT] message that concatenates all user
     // speech for the whole session into one blob (used for empathy evaluation).
@@ -657,7 +657,7 @@ export default function useChatMessages({
         sortedData.forEach((message) => {
           if (
             message.message_content.trim() === "introduce yourself briefly" ||
-            message.message_content.includes("Begin the conversation as the patient:")
+            message.message_content.includes("Begin the conversation as the")
           ) {
             return;
           }
