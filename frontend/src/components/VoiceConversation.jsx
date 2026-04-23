@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, VolumeUp, VolumeOff, Close, Phone, PhoneDisabled } from '@mui/icons-material';
 import { IconButton, Paper, Typography, Box, Dialog, CircularProgress, Chip } from '@mui/material';
+import { SIMULATED_ROLE } from '../utils/conversationBuilder';
 
 const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -374,7 +375,7 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <Paper sx={{ p: 3, minHeight: 500 }}>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h6">Voice Conversation with Patient</Typography>
+          <Typography variant="h6">Voice Conversation with {SIMULATED_ROLE && SIMULATED_ROLE.charAt(0).toUpperCase() + SIMULATED_ROLE.slice(1)}</Typography>
           <Box display="flex" alignItems="center" gap={2}>
             <Chip 
               label={getStatusText()} 
@@ -447,8 +448,8 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
             {/* Status Text */}
             <Typography variant="body1" color="textSecondary" textAlign="center">
               {isRecording ? 'Recording... Release to send' : 
-               isSpeaking ? 'Patient is speaking...' : 
-               'Hold to speak to the patient'}
+               isSpeaking ? `${SIMULATED_ROLE && SIMULATED_ROLE.charAt(0).toUpperCase() + SIMULATED_ROLE.slice(1)} is speaking...` : 
+               `Hold to speak to the ${SIMULATED_ROLE}`}
             </Typography>
 
             {/* Conversation Log */}
@@ -484,7 +485,7 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
                     >
                       <strong>
                         {entry.type === 'student' ? 'You: ' : 
-                         entry.type === 'patient' ? 'Patient: ' : 
+                         entry.type === 'patient' ? `${SIMULATED_ROLE && SIMULATED_ROLE.charAt(0).toUpperCase() + SIMULATED_ROLE.slice(1)}: ` : 
                          entry.type === 'system' ? 'System: ' : 'Error: '}
                       </strong>
                       {entry.message}

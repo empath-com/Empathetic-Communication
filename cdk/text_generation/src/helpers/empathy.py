@@ -2,10 +2,14 @@ import boto3
 import hashlib
 import json
 import logging
+import os
 import re
 from pydantic import BaseModel, Field
 
 from .prompts import get_empathy_prompt, get_default_empathy_prompt
+
+SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
+PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,7 +67,7 @@ def _grounding_issue(evaluation: dict, transcript: str):
             return f"unsupported nonverbal claim: '{term}'"
 
     # Detect invented names such as "Matthew's concerns" when name is absent from transcript.
-    allowed_names = {"you", "patient", "pharmacist", "ai", "student", "care"}
+    allowed_names = {"you", SIMULATED_ROLE.lower(), PRACTITIONER_ROLE.lower(), "ai", "student", "care"}
     for match in re.finditer(r"\b([A-Z][a-z]{2,})'s\b", "\n".join(_collect_text_fragments(evaluation))):
         name = match.group(1)
         if name.lower() not in allowed_names and name.lower() not in transcript_lower:
@@ -96,9 +100,9 @@ def _apply_grounded_text_fallback(evaluation: dict):
     evaluation["judge_reasoning"] = reasoning
 
     feedback = evaluation.get("feedback") or {}
-    feedback["strengths"] = ["You acknowledged the patient and invited them to continue sharing."]
+    feedback["strengths"] = [f"You acknowledged the {SIMULATED_ROLE} and invited them to continue sharing."]
     feedback["improvement_suggestions"] = [
-        "Use explicit reflective phrases tied to the patient's exact words, then propose one collaborative next step."
+        f"Use explicit reflective phrases tied to the {SIMULATED_ROLE}'s exact words, then propose one collaborative next step."
     ]
     feedback["forward_target"] = "Collaborative planning with explicit transcript-grounded reflections"
     evaluation["feedback"] = feedback
@@ -156,11 +160,13 @@ TRANSCRIPT_END"""
     # Shared justification instruction embedded in each field description.
     # Kept short to minimise schema token count (minLength/minItems not used — Nova Lite ignores them and can error).
     _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other criteria."
+    _pro = PRACTITIONER_ROLE
+    _role = SIMULATED_ROLE
     empathy_tool = {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
             "description": (
-                "Evaluate the pharmacist using 10 CARE criteria, each scored 1-5 "
+                f"Evaluate the {_pro} using 10 CARE criteria, each scored 1-5 "
                 "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
                 "Populate every field. Do not omit, merge, or rename any field."
             ),
@@ -170,11 +176,11 @@ TRANSCRIPT_END"""
                     "properties": {
                         "making_feel_at_ease": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: warmth and comfort-building toward the patient."
+                            "description": f"Score 1-5: warmth and comfort-building toward the {_role}."
                         },
                         "letting_tell_story": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: space given for patient self-expression."
+                            "description": f"Score 1-5: space given for {_role} self-expression."
                         },
                         "really_listening": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
@@ -182,15 +188,15 @@ TRANSCRIPT_END"""
                         },
                         "interested_in_whole_person": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: curiosity about holistic patient context beyond symptoms."
+                            "description": f"Score 1-5: curiosity about holistic {_role} context beyond their immediate concern."
                         },
                         "understanding_concerns": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: depth of understanding and validation of patient concerns."
+                            "description": f"Score 1-5: depth of understanding and validation of {_role} concerns."
                         },
                         "showing_care_compassion": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: genuine empathy and emotional support shown to patient."
+                            "description": f"Score 1-5: genuine empathy and emotional support shown to {_role}."
                         },
                         "being_positive": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
@@ -202,7 +208,7 @@ TRANSCRIPT_END"""
                         },
                         "helping_take_control": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: patient empowerment and involvement in decisions."
+                            "description": f"Score 1-5: {_role} empowerment and involvement in decisions."
                         },
                         "making_plan_of_action": {
                             "type": "integer", "enum": [1, 2, 3, 4, 5],

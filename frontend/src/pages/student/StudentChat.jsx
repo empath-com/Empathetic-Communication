@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchAuthSession, fetchUserAttributes, signOut } from "aws-amplify/auth";
+import { SIMULATED_ROLE } from "../../utils/conversationBuilder";
 
 import {
   startSpokenLLM,
@@ -604,7 +605,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
                 <div className="text-center">
                   <p className="text-sm font-medium text-gray-800">Voice Mode Active</p>
-                  <p className="text-xs text-gray-500 mt-1">Speak naturally to the AI patient</p>
+                  <p className="text-xs text-gray-500 mt-1">Speak naturally to the AI {SIMULATED_ROLE}</p>
                 </div>
 
                 {/* Animated voice waves */}

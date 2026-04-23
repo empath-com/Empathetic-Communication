@@ -1,4 +1,5 @@
 const SIMULATED_ROLE = import.meta.env.VITE_SIMULATED_ROLE || "patient";
+const PRACTITIONER_ROLE = import.meta.env.VITE_PRACTITIONER_ROLE || "pharmacist";
 
 /**
  * Build conversation context for Bedrock streaming

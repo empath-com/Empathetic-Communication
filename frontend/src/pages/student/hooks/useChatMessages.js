@@ -723,6 +723,10 @@ export default function useChatMessages({
           ? normalized.student_sent
           : false;
 
+        // Student utterances arrive via the dedicated `voice-user-message` event;
+        // skip them here to avoid showing a duplicate bubble.
+        if (isStudent) return;
+
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           // Merge consecutive AI voice messages: if the last message is also an

@@ -1,8 +1,12 @@
 import boto3
+import os
 import re
 import json
 import logging
 from .db_connection_manager import get_db_cursor
+
+SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
+PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
 
 from langchain_aws import ChatBedrock
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -264,14 +268,16 @@ def get_response(
 
     empathy_feedback = ""
 
-    completion_string = """
-                Once I, the pharmacist, have give you a diagnosis, politely leave the conversation and wish me goodbye.
-                Regardless if I have given you the proper diagnosis or not for the patient you are pretending to be, stop talking to me.
+    role = SIMULATED_ROLE
+    pro = PRACTITIONER_ROLE
+    completion_string = f"""
+                Once I, the {pro}, have given you a response, politely leave the conversation and wish me goodbye.
+                Regardless of the outcome, stop talking to me.
                 """
     if llm_completion:
-        completion_string = """
-                Continue this process until you determine that me, the pharmacist, has properly diagnosed the patient you are pretending to be.
-                Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
+        completion_string = f"""
+                Continue this process until you determine that me, the {pro}, has properly addressed your concerns.
+                Once that happens, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
     system_prompt = get_system_prompt(patient_name)
@@ -279,10 +285,10 @@ def get_response(
     final_system_prompt = (
         f"""
         <|begin_of_text|>
-        <|start_header_id|>patient<|end_header_id|>
+        <|start_header_id|>{role}<|end_header_id|>
 
-        CRITICAL: You are {patient_name}, a PATIENT seeking help from a pharmacist.
-        NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
+        CRITICAL: You are {patient_name}, a {role.upper()} seeking help from a {pro}.
+        NEVER act as an expert or {pro}. ALWAYS respond as a {role}.
 
         {system_prompt}
         {group_prompt}
