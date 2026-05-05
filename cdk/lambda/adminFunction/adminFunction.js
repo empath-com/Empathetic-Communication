@@ -298,14 +298,11 @@ exports.handler = async (event) => {
               group_description,
               group_student_access,
               empathy_enabled,
-              empathy_tool,
               admin_voice_enabled,
               instructor_voice_enabled,
             } = event.queryStringParameters;
 
             const { system_prompt } = JSON.parse(event.body);
-            const validTools = ['CARE', 'PRISM'];
-            const resolvedTool = validTools.includes(empathy_tool) ? empathy_tool : 'CARE';
 
             // Insert new simulation group into simulation_groups table
             const newSimulationGroup = await sqlConnectionTableCreator`
@@ -317,7 +314,6 @@ exports.handler = async (event) => {
                       group_student_access,
                       system_prompt,
                       empathy_enabled,
-                      empathy_tool,
                       admin_voice_enabled,
                       instructor_voice_enabled
                   )
@@ -329,7 +325,6 @@ exports.handler = async (event) => {
                       ${group_student_access.toLowerCase() === "true"},
                       ${system_prompt},
                       ${empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true},
-                      ${resolvedTool},
                       ${admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true},
                       ${instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true}
                   )
@@ -400,13 +395,11 @@ exports.handler = async (event) => {
           event.queryStringParameters.simulation_group_id &&
           event.queryStringParameters.access
         ) {
-          const { simulation_group_id, group_name, access, empathy_enabled, empathy_tool, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
+          const { simulation_group_id, group_name, access, empathy_enabled, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
           const accessBool = access.toLowerCase() === "true";
           const empathyBool = empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true;
           const adminVoiceBool = admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true;
           const instructorVoiceBool = instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true;
-          const validTools = ['CARE', 'PRISM'];
-          const resolvedTool = validTools.includes(empathy_tool) ? empathy_tool : 'CARE';
 
           if (group_name) { // update WITH group name
             await sqlConnectionTableCreator`
@@ -414,7 +407,6 @@ exports.handler = async (event) => {
               SET group_name = ${group_name},
                   group_student_access = ${accessBool},
                   empathy_enabled = ${empathyBool},
-                  empathy_tool = ${resolvedTool},
                   admin_voice_enabled = ${adminVoiceBool},
                   instructor_voice_enabled = ${instructorVoiceBool}
               WHERE simulation_group_id = ${simulation_group_id};
@@ -424,7 +416,6 @@ exports.handler = async (event) => {
                     UPDATE "simulation_groups"
                     SET group_student_access = ${accessBool},
                         empathy_enabled = ${empathyBool},
-                        empathy_tool = ${resolvedTool},
                         admin_voice_enabled = ${adminVoiceBool},
                         instructor_voice_enabled = ${instructorVoiceBool}
                     WHERE simulation_group_id = ${simulation_group_id};
@@ -803,7 +794,7 @@ exports.handler = async (event) => {
         try {
           // Get the latest empathy prompt from history table
           const latestPrompt = await sqlConnectionTableCreator`
-            SELECT prompt_content, created_at
+            SELECT prompt_content, empathy_tool, created_at
             FROM "empathy_prompt_history"
             ORDER BY created_at DESC
             LIMIT 1;
@@ -811,7 +802,7 @@ exports.handler = async (event) => {
 
           // Get prompt history excluding the latest one
           const promptHistory = await sqlConnectionTableCreator`
-            SELECT history_id, prompt_content, created_at
+            SELECT history_id, prompt_content, empathy_tool, created_at
             FROM "empathy_prompt_history"
             ORDER BY created_at DESC
             OFFSET 1;
@@ -819,6 +810,7 @@ exports.handler = async (event) => {
 
           response.body = JSON.stringify({
             current_prompt: latestPrompt[0]?.prompt_content || "",
+            current_empathy_tool: latestPrompt[0]?.empathy_tool || "CARE",
             history: promptHistory,
           });
         } catch (err) {
@@ -830,17 +822,19 @@ exports.handler = async (event) => {
       case "POST /admin/update_empathy_prompt":
         if (event.body) {
           try {
-            const { prompt_content } = JSON.parse(event.body);
+            const { prompt_content, empathy_tool: bodyTool } = JSON.parse(event.body);
             if (!prompt_content || !prompt_content.trim()) {
               response.statusCode = 400;
               response.body = "prompt_content is required";
               break;
             }
+            const validTools = ['CARE', 'PRISM'];
+            const resolvedTool = validTools.includes(bodyTool) ? bodyTool : 'CARE';
 
             // Insert new prompt into history
             await sqlConnectionTableCreator`
-              INSERT INTO "empathy_prompt_history" (prompt_content)
-              VALUES (${prompt_content});
+              INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool)
+              VALUES (${prompt_content}, ${resolvedTool});
             `;
 
             response.body = JSON.stringify({
@@ -865,9 +859,9 @@ exports.handler = async (event) => {
               : null;
 
           if (historyId) {
-            // Fetch the prompt_content for the given history_id and insert as new active prompt
+            // Fetch the prompt_content and empathy_tool for the given history_id
             const rows = await sqlConnectionTableCreator`
-              SELECT prompt_content
+              SELECT prompt_content, empathy_tool
               FROM "empathy_prompt_history"
               WHERE history_id = ${historyId}
               LIMIT 1;
@@ -881,10 +875,12 @@ exports.handler = async (event) => {
               });
               break;
             }
+            const validTools = ['CARE', 'PRISM'];
+            const restoredTool = validTools.includes(rows[0]?.empathy_tool) ? rows[0].empathy_tool : 'CARE';
 
             await sqlConnectionTableCreator`
-              INSERT INTO "empathy_prompt_history" (prompt_content)
-              VALUES (${fromHistory});
+              INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool)
+              VALUES (${fromHistory}, ${restoredTool});
             `;
 
             response.body = JSON.stringify({

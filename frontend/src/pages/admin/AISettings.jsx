@@ -17,6 +17,10 @@ import {
   Tabs,
   Tab,
   Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { SIMULATED_ROLE, PRACTITIONER_ROLE } from "../../utils/conversationBuilder";
 import {
@@ -56,6 +60,7 @@ const AISettings = () => {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptHistory, setPromptHistory] = useState([]);
   const [empathyPrompt, setEmpathyPrompt] = useState("");
+  const [empathyTool, setEmpathyTool] = useState("CARE");
   const [empathyPromptHistory, setEmpathyPromptHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -300,6 +305,7 @@ Provide structured evaluation with detailed justifications for each score.
       );
       const data = await response.json();
       setEmpathyPrompt(data.current_prompt || "");
+      setEmpathyTool(data.current_empathy_tool || "CARE");
       setEmpathyPromptHistory(data.history || []);
     } catch (error) {
       console.error("Error fetching empathy prompts:", error);
@@ -361,6 +367,7 @@ Provide structured evaluation with detailed justifications for each score.
           },
           body: JSON.stringify({
             prompt_content: empathyPrompt,
+            empathy_tool: empathyTool,
           }),
         }
       );
@@ -667,6 +674,18 @@ Provide structured evaluation with detailed justifications for each score.
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               This prompt controls how the AI evaluates student empathy. Changes affect ALL users.
             </Typography>
+            <FormControl size="small" sx={{ mb: 3, minWidth: 240 }}>
+              <InputLabel id="empathy-tool-label">Evaluation Tool</InputLabel>
+              <Select
+                labelId="empathy-tool-label"
+                value={empathyTool}
+                label="Evaluation Tool"
+                onChange={(e) => setEmpathyTool(e.target.value)}
+              >
+                <MenuItem value="CARE">CARE Measure</MenuItem>
+                <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+              </Select>
+            </FormControl>
             <Alert severity="info" sx={{ mb: 3 }}>
               <Typography variant="body2">
                 <strong>Required Format:</strong> Your prompt must include{" "}

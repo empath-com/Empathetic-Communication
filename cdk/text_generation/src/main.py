@@ -236,18 +236,26 @@ def get_group_prompt(simulation_group_id):
 
 
 def get_empathy_settings(simulation_group_id: str) -> tuple:
-    """Return (empathy_enabled, empathy_tool) for a simulation group."""
+    """Return (empathy_enabled, empathy_tool).
+    empathy_enabled is per-group; empathy_tool is the global instance setting from empathy_prompt_history.
+    """
     try:
         from helpers.db_connection_manager import get_db_cursor
         with get_db_cursor() as cursor:
             cursor.execute(
-                'SELECT empathy_enabled, empathy_tool FROM "simulation_groups" WHERE simulation_group_id = %s',
+                'SELECT empathy_enabled FROM "simulation_groups" WHERE simulation_group_id = %s',
                 (simulation_group_id,)
             )
             row = cursor.fetchone()
-            if row:
-                return bool(row[0]), (row[1] or "CARE")
-            return False, "CARE"
+            empathy_enabled = bool(row[0]) if row else False
+
+            cursor.execute(
+                'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
+            )
+            tool_row = cursor.fetchone()
+            empathy_tool = (tool_row[0] or "CARE") if tool_row else "CARE"
+
+        return empathy_enabled, empathy_tool
     except Exception as e:
         logger.error(f"Error fetching empathy settings for {simulation_group_id}: {e}")
         return False, "CARE"

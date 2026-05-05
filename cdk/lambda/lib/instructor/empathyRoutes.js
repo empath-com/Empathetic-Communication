@@ -132,11 +132,12 @@ const routes = {
           return response;
         }
 
-        // Fetch empathy_tool from the simulation group
-        const groupResult = await sqlConnection`
-          SELECT empathy_tool FROM "simulation_groups" WHERE simulation_group_id = ${simulation_group_id} LIMIT 1;
+        // Fetch the global empathy_tool from empathy_prompt_history
+        const toolResult = await sqlConnection`
+          SELECT empathy_tool FROM "empathy_prompt_history"
+          ORDER BY created_at DESC LIMIT 1;
         `;
-        const empathyTool = groupResult[0]?.empathy_tool || 'CARE';
+        const empathyTool = toolResult[0]?.empathy_tool || 'CARE';
 
         const columnCheck = await sqlConnection`
           SELECT column_name FROM information_schema.columns

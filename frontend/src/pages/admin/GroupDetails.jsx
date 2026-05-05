@@ -47,7 +47,6 @@ const GroupDetails = ({ group, onBack }) => {
   const [activeInstructors, setActiveInstructors] = useState([]);
   const [isActive, setIsActive] = useState(groupStatus);
   const [empathyEnabled, setEmpathyEnabled] = useState(false);
-  const [empathyTool, setEmpathyTool] = useState("CARE");
   const [adminVoiceEnabled, setAdminVoiceEnabled] = useState(true);
   const [instructorVoiceEnabled, setInstructorVoiceEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -135,7 +134,6 @@ const GroupDetails = ({ group, onBack }) => {
           const currentGroup = data.find(g => g.simulation_group_id === group.id);
           if (currentGroup) {
             setEmpathyEnabled(currentGroup.empathy_enabled !== false);
-            setEmpathyTool(currentGroup.empathy_tool || "CARE");
             setAdminVoiceEnabled(currentGroup.admin_voice_enabled !== false);
             setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
           }
@@ -321,7 +319,7 @@ const GroupDetails = ({ group, onBack }) => {
           group.id
         )}&group_name=${encodeURIComponent(
           groupName
-        )}&access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&empathy_tool=${encodeURIComponent(empathyTool)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
+        )}&access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
         {
           method: "POST",
           headers: {
@@ -434,20 +432,6 @@ const GroupDetails = ({ group, onBack }) => {
               }
               label="Enable empathy coach"
             />
-            {empathyEnabled && (
-              <FormControl size="small" sx={{ mt: 1, mb: 1, minWidth: 200 }}>
-                <InputLabel id="empathy-tool-label">Evaluation Tool</InputLabel>
-                <Select
-                  labelId="empathy-tool-label"
-                  value={empathyTool}
-                  label="Evaluation Tool"
-                  onChange={(e) => setEmpathyTool(e.target.value)}
-                >
-                  <MenuItem value="CARE">CARE Measure</MenuItem>
-                  <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
-                </Select>
-              </FormControl>
-            )}
             <FormControlLabel
               control={
                 <Switch
