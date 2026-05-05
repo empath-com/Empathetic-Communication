@@ -7,6 +7,12 @@ import re
 from pydantic import BaseModel, Field
 
 from .prompts import get_empathy_prompt, get_default_empathy_prompt
+from .evaluation_tool_specs import (
+    CARE_CRITERIA, PRISM_CRITERIA,
+    CARE_CRITERIA_LABELS, PRISM_CRITERIA_LABELS,
+    CARE_JUSTIFICATION_KEYS, PRISM_JUSTIFICATION_KEYS,
+    get_care_tool_spec, get_prism_tool_spec,
+)
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
 PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
@@ -76,33 +82,11 @@ def _grounding_issue(evaluation: dict, transcript: str):
     return None
 
 
-_CARE_JUSTIFICATION_KEYS = [
-    "making_feel_at_ease_justification",
-    "letting_tell_story_justification",
-    "really_listening_justification",
-    "interested_in_whole_person_justification",
-    "understanding_concerns_justification",
-    "showing_care_compassion_justification",
-    "being_positive_justification",
-    "explaining_clearly_justification",
-    "helping_take_control_justification",
-    "making_plan_of_action_justification",
-]
-
-_PRISM_JUSTIFICATION_KEYS = [
-    "prepare_justification",
-    "recognise_justification",
-    "interact_justification",
-    "self_assess_justification",
-    "master_justification",
-]
-
-
 def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
     """If model output still contains unsupported claims, replace narrative text with safe grounded text."""
     fallback_line = "Assessment grounded only in provided transcript text. No explicit additional evidence is present."
     reasoning = evaluation.get("judge_reasoning") or {}
-    keys = _PRISM_JUSTIFICATION_KEYS if tool == "PRISM" else _CARE_JUSTIFICATION_KEYS
+    keys = PRISM_JUSTIFICATION_KEYS if tool == "PRISM" else CARE_JUSTIFICATION_KEYS
     for key in keys:
         reasoning[key] = fallback_line
     reasoning["overall_assessment"] = (
@@ -166,142 +150,7 @@ TRANSCRIPT_END"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    # Tool schema: 10 CARE criteria scored 1-5 scale.
-    # Each criterion is scored 1-5: 1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced.
-    # Scores reflect the entire conversation thread, not individual messages.
-    # Shared justification instruction embedded in each field description.
-    # Kept short to minimise schema token count (minLength/minItems not used — Nova Lite ignores them and can error).
-    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other criteria."
-    _pro = PRACTITIONER_ROLE
-    _role = SIMULATED_ROLE
-    empathy_tool = {
-        "toolSpec": {
-            "name": "submit_empathy_evaluation",
-            "description": (
-                f"Evaluate the {_pro} using 10 CARE criteria, each scored 1-5 "
-                "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
-                "Populate every field. Do not omit, merge, or rename any field."
-            ),
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {
-                        "making_feel_at_ease": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: warmth and comfort-building toward the {_role}."
-                        },
-                        "letting_tell_story": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: space given for {_role} self-expression."
-                        },
-                        "really_listening": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: active listening via paraphrasing, reflecting, engagement."
-                        },
-                        "interested_in_whole_person": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: curiosity about holistic {_role} context beyond their immediate concern."
-                        },
-                        "understanding_concerns": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: depth of understanding and validation of {_role} concerns."
-                        },
-                        "showing_care_compassion": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: genuine empathy and emotional support shown to {_role}."
-                        },
-                        "being_positive": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: encouraging, reassuring, non-judgmental tone."
-                        },
-                        "explaining_clearly": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: clarity of explanations in plain language."
-                        },
-                        "helping_take_control": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": f"Score 1-5: {_role} empowerment and involvement in decisions."
-                        },
-                        "making_plan_of_action": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": "Score 1-5: collaborative planning and agreed next steps."
-                        },
-                        "judge_reasoning": {
-                            "type": "object",
-                            "description": "Separate justification for each criterion. Every field is required. Do not combine justifications.",
-                            "properties": {
-                                "making_feel_at_ease_justification":        {"type": "string", "description": _J},
-                                "letting_tell_story_justification":         {"type": "string", "description": _J},
-                                "really_listening_justification":           {"type": "string", "description": _J},
-                                "interested_in_whole_person_justification": {"type": "string", "description": _J},
-                                "understanding_concerns_justification":     {"type": "string", "description": _J},
-                                "showing_care_compassion_justification":    {"type": "string", "description": _J},
-                                "being_positive_justification":             {"type": "string", "description": _J},
-                                "explaining_clearly_justification":         {"type": "string", "description": _J},
-                                "helping_take_control_justification":       {"type": "string", "description": _J},
-                                "making_plan_of_action_justification":      {"type": "string", "description": _J},
-                                "overall_assessment": {
-                                    "type": "string",
-                                    "description": (
-                                        "Brief coach summary using 'you'. "
-                                        "Do not repeat individual justifications. "
-                                        "Highlight the key pattern across the conversation."
-                                    )
-                                }
-                            },
-                            "required": [
-                                "making_feel_at_ease_justification",
-                                "letting_tell_story_justification",
-                                "really_listening_justification",
-                                "interested_in_whole_person_justification",
-                                "understanding_concerns_justification",
-                                "showing_care_compassion_justification",
-                                "being_positive_justification",
-                                "explaining_clearly_justification",
-                                "helping_take_control_justification",
-                                "making_plan_of_action_justification",
-                                "overall_assessment"
-                            ]
-                        },
-                        "feedback": {
-                            "type": "object",
-                            "properties": {
-                                "strengths": {
-                                    "type": "array",
-                                    "description": "1-2 specific strengths with transcript evidence.",
-                                    "items": {"type": "string"}
-                                },
-                                "improvement_suggestions": {
-                                    "type": "array",
-                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
-                                    "items": {"type": "string"}
-                                },
-                                "forward_target": {
-                                    "type": "string",
-                                    "description": "The single CARE criterion or skill to focus on next."
-                                }
-                            },
-                            "required": ["strengths", "improvement_suggestions", "forward_target"]
-                        }
-                    },
-                    "required": [
-                        "making_feel_at_ease",
-                        "letting_tell_story",
-                        "really_listening",
-                        "interested_in_whole_person",
-                        "understanding_concerns",
-                        "showing_care_compassion",
-                        "being_positive",
-                        "explaining_clearly",
-                        "helping_take_control",
-                        "making_plan_of_action",
-                        "judge_reasoning",
-                        "feedback"
-                    ]
-                }
-            }
-        }
-    }
+    care_tool_spec = get_care_tool_spec()
 
     strict_retry_addendum = """
 
@@ -334,7 +183,7 @@ STRICT RETRY MODE:
                     }
                 ],
                 "toolConfig": {
-                    "tools": [empathy_tool],
+                    "tools": [care_tool_spec],
                     "toolChoice": {"tool": {"name": "submit_empathy_evaluation"}},
                 },
                 "inferenceConfig": {
@@ -398,12 +247,7 @@ STRICT RETRY MODE:
             logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
 
             # Coerce each criterion to 1-5 scale
-            criteria = [
-                'making_feel_at_ease', 'letting_tell_story', 'really_listening',
-                'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
-                'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
-            ]
-            for key in criteria:
+            for key in CARE_CRITERIA:
                 val = evaluation.get(key)
                 if isinstance(val, str):
                     try:
@@ -469,110 +313,7 @@ TRANSCRIPT_END"""
         logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
         return None
 
-    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other dimensions."
-    _pro = PRACTITIONER_ROLE
-    _role = SIMULATED_ROLE
-
-    prism_tool = {
-        "toolSpec": {
-            "name": "submit_prism_evaluation",
-            "description": (
-                f"Evaluate the {_pro} using the PRISM framework (5 dimensions), each scored 1-5 "
-                "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
-                "Populate every field. Do not omit, merge, or rename any field."
-            ),
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {
-                        "prepare": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": (
-                                f"Score 1-5: the {_pro}'s preparation and orientation — "
-                                f"does the {_pro} frame the interaction, establish context, and set a collaborative tone before diving into content? (SDT: autonomy-supportive setup)"
-                            )
-                        },
-                        "recognise": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": (
-                                f"Score 1-5: the {_pro}'s ability to identify and name the {_role}'s "
-                                "emotional state, verbal cues, and unspoken concerns."
-                            )
-                        },
-                        "interact": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": (
-                                f"Score 1-5: quality of the {_pro}'s empathic interaction — "
-                                f"active listening, validation, reflection, and relational warmth toward the {_role}. (SDT: relatedness)"
-                            )
-                        },
-                        "self_assess": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": (
-                                f"Score 1-5: the {_pro}'s in-conversation self-monitoring — "
-                                "checking understanding, adjusting based on feedback, and correcting course. (SDT: competence)"
-                            )
-                        },
-                        "master": {
-                            "type": "integer", "enum": [1, 2, 3, 4, 5],
-                            "description": (
-                                f"Score 1-5: the {_pro}'s integrated and naturalistic delivery — "
-                                "all PRISM skills applied fluidly and consistently across the conversation. (SDT: integrated autonomy)"
-                            )
-                        },
-                        "judge_reasoning": {
-                            "type": "object",
-                            "description": "Separate justification for each PRISM dimension. Every field is required. Do not combine justifications.",
-                            "properties": {
-                                "prepare_justification":     {"type": "string", "description": _J},
-                                "recognise_justification":   {"type": "string", "description": _J},
-                                "interact_justification":    {"type": "string", "description": _J},
-                                "self_assess_justification": {"type": "string", "description": _J},
-                                "master_justification":      {"type": "string", "description": _J},
-                                "overall_assessment": {
-                                    "type": "string",
-                                    "description": (
-                                        "Brief coach summary using 'you'. "
-                                        "Do not repeat individual justifications. "
-                                        "Highlight the key pattern across the conversation."
-                                    )
-                                }
-                            },
-                            "required": [
-                                "prepare_justification", "recognise_justification",
-                                "interact_justification", "self_assess_justification",
-                                "master_justification", "overall_assessment"
-                            ]
-                        },
-                        "feedback": {
-                            "type": "object",
-                            "properties": {
-                                "strengths": {
-                                    "type": "array",
-                                    "description": "1-2 specific strengths with transcript evidence.",
-                                    "items": {"type": "string"}
-                                },
-                                "improvement_suggestions": {
-                                    "type": "array",
-                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
-                                    "items": {"type": "string"}
-                                },
-                                "forward_target": {
-                                    "type": "string",
-                                    "description": "The single PRISM dimension or skill to focus on next."
-                                }
-                            },
-                            "required": ["strengths", "improvement_suggestions", "forward_target"]
-                        }
-                    },
-                    "required": [
-                        "prepare", "recognise", "interact", "self_assess", "master",
-                        "judge_reasoning", "feedback"
-                    ]
-                }
-            }
-        }
-    }
+    prism_tool_spec = get_prism_tool_spec()
 
     strict_retry_addendum = """
 
@@ -589,7 +330,7 @@ STRICT RETRY MODE:
                 "system": [{"text": cached_system_prompt, "cachePoint": {"type": "default"}}],
                 "messages": [{"role": "user", "content": [{"text": prompt_for_attempt}]}],
                 "toolConfig": {
-                    "tools": [prism_tool],
+                    "tools": [prism_tool_spec],
                     "toolChoice": {"tool": {"name": "submit_prism_evaluation"}},
                 },
                 "inferenceConfig": {"temperature": 0.1, "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS}
@@ -633,8 +374,7 @@ STRICT RETRY MODE:
                     return None
                 continue
 
-            prism_criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
-            for key in prism_criteria:
+            for key in PRISM_CRITERIA:
                 val = evaluation.get(key)
                 if isinstance(val, str):
                     try:
@@ -670,37 +410,13 @@ STRICT RETRY MODE:
         return None
 
 
-CARE_CRITERIA_LABELS = {
-    'making_feel_at_ease':        '1. Making you feel at ease',
-    'letting_tell_story':         '2. Letting you tell your story',
-    'really_listening':           '3. Really listening',
-    'interested_in_whole_person': '4. Being interested in you as a whole person',
-    'understanding_concerns':     '5. Fully understanding your concerns',
-    'showing_care_compassion':    '6. Showing care and compassion',
-    'being_positive':             '7. Being positive',
-    'explaining_clearly':         '8. Explaining things clearly',
-    'helping_take_control':       '9. Helping you take control',
-    'making_plan_of_action':      '10. Making a plan of action with you',
-}
-
-
-PRISM_CRITERIA_LABELS = {
-    'prepare':     'P. Prepare — Orientation & framing',
-    'recognise':   'R. Recognise — Identifying patient cues',
-    'interact':    'I. Interact — Empathic engagement',
-    'self_assess': 'S. Self-Assess — In-conversation monitoring',
-    'master':      'M. Master — Integrated skill delivery',
-}
-
-
 def build_prism_feedback(evaluation) -> str:
     """Build empathy feedback using the PRISM framework (SDT-informed, 1-5 scale)."""
     if not evaluation:
         return "**Empathy Coach:** System temporarily unavailable.\\\\n"
 
-    criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
-    scores = {key: evaluation.get(key, 3) for key in criteria}
-    avg_score = sum(scores.values()) / len(criteria) if criteria else 3
+    scores = {key: evaluation.get(key, 3) for key in PRISM_CRITERIA}
+    avg_score = sum(scores.values()) / len(PRISM_CRITERIA)
     high_performers = [label for key, label in PRISM_CRITERIA_LABELS.items() if scores.get(key, 0) >= 4]
     growth_areas = [label for key, label in PRISM_CRITERIA_LABELS.items() if scores.get(key, 0) <= 2]
 
@@ -753,14 +469,8 @@ def build_empathy_feedback(evaluation):
     if not evaluation:
         return "**Empathy Coach:** System temporarily unavailable.\\\\n"
 
-    criteria = [
-        'making_feel_at_ease', 'letting_tell_story', 'really_listening',
-        'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
-        'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
-    ]
-
-    scores = {key: evaluation.get(key, 3) for key in criteria}
-    avg_score = sum(scores.values()) / len(criteria) if criteria else 3
+    scores = {key: evaluation.get(key, 3) for key in CARE_CRITERIA}
+    avg_score = sum(scores.values()) / len(CARE_CRITERIA)
     high_performers = [label for key, label in CARE_CRITERIA_LABELS.items() if scores.get(key, 0) >= 4]
     growth_areas = [label for key, label in CARE_CRITERIA_LABELS.items() if scores.get(key, 0) <= 2]
 
@@ -953,17 +663,11 @@ def handle_empathy_evaluation(
         # Build feedback using the appropriate formatter
         if empathy_tool == "PRISM":
             empathy_feedback = build_prism_feedback(empathy_evaluation)
-            prism_criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
-            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in prism_criteria)
+            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in PRISM_CRITERIA)
             max_per_message = 25
         else:
             empathy_feedback = build_empathy_feedback(empathy_evaluation)
-            care_criteria = [
-                'making_feel_at_ease', 'letting_tell_story', 'really_listening',
-                'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
-                'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
-            ]
-            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in care_criteria)
+            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in CARE_CRITERIA)
             max_per_message = 50
 
         logger.info(f"✅ Empathy evaluation completed successfully (tool={empathy_tool})")

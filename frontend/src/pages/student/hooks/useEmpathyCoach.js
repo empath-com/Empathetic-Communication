@@ -59,15 +59,22 @@ export default function useEmpathyCoach({ group, patient, session }) {
           return;
         }
         const summary = {
+          empathy_tool: data.empathy_tool || "CARE",
           overall_score: data.overall_score || 0,
-          total_messages_evaluated: data.total_messages_evaluated || 0,
           total_criteria_hits: data.total_criteria_hits || 0,
+          // CARE domain scores
           rapport: data.rapport || 0,
           listening: data.listening || 0,
           whole_person: data.whole_person || 0,
           affective_empathy: data.affective_empathy || 0,
           communication: data.communication || 0,
           shared_planning: data.shared_planning || 0,
+          // PRISM criterion scores
+          prepare: data.prepare || 0,
+          recognise: data.recognise || 0,
+          interact: data.interact || 0,
+          self_assess: data.self_assess || 0,
+          master: data.master || 0,
           summary: data.summary || "",
           strengths: data.strengths || [],
           recommendations: data.recommendations || [],

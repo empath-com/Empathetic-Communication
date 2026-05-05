@@ -12,13 +12,21 @@ import {
   LinearProgress,
 } from "@mui/material";
 
-const DOMAINS = [
+const CARE_DOMAINS = [
   { key: "rapport",           label: "Rapport",            max: 10, criteria: "Making feel at ease + Letting tell story" },
   { key: "listening",         label: "Listening",          max: 5,  criteria: "Really listening" },
   { key: "whole_person",      label: "Whole-Person",       max: 10, criteria: "Interested in whole person + Understanding concerns" },
   { key: "affective_empathy", label: "Affective Empathy",  max: 5,  criteria: "Showing care and compassion" },
   { key: "communication",     label: "Communication",      max: 10, criteria: "Being positive + Explaining clearly" },
   { key: "shared_planning",   label: "Shared Planning",    max: 10, criteria: "Helping take control + Making a plan of action" },
+];
+
+const PRISM_DIMENSIONS = [
+  { key: "prepare",     label: "P. Prepare",     max: 5, criteria: "Orientation & framing" },
+  { key: "recognise",   label: "R. Recognise",   max: 5, criteria: "Identifying patient cues" },
+  { key: "interact",    label: "I. Interact",     max: 5, criteria: "Empathic engagement" },
+  { key: "self_assess", label: "S. Self-Assess",  max: 5, criteria: "In-conversation monitoring" },
+  { key: "master",      label: "M. Master",       max: 5, criteria: "Integrated skill delivery" },
 ];
 
 // Color based on score normalised to 0-5: green ≥4, yellow ≥3, orange ≥2, red <2
@@ -29,10 +37,48 @@ const getScoreColor = (score) => {
   return "#F44336";
 };
 
+const CriteriaBreakdown = ({ empathyData, dimensions }) => (
+  <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+    {dimensions.map(({ key, label, max, criteria }) => {
+      const score = empathyData[key] || 0;
+      const pct = (score / max) * 100;
+      const color = getScoreColor((score / max) * 5);
+      return (
+        <Box key={key}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: "medium" }}>{label}</Typography>
+              <Typography variant="caption" color="text.secondary">{criteria}</Typography>
+            </Box>
+            <Typography variant="body2" sx={{ fontWeight: "bold", ml: 1, whiteSpace: "nowrap", alignSelf: "center" }}>
+              {score} / {max}
+            </Typography>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={pct}
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: "#e0e0e0",
+              "& .MuiLinearProgress-bar": { backgroundColor: color },
+            }}
+          />
+        </Box>
+      );
+    })}
+  </Box>
+);
+
 const EmpathyCoachSummary = ({ empathyData }) => {
   if (!empathyData) {
     return <Typography>No empathy data available.</Typography>;
   }
+
+  const tool = empathyData.empathy_tool || "CARE";
+  const isPrism = tool === "PRISM";
+  const toolLabel = isPrism ? "PRISM Framework" : "CARE Measure";
+  const dimensions = isPrism ? PRISM_DIMENSIONS : CARE_DOMAINS;
 
   const overallScore = empathyData.overall_score || 0;
   const overallPct = (overallScore / 5) * 100;
@@ -40,6 +86,10 @@ const EmpathyCoachSummary = ({ empathyData }) => {
 
   return (
     <Box sx={{ width: "100%", p: 2 }}>
+
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+        Evaluation model: {toolLabel}
+      </Typography>
 
       {/* Overall score bar */}
       <Box sx={{ mb: 3 }}>
@@ -65,36 +115,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
             {/* Criteria Breakdown */}
             <TableRow>
               <TableCell colSpan={2} sx={{ verticalAlign: "top" }}>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                  {DOMAINS.map(({ key, label, max, criteria }) => {
-                    const score = empathyData[key] || 0;
-                    const pct = (score / max) * 100;
-                    const color = getScoreColor((score / max) * 5);
-                    return (
-                      <Box key={key}>
-                        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3 }}>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: "medium" }}>{label}</Typography>
-                            <Typography variant="caption" color="text.secondary">{criteria}</Typography>
-                          </Box>
-                          <Typography variant="body2" sx={{ fontWeight: "bold", ml: 1, whiteSpace: "nowrap", alignSelf: "center" }}>
-                            {score} / {max}
-                          </Typography>
-                        </Box>
-                        <LinearProgress
-                          variant="determinate"
-                          value={pct}
-                          sx={{
-                            height: 6,
-                            borderRadius: 3,
-                            backgroundColor: "#e0e0e0",
-                            "& .MuiLinearProgress-bar": { backgroundColor: color },
-                          }}
-                        />
-                      </Box>
-                    );
-                  })}
-                </Box>
+                <CriteriaBreakdown empathyData={empathyData} dimensions={dimensions} />
               </TableCell>
             </TableRow>
 
