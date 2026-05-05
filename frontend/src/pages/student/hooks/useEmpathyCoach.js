@@ -15,6 +15,7 @@ export default function useEmpathyCoach({ group, patient, session }) {
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
   const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
   const [empathyEnabled, setEmpathyEnabled] = useState(false);
+  const [empathyTool, setEmpathyTool] = useState("CARE");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
 
@@ -108,6 +109,7 @@ export default function useEmpathyCoach({ group, patient, session }) {
         if (response.ok) {
           const data = await response.json();
           setEmpathyEnabled(data.empathy_enabled);
+          setEmpathyTool(data.empathy_tool || "CARE");
         } else {
           console.error("Failed to fetch empathy enabled status:", response.statusText);
         }
@@ -156,6 +158,7 @@ export default function useEmpathyCoach({ group, patient, session }) {
     isEmpathyCoachOpen,
     setIsEmpathyCoachOpen,
     empathyEnabled,
+    empathyTool,
     voiceEnabled,
     realtimeEmpathy,
     setRealtimeEmpathy,

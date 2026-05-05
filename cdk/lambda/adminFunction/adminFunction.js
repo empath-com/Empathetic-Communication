@@ -298,11 +298,14 @@ exports.handler = async (event) => {
               group_description,
               group_student_access,
               empathy_enabled,
+              empathy_tool,
               admin_voice_enabled,
               instructor_voice_enabled,
             } = event.queryStringParameters;
 
             const { system_prompt } = JSON.parse(event.body);
+            const validTools = ['CARE', 'PRISM'];
+            const resolvedTool = validTools.includes(empathy_tool) ? empathy_tool : 'CARE';
 
             // Insert new simulation group into simulation_groups table
             const newSimulationGroup = await sqlConnectionTableCreator`
@@ -314,6 +317,7 @@ exports.handler = async (event) => {
                       group_student_access,
                       system_prompt,
                       empathy_enabled,
+                      empathy_tool,
                       admin_voice_enabled,
                       instructor_voice_enabled
                   )
@@ -325,6 +329,7 @@ exports.handler = async (event) => {
                       ${group_student_access.toLowerCase() === "true"},
                       ${system_prompt},
                       ${empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true},
+                      ${resolvedTool},
                       ${admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true},
                       ${instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true}
                   )
@@ -395,11 +400,13 @@ exports.handler = async (event) => {
           event.queryStringParameters.simulation_group_id &&
           event.queryStringParameters.access
         ) {
-          const { simulation_group_id, group_name, access, empathy_enabled, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
+          const { simulation_group_id, group_name, access, empathy_enabled, empathy_tool, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
           const accessBool = access.toLowerCase() === "true";
           const empathyBool = empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true;
           const adminVoiceBool = admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true;
           const instructorVoiceBool = instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true;
+          const validTools = ['CARE', 'PRISM'];
+          const resolvedTool = validTools.includes(empathy_tool) ? empathy_tool : 'CARE';
 
           if (group_name) { // update WITH group name
             await sqlConnectionTableCreator`
@@ -407,6 +414,7 @@ exports.handler = async (event) => {
               SET group_name = ${group_name},
                   group_student_access = ${accessBool},
                   empathy_enabled = ${empathyBool},
+                  empathy_tool = ${resolvedTool},
                   admin_voice_enabled = ${adminVoiceBool},
                   instructor_voice_enabled = ${instructorVoiceBool}
               WHERE simulation_group_id = ${simulation_group_id};
@@ -414,8 +422,9 @@ exports.handler = async (event) => {
           } else { // SQL query to update group access, empathy_enabled, and voice settings
             await sqlConnectionTableCreator`
                     UPDATE "simulation_groups"
-                    SET group_student_access = ${accessBool}, 
+                    SET group_student_access = ${accessBool},
                         empathy_enabled = ${empathyBool},
+                        empathy_tool = ${resolvedTool},
                         admin_voice_enabled = ${adminVoiceBool},
                         instructor_voice_enabled = ${instructorVoiceBool}
                     WHERE simulation_group_id = ${simulation_group_id};

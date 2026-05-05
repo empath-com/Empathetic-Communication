@@ -249,6 +249,7 @@ def get_response(
     stream: bool = False,
     bedrock_client=None,
     empathy_enabled: bool = False,
+    empathy_tool: str = "CARE",
     current_session_name: str = "New chat",
     message_id: str = None,
 ) -> dict:
@@ -348,6 +349,7 @@ def get_response(
                 patient_prompt,
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
+                empathy_tool=empathy_tool,
                 llm_completion=llm_completion,
                 current_session_name=current_session_name,
                 debug_prompt=final_system_prompt,

@@ -235,20 +235,22 @@ def get_group_prompt(simulation_group_id):
                 pass
 
 
-def get_empathy_enabled(simulation_group_id: str) -> bool:
-    """Check if empathy evaluation is enabled for a simulation group."""
+def get_empathy_settings(simulation_group_id: str) -> tuple:
+    """Return (empathy_enabled, empathy_tool) for a simulation group."""
     try:
         from helpers.db_connection_manager import get_db_cursor
         with get_db_cursor() as cursor:
             cursor.execute(
-                'SELECT empathy_enabled FROM "simulation_groups" WHERE simulation_group_id = %s',
+                'SELECT empathy_enabled, empathy_tool FROM "simulation_groups" WHERE simulation_group_id = %s',
                 (simulation_group_id,)
             )
             row = cursor.fetchone()
-            return bool(row[0]) if row else False
+            if row:
+                return bool(row[0]), (row[1] or "CARE")
+            return False, "CARE"
     except Exception as e:
-        logger.error(f"Error fetching empathy_enabled for {simulation_group_id}: {e}")
-        return False
+        logger.error(f"Error fetching empathy settings for {simulation_group_id}: {e}")
+        return False, "CARE"
 
 
 def get_patient_details(patient_id):
@@ -365,13 +367,15 @@ def handler_empathy_evaluation(event, context):
                 },
                 'body': json.dumps({"error": "Patient not found"})
             }
-        
+
+        _, empathy_tool = get_empathy_settings(simulation_group_id)
+
         # Get bedrock client
         bedrock_client = {
             "client": bedrock_runtime,
             "model_id": BEDROCK_LLM_ID
         }
-        
+
         # Call empathy evaluation handler
         result = handle_empathy_evaluation(
             session_id=session_id,
@@ -379,7 +383,8 @@ def handler_empathy_evaluation(event, context):
             message_content=message_content,
             bedrock_client=bedrock_client,
             patient_prompt=patient_prompt or "",
-            message_id=message_id
+            message_id=message_id,
+            empathy_tool=empathy_tool,
         )
         
         if result.get("statusCode") != 200:
@@ -660,7 +665,7 @@ def handler_text_generation(event, context):
             
             logger.info(f"🚀 CALLING get_response with query: '{student_query}'")
             bedrock_client = {"client": bedrock_runtime, "model_id": BEDROCK_LLM_ID}
-            empathy_enabled = get_empathy_enabled(simulation_group_id)
+            empathy_enabled, empathy_tool = get_empathy_settings(simulation_group_id)
             response = get_response(
                 query=student_query,
                 patient_name=patient_name,
@@ -675,6 +680,7 @@ def handler_text_generation(event, context):
                 stream=stream,
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
+                empathy_tool=empathy_tool,
                 current_session_name=session_name,
                 message_id=message_id,
             )

@@ -537,28 +537,18 @@ const StudentDetails = () => {
                 {empathySummary?.patient_name && ` (Patient: ${empathySummary.patient_name})`}
               </DialogTitle>
               <DialogContent>
-                {empathySummary ? (
-                  <Box>
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      CARE Measure — Overall Performance
-                    </Typography>
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Total Criteria Hits:</strong> {empathySummary.total_criteria_hits || empathySummary.overall_score}
-                      </Typography>
-                      <Typography variant="body1" sx={{ mb: 1 }}>
-                        <strong>Messages Evaluated:</strong> {empathySummary.total_messages_evaluated || empathySummary.empathy_interactions}
-                      </Typography>
-                      <Typography variant="body1" sx={{ mb: 2 }}>
-                        <strong>Total Interactions:</strong> {empathySummary.total_interactions}
-                      </Typography>
-                    </Box>
-
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      CARE Criterion Breakdown (hits / messages)
-                    </Typography>
-                    <Box sx={{ mb: 3 }}>
-                      {[
+                {empathySummary ? (() => {
+                  const tool = empathySummary.empathy_tool || 'CARE';
+                  const toolLabel = tool === 'PRISM' ? 'PRISM Framework' : 'CARE Measure';
+                  const criteriaRows = tool === 'PRISM'
+                    ? [
+                        ['prepare',     'P. Prepare — Orientation & framing'],
+                        ['recognise',   'R. Recognise — Identifying patient cues'],
+                        ['interact',    'I. Interact — Empathic engagement'],
+                        ['self_assess', 'S. Self-Assess — In-conversation monitoring'],
+                        ['master',      'M. Master — Integrated skill delivery'],
+                      ]
+                    : [
                         ['making_feel_at_ease',        'Making you feel at ease'],
                         ['letting_tell_story',         'Letting you tell your story'],
                         ['really_listening',           'Really listening'],
@@ -569,23 +559,46 @@ const StudentDetails = () => {
                         ['explaining_clearly',         'Explaining things clearly'],
                         ['helping_take_control',       'Helping you take control'],
                         ['making_plan_of_action',      'Making a plan of action with you'],
-                      ].map(([key, label]) => (
-                        <Typography key={key} variant="body2">
-                          • {label}: {empathySummary[key] || 0} / {empathySummary.total_messages_evaluated || 0}
-                        </Typography>
-                      ))}
-                    </Box>
-
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      Summary
-                    </Typography>
-                    <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
-                      <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
-                        {empathySummary.summary}
+                      ];
+                  return (
+                    <Box>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        {toolLabel} — Overall Performance
                       </Typography>
-                    </Paper>
-                  </Box>
-                ) : (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="body1" sx={{ mb: 1 }}>
+                          <strong>Total Criteria Hits:</strong> {empathySummary.total_criteria_hits || empathySummary.overall_score}
+                        </Typography>
+                        <Typography variant="body1" sx={{ mb: 1 }}>
+                          <strong>Messages Evaluated:</strong> {empathySummary.total_messages_evaluated || empathySummary.empathy_interactions}
+                        </Typography>
+                        <Typography variant="body1" sx={{ mb: 2 }}>
+                          <strong>Total Interactions:</strong> {empathySummary.total_interactions}
+                        </Typography>
+                      </Box>
+
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        {toolLabel} Criterion Breakdown (hits / messages)
+                      </Typography>
+                      <Box sx={{ mb: 3 }}>
+                        {criteriaRows.map(([key, label]) => (
+                          <Typography key={key} variant="body2">
+                            • {label}: {empathySummary[key] || 0} / {empathySummary.total_messages_evaluated || 0}
+                          </Typography>
+                        ))}
+                      </Box>
+
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Summary
+                      </Typography>
+                      <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
+                        <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                          {empathySummary.summary}
+                        </Typography>
+                      </Paper>
+                    </Box>
+                  );
+                })() : (
                   <Typography>Loading empathy summary...</Typography>
                 )}
               </DialogContent>

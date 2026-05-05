@@ -53,6 +53,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
   const [groupDescription, setGroupDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [empathyEnabled, setEmpathyEnabled] = useState(true);
+  const [empathyTool, setEmpathyTool] = useState("CARE");
   const [adminVoiceEnabled, setAdminVoiceEnabled] = useState(true);
   const [instructorVoiceEnabled, setInstructorVoiceEnabled] = useState(true);
   const [selectedInstructors, setSelectedInstructors] = useState([]);
@@ -134,7 +135,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           groupDescription
         )}&group_access_code=${encodeURIComponent(
           access_code
-        )}&group_student_access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
+        )}&group_student_access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&empathy_tool=${encodeURIComponent(empathyTool)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
         {
           method: "POST",
           headers: {
@@ -383,6 +384,20 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
               justifyContent: "flex-start",
             }}
           />
+          {empathyEnabled && (
+            <FormControl size="small" sx={{ mt: 1, mb: 1, minWidth: 200 }}>
+              <InputLabel id="empathy-tool-label">Evaluation Tool</InputLabel>
+              <Select
+                labelId="empathy-tool-label"
+                value={empathyTool}
+                label="Evaluation Tool"
+                onChange={(e) => setEmpathyTool(e.target.value)}
+              >
+                <MenuItem value="CARE">CARE Measure</MenuItem>
+                <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+              </Select>
+            </FormControl>
+          )}
           <FormControlLabel
             control={
               <Switch

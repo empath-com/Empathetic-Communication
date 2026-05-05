@@ -76,22 +76,34 @@ def _grounding_issue(evaluation: dict, transcript: str):
     return None
 
 
-def _apply_grounded_text_fallback(evaluation: dict):
+_CARE_JUSTIFICATION_KEYS = [
+    "making_feel_at_ease_justification",
+    "letting_tell_story_justification",
+    "really_listening_justification",
+    "interested_in_whole_person_justification",
+    "understanding_concerns_justification",
+    "showing_care_compassion_justification",
+    "being_positive_justification",
+    "explaining_clearly_justification",
+    "helping_take_control_justification",
+    "making_plan_of_action_justification",
+]
+
+_PRISM_JUSTIFICATION_KEYS = [
+    "prepare_justification",
+    "recognise_justification",
+    "interact_justification",
+    "self_assess_justification",
+    "master_justification",
+]
+
+
+def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
     """If model output still contains unsupported claims, replace narrative text with safe grounded text."""
     fallback_line = "Assessment grounded only in provided transcript text. No explicit additional evidence is present."
     reasoning = evaluation.get("judge_reasoning") or {}
-    for key in [
-        "making_feel_at_ease_justification",
-        "letting_tell_story_justification",
-        "really_listening_justification",
-        "interested_in_whole_person_justification",
-        "understanding_concerns_justification",
-        "showing_care_compassion_justification",
-        "being_positive_justification",
-        "explaining_clearly_justification",
-        "helping_take_control_justification",
-        "making_plan_of_action_justification",
-    ]:
+    keys = _PRISM_JUSTIFICATION_KEYS if tool == "PRISM" else _CARE_JUSTIFICATION_KEYS
+    for key in keys:
         reasoning[key] = fallback_line
     reasoning["overall_assessment"] = (
         "Your coaching summary is limited to the transcript provided. "
@@ -411,9 +423,10 @@ STRICT RETRY MODE:
 
             if issue and attempt >= MAX_GROUNDING_RETRIES:
                 logger.error(f"❌ Grounding issue persists after retry ({issue}); applying safe fallback text")
-                _apply_grounded_text_fallback(evaluation)
+                _apply_grounded_text_fallback(evaluation, tool="CARE")
 
             evaluation["evaluation_method"] = "LLM-as-a-Judge"
+            evaluation["evaluation_tool"] = "CARE"
             evaluation["judge_model"] = bedrock_client["model_id"]
             logger.info(f"✅ EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
             return evaluation
@@ -428,6 +441,235 @@ STRICT RETRY MODE:
         logger.exception("Full traceback:")
         return None
 
+def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_client) -> dict:
+    """
+    LLM-as-a-Judge empathy evaluation using the PRISM framework (SDT-informed).
+    Five dimensions: Prepare, Recognise, Interact, Self-Assess, Master — each 1-5.
+    """
+    logger.info("🧠 PRISM EMPATHY EVALUATION STARTED")
+
+    try:
+        static_system_prompt = get_empathy_prompt()
+        if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+            logger.warning(f"⚠️ Empathy prompt too long ({len(static_system_prompt)} chars), using default")
+            static_system_prompt = get_default_empathy_prompt()
+    except Exception as prompt_error:
+        logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
+        static_system_prompt = get_default_empathy_prompt()
+
+    cached_system_prompt = f"{static_system_prompt}\n\n{STATIC_GROUNDING_INSTRUCTIONS}"
+    dynamic_user_prompt = f"""PATIENT_CONTEXT:
+{patient_context}
+
+TRANSCRIPT_START
+{student_response}
+TRANSCRIPT_END"""
+
+    if student_response not in dynamic_user_prompt:
+        logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
+        return None
+
+    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other dimensions."
+    _pro = PRACTITIONER_ROLE
+    _role = SIMULATED_ROLE
+
+    prism_tool = {
+        "toolSpec": {
+            "name": "submit_prism_evaluation",
+            "description": (
+                f"Evaluate the {_pro} using the PRISM framework (5 dimensions), each scored 1-5 "
+                "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
+                "Populate every field. Do not omit, merge, or rename any field."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "prepare": {
+                            "type": "integer", "enum": [1, 2, 3, 4, 5],
+                            "description": (
+                                f"Score 1-5: the {_pro}'s preparation and orientation — "
+                                f"does the {_pro} frame the interaction, establish context, and set a collaborative tone before diving into content? (SDT: autonomy-supportive setup)"
+                            )
+                        },
+                        "recognise": {
+                            "type": "integer", "enum": [1, 2, 3, 4, 5],
+                            "description": (
+                                f"Score 1-5: the {_pro}'s ability to identify and name the {_role}'s "
+                                "emotional state, verbal cues, and unspoken concerns."
+                            )
+                        },
+                        "interact": {
+                            "type": "integer", "enum": [1, 2, 3, 4, 5],
+                            "description": (
+                                f"Score 1-5: quality of the {_pro}'s empathic interaction — "
+                                f"active listening, validation, reflection, and relational warmth toward the {_role}. (SDT: relatedness)"
+                            )
+                        },
+                        "self_assess": {
+                            "type": "integer", "enum": [1, 2, 3, 4, 5],
+                            "description": (
+                                f"Score 1-5: the {_pro}'s in-conversation self-monitoring — "
+                                "checking understanding, adjusting based on feedback, and correcting course. (SDT: competence)"
+                            )
+                        },
+                        "master": {
+                            "type": "integer", "enum": [1, 2, 3, 4, 5],
+                            "description": (
+                                f"Score 1-5: the {_pro}'s integrated and naturalistic delivery — "
+                                "all PRISM skills applied fluidly and consistently across the conversation. (SDT: integrated autonomy)"
+                            )
+                        },
+                        "judge_reasoning": {
+                            "type": "object",
+                            "description": "Separate justification for each PRISM dimension. Every field is required. Do not combine justifications.",
+                            "properties": {
+                                "prepare_justification":     {"type": "string", "description": _J},
+                                "recognise_justification":   {"type": "string", "description": _J},
+                                "interact_justification":    {"type": "string", "description": _J},
+                                "self_assess_justification": {"type": "string", "description": _J},
+                                "master_justification":      {"type": "string", "description": _J},
+                                "overall_assessment": {
+                                    "type": "string",
+                                    "description": (
+                                        "Brief coach summary using 'you'. "
+                                        "Do not repeat individual justifications. "
+                                        "Highlight the key pattern across the conversation."
+                                    )
+                                }
+                            },
+                            "required": [
+                                "prepare_justification", "recognise_justification",
+                                "interact_justification", "self_assess_justification",
+                                "master_justification", "overall_assessment"
+                            ]
+                        },
+                        "feedback": {
+                            "type": "object",
+                            "properties": {
+                                "strengths": {
+                                    "type": "array",
+                                    "description": "1-2 specific strengths with transcript evidence.",
+                                    "items": {"type": "string"}
+                                },
+                                "improvement_suggestions": {
+                                    "type": "array",
+                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
+                                    "items": {"type": "string"}
+                                },
+                                "forward_target": {
+                                    "type": "string",
+                                    "description": "The single PRISM dimension or skill to focus on next."
+                                }
+                            },
+                            "required": ["strengths", "improvement_suggestions", "forward_target"]
+                        }
+                    },
+                    "required": [
+                        "prepare", "recognise", "interact", "self_assess", "master",
+                        "judge_reasoning", "feedback"
+                    ]
+                }
+            }
+        }
+    }
+
+    strict_retry_addendum = """
+
+STRICT RETRY MODE:
+- TEXT-ONLY CHANNEL: do NOT mention nodding, eye contact, body language, facial expressions, or tone unless explicitly written in transcript.
+- Do NOT introduce names unless they appear verbatim in transcript.
+- If uncertain, state evidence is not present.
+"""
+
+    try:
+        for attempt in range(MAX_GROUNDING_RETRIES + 1):
+            prompt_for_attempt = dynamic_user_prompt + (strict_retry_addendum if attempt > 0 else "")
+            body = {
+                "system": [{"text": cached_system_prompt, "cachePoint": {"type": "default"}}],
+                "messages": [{"role": "user", "content": [{"text": prompt_for_attempt}]}],
+                "toolConfig": {
+                    "tools": [prism_tool],
+                    "toolChoice": {"tool": {"name": "submit_prism_evaluation"}},
+                },
+                "inferenceConfig": {"temperature": 0.1, "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS}
+            }
+
+            logger.info(f"🚀 CALLING BEDROCK (PRISM): {bedrock_client['model_id']} (attempt {attempt + 1})")
+            try:
+                response = bedrock_client["client"].invoke_model(
+                    modelId="amazon.nova-lite-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+            except Exception as model_error:
+                logger.warning(f"Nova Lite failed, trying us-east-1: {model_error}")
+                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                response = fallback_client.invoke_model(
+                    modelId="amazon.nova-lite-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+
+            result = json.loads(response["body"].read())
+            usage = result.get("usage", {})
+            cache_read = usage.get('cacheReadInputTokenCount', 0)
+            cache_write = usage.get('cacheWriteInputTokenCount', 0)
+            logger.info(f"PRISM CACHE STATS: Read={cache_read}, Write={cache_write}")
+
+            content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+            evaluation = None
+            for block in content_blocks:
+                tool_use = block.get("toolUse", {})
+                if tool_use.get("name") == "submit_prism_evaluation":
+                    evaluation = tool_use.get("input", {})
+                    break
+
+            if not evaluation:
+                logger.error(f"❌ NO PRISM TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
+                if attempt >= MAX_GROUNDING_RETRIES:
+                    return None
+                continue
+
+            prism_criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
+            for key in prism_criteria:
+                val = evaluation.get(key)
+                if isinstance(val, str):
+                    try:
+                        evaluation[key] = max(1, min(5, int(val)))
+                    except (ValueError, TypeError):
+                        evaluation[key] = 3
+                elif isinstance(val, int):
+                    evaluation[key] = max(1, min(5, val))
+                else:
+                    evaluation[key] = 3
+
+            issue = _grounding_issue(evaluation, student_response)
+            if issue and attempt < MAX_GROUNDING_RETRIES:
+                logger.warning(f"⚠️ PRISM grounding issue ({issue}); retrying")
+                continue
+
+            if issue and attempt >= MAX_GROUNDING_RETRIES:
+                logger.error(f"❌ PRISM grounding issue persists; applying safe fallback")
+                _apply_grounded_text_fallback(evaluation, tool="PRISM")
+
+            evaluation["evaluation_method"] = "LLM-as-a-Judge"
+            evaluation["evaluation_tool"] = "PRISM"
+            evaluation["judge_model"] = bedrock_client["model_id"]
+            logger.info("✅ PRISM EVALUATION COMPLETED SUCCESSFULLY")
+            return evaluation
+
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ PRISM JSON DECODE ERROR: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ PRISM EVALUATION ERROR: {e}")
+        logger.exception("Full traceback:")
+        return None
+
+
 CARE_CRITERIA_LABELS = {
     'making_feel_at_ease':        '1. Making you feel at ease',
     'letting_tell_story':         '2. Letting you tell your story',
@@ -440,6 +682,70 @@ CARE_CRITERIA_LABELS = {
     'helping_take_control':       '9. Helping you take control',
     'making_plan_of_action':      '10. Making a plan of action with you',
 }
+
+
+PRISM_CRITERIA_LABELS = {
+    'prepare':     'P. Prepare — Orientation & framing',
+    'recognise':   'R. Recognise — Identifying patient cues',
+    'interact':    'I. Interact — Empathic engagement',
+    'self_assess': 'S. Self-Assess — In-conversation monitoring',
+    'master':      'M. Master — Integrated skill delivery',
+}
+
+
+def build_prism_feedback(evaluation) -> str:
+    """Build empathy feedback using the PRISM framework (SDT-informed, 1-5 scale)."""
+    if not evaluation:
+        return "**Empathy Coach:** System temporarily unavailable.\\\\n"
+
+    criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
+    scores = {key: evaluation.get(key, 3) for key in criteria}
+    avg_score = sum(scores.values()) / len(criteria) if criteria else 3
+    high_performers = [label for key, label in PRISM_CRITERIA_LABELS.items() if scores.get(key, 0) >= 4]
+    growth_areas = [label for key, label in PRISM_CRITERIA_LABELS.items() if scores.get(key, 0) <= 2]
+
+    feedback = f"**Empathy Coach (PRISM Framework - 1-5 Scale):**\\\\n\\\\n"
+    feedback += f"**Overall Score: {avg_score:.1f} / 5.0**\\\\n\\\\n"
+
+    if high_performers:
+        feedback += "**Strengths (scoring 4-5):**\\\\n"
+        for label in high_performers:
+            feedback += f"• ✅ {label}\\\\n"
+        feedback += "\\\\n"
+
+    if growth_areas:
+        feedback += "**Areas for Growth (scoring 1-2):**\\\\n"
+        for label in growth_areas:
+            feedback += f"• 📈 {label}\\\\n"
+        feedback += "\\\\n"
+
+    judge_reasoning = evaluation.get('judge_reasoning', {})
+    if judge_reasoning.get('overall_assessment'):
+        assessment = judge_reasoning['overall_assessment']
+        assessment = assessment.replace("The student", "You").replace("the student", "you")
+        feedback += f"**Comprehensive Coach Assessment:**\\\\n\\\\n{assessment}\\\\n\\\\n"
+
+    eval_feedback = evaluation.get('feedback', {}) or {}
+    strengths = eval_feedback.get('strengths', [])
+    if strengths:
+        feedback += "**What Worked Well:**\\\\n\\\\n"
+        for i, s in enumerate(strengths, 1):
+            feedback += f"{i}. {s}\\\\n\\\\n"
+        feedback += "\\\\n"
+
+    suggestions = eval_feedback.get('improvement_suggestions', [])
+    if suggestions:
+        feedback += "**Opportunities to Develop:**\\\\n\\\\n"
+        for i, s in enumerate(suggestions, 1):
+            feedback += f"{i}. {s}\\\\n\\\\n"
+        feedback += "\\\\n"
+
+    forward_target = eval_feedback.get('forward_target', '')
+    if forward_target:
+        feedback += f"Focus for Your Next Interaction: {forward_target}\\\\n\\\\n"
+
+    feedback += "---\\\\n\\\\n"
+    return feedback
 
 
 def build_empathy_feedback(evaluation):
@@ -507,7 +813,8 @@ def handle_empathy_evaluation(
     message_content: str,
     bedrock_client,
     patient_prompt: str = "",
-    message_id: str = None
+    message_id: str = None,
+    empathy_tool: str = "CARE",
 ) -> dict:
     """
     Handle the empathy evaluation endpoint.
@@ -624,9 +931,12 @@ def handle_empathy_evaluation(
                 f"✂️ Trimmed transcript input to last {MAX_TRANSCRIPT_CHARS_FOR_EVAL} chars for latency control"
             )
 
-        # Evaluate empathy for the message
-        logger.info(f"🎯 Evaluating empathy for: {evaluation_input[:100]}...")
-        empathy_evaluation = evaluate_empathy(evaluation_input, patient_context, bedrock_client)
+        # Evaluate empathy for the message using the selected tool
+        logger.info(f"🎯 Evaluating empathy ({empathy_tool}) for: {evaluation_input[:100]}...")
+        if empathy_tool == "PRISM":
+            empathy_evaluation = evaluate_empathy_prism(evaluation_input, patient_context, bedrock_client)
+        else:
+            empathy_evaluation = evaluate_empathy(evaluation_input, patient_context, bedrock_client)
 
         if not empathy_evaluation:
             logger.error("❌ Empathy evaluation failed")
@@ -640,19 +950,23 @@ def handle_empathy_evaluation(
             update_message_empathy(message_id, empathy_evaluation)
             logger.info(f"✅ Backfill: empathy evaluation saved for message {message_id}")
 
-        # Build feedback
-        empathy_feedback = build_empathy_feedback(empathy_evaluation)
-
-        logger.info(f"✅ Empathy evaluation completed successfully")
-
-        criteria_hit = sum(
-            empathy_evaluation.get(k, 0)
-            for k in [
+        # Build feedback using the appropriate formatter
+        if empathy_tool == "PRISM":
+            empathy_feedback = build_prism_feedback(empathy_evaluation)
+            prism_criteria = ['prepare', 'recognise', 'interact', 'self_assess', 'master']
+            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in prism_criteria)
+            max_per_message = 25
+        else:
+            empathy_feedback = build_empathy_feedback(empathy_evaluation)
+            care_criteria = [
                 'making_feel_at_ease', 'letting_tell_story', 'really_listening',
                 'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
                 'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
             ]
-        )
+            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in care_criteria)
+            max_per_message = 50
+
+        logger.info(f"✅ Empathy evaluation completed successfully (tool={empathy_tool})")
 
         return {
             "statusCode": 200,
@@ -660,7 +974,7 @@ def handle_empathy_evaluation(
                 "empathy_evaluation": empathy_evaluation,
                 "summary": {
                     "criteria_hit": criteria_hit,
-                    "max_per_message": 50
+                    "max_per_message": max_per_message
                 },
                 "empathy_feedback_markdown": empathy_feedback
             })
