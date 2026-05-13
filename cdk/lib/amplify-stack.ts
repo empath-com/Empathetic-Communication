@@ -101,6 +101,6 @@ export class AmplifyStack extends cdk.Stack {
       status: RedirectStatus.NOT_FOUND_REWRITE,
     });
 
-    amplifyApp.addBranch("main");
+    amplifyApp.addBranch("pollyvoice");
   }
 }
