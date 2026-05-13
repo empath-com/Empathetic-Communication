@@ -1780,6 +1780,9 @@ class PollyTranscribeSession(NovaSonic):
     }
     _FALLBACK_POLLY_VOICE = "Maxim"
 
+    # Seconds of silence after the last final transcript before auto-triggering the AI response.
+    AUTO_TURN_DELAY = 1.5
+
     def __init__(self, region=None, voice_id=None, session_id=None):
         super().__init__(model_id="polly-transcribe", region=region, voice_id=voice_id, session_id=session_id)
         # Polly voice IDs are proper-cased (e.g. "Matthew", not "matthew").
@@ -1810,6 +1813,9 @@ class PollyTranscribeSession(NovaSonic):
         self._transcribe_ws = None
         self._transcribe_available = True
         self._transcribe_preflight_ok = None
+
+        # Auto-turn: fires the AI response after AUTO_TURN_DELAY seconds of silence
+        self._auto_turn_task = None
 
     async def start_session(self):
         self._loop = asyncio.get_running_loop()
@@ -1913,7 +1919,32 @@ class PollyTranscribeSession(NovaSonic):
         elif self._audio_chunk_count % 50 == 0:
             print(f"⚠️ POLLY: Audio chunk NOT queued — transcribe_task={self._transcribe_task}, queue={self._transcribe_queue}", flush=True)
 
+    async def _auto_turn_timer(self):
+        """Fire AI response after AUTO_TURN_DELAY seconds of silence following the last final transcript."""
+        try:
+            await asyncio.sleep(self.AUTO_TURN_DELAY)
+            if not self.is_active or not self._current_user_input.strip():
+                return
+            print(f"⏱️ POLLY: Auto-turn triggered ({self.AUTO_TURN_DELAY}s silence)", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Auto-turn: silence detected, generating response"}), flush=True)
+            await self._stop_transcribe_stream()
+            await self._handle_user_turn_complete()
+        except asyncio.CancelledError:
+            pass  # New speech arrived or manual end — timer intentionally cancelled
+
+    async def _restart_for_next_turn(self):
+        """After a response finishes, restart Transcribe so the user can speak again."""
+        await asyncio.sleep(0.5)  # Let the last audio chunk reach the frontend
+        if not self.is_active:
+            return
+        print(f"🔄 POLLY: Restarting Transcribe for next turn", flush=True)
+        print(json.dumps({"type": "debug", "text": "[POLLY] Ready for your next message"}), flush=True)
+        await self.start_audio_input()
+
     async def end_audio_input(self):
+        # Cancel auto-turn timer — manual end takes priority
+        if self._auto_turn_task and not self._auto_turn_task.done():
+            self._auto_turn_task.cancel()
         print(f"🎙️ POLLY: end_audio_input called — current transcript: '{self._current_user_input[:80]}'", flush=True)
         print(json.dumps({"type": "debug", "text": f"[POLLY] end_audio called, transcript_len={len(self._current_user_input)}"}), flush=True)
         await self._stop_transcribe_stream()
@@ -2171,6 +2202,13 @@ class PollyTranscribeSession(NovaSonic):
             self._current_user_input = f"{self._current_user_input}{sep}{transcript}".strip()
             print(f"📝 POLLY: Accumulated transcript now {len(self._current_user_input)} chars: '{self._current_user_input[:80]}'", flush=True)
 
+            # Auto-turn detection: restart the silence timer on every final transcript.
+            # If AUTO_TURN_DELAY seconds pass with no new speech, fire the AI response.
+            if self._auto_turn_task and not self._auto_turn_task.done():
+                self._auto_turn_task.cancel()
+            if self._current_user_input.strip():
+                self._auto_turn_task = asyncio.create_task(self._auto_turn_timer())
+
     async def _handle_user_turn_complete(self):
         print(f"🎙️ POLLY: _handle_user_turn_complete — transcript='{self._current_user_input[:80]}'", flush=True)
         if not (self._current_user_input and self._current_user_input.strip()):
@@ -2290,6 +2328,10 @@ class PollyTranscribeSession(NovaSonic):
             print(json.dumps({"type": "debug", "text": f"[POLLY] TTS error: {e}"}), flush=True)
         finally:
             self._is_speaking = False
+            # Automatically restart Transcribe so the user can speak again without
+            # pressing any button — this makes it a continuous conversation.
+            if self.is_active:
+                asyncio.create_task(self._restart_for_next_turn())
 
     async def _interrupt_generation(self, reason="interrupt"):
         async with self._interrupt_lock:
@@ -2342,6 +2384,10 @@ class PollyTranscribeSession(NovaSonic):
             "</speak>"
         )
 
+    # Polly neural PCM supports 8000 or 16000 Hz only (not 24000).
+    # The frontend WAV header must match this value.
+    POLLY_SAMPLE_RATE = 16000
+
     async def _synthesize_ssml_to_b64(self, ssml: str):
         loop = asyncio.get_event_loop()
 
@@ -2350,7 +2396,7 @@ class PollyTranscribeSession(NovaSonic):
                 Engine=self.polly_engine,
                 VoiceId=self.voice_id,
                 OutputFormat="pcm",
-                SampleRate=str(OUTPUT_SAMPLE_RATE),
+                SampleRate=str(self.POLLY_SAMPLE_RATE),
                 TextType="ssml",
                 Text=ssml,
             )
