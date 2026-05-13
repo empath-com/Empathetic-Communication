@@ -18,7 +18,7 @@ const env = {
 const StackPrefix = "EmpathAI";   // instead of tryGetContext
 const environment = "dev";                         // instead of tryGetContext
 const githubRepo = "Empathetic-Communication";    // instead of tryGetContext
-const githubBranch = "main";
+const githubBranch = "pollyvoice";
 
 // Idle mode: scale all running resources to zero to minimise costs.
 // Enable with: --context idleMode=true
