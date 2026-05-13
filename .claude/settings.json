@@ -60,7 +60,9 @@
       "Bash(MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name '/aws/lambda/EmpathAI-Api-TextGenLambdaDockerFunction' --region ca-central-1 --profile empath-staging --order-by LastEventTime --descending --max-items 3 --query 'logStreams[*].logStreamName' --output json)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Read(//c/Users/Peter/AppData/Local/Temp/**)"
+      "Read(//c/Users/Peter/AppData/Local/Temp/**)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Peter\\\\source\\\\GitHub\\\\Empathetic-Communication\" -Recurse -Directory -Name)",
+      "Bash(Select-Object -First 30)"
     ],
     "deny": [
       "Bash(cdk deploy:*)",

@@ -226,6 +226,16 @@ export function createCognitoAuth(
           ],
           ["*"]
         ),
+        // Add Transcribe streaming permission for Polly/Transcribe voice pipeline
+        createPolicyStatement(
+          ["transcribe:StartStreamTranscriptionWebSocket"],
+          ["*"]
+        ),
+        // Add Polly permission for Polly/Transcribe voice pipeline
+        createPolicyStatement(
+          ["polly:SynthesizeSpeech"],
+          ["*"]
+        ),
         // Add Secrets Manager permissions for Nova Sonic
         createPolicyStatement(
           ["secretsmanager:GetSecretValue"],

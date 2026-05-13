@@ -6,8 +6,13 @@ import json
 import uuid
 import random
 import re
+import html
+import struct
+import zlib
 import boto3
 import botocore
+from botocore.auth import SigV4QueryAuth
+from botocore.awsrequest import AWSRequest
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
 from aws_sdk_bedrock_runtime.config import Config
@@ -17,6 +22,8 @@ from psycopg2 import pool
 from datetime import datetime
 import logging
 import requests
+import websockets
+from urllib.parse import urlencode
 from langchain_community.embeddings import BedrockEmbeddings
 from langchain_community.vectorstores import PGVector
 from voice_db_manager import voice_db_manager, get_pg_connection, return_pg_connection
@@ -1551,7 +1558,7 @@ Provide structured evaluation with detailed justifications for each score.
             
             # Create bedrock client and embeddings
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
-            embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v1", client=bedrock_client)
+            embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0", client=bedrock_client)
             
             # Connect to vectorstore using RDS proxy
             connection_string = f"postgresql://{secret['username']}:{secret['password']}@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
@@ -1752,6 +1759,637 @@ Provide structured evaluation with detailed justifications for each score.
             raise e
 
 
+class PollyTranscribeSession(NovaSonic):
+    """
+    Realtime voice pipeline using:
+    - Amazon Transcribe Streaming for inbound voice parsing
+    - LLaMA RAG for response generation
+    - Amazon Polly for outbound speech synthesis
+
+    This class keeps the same stdin contract used by server.js.
+    """
+
+    # Valid Polly neural voice IDs (subset covering all voices the app may request)
+    _VALID_POLLY_VOICES = {
+        "Amy", "Arthur", "Brian", "Emma", "Joanna", "Joey", "Justin", "Kendra",
+        "Kimberly", "Matthew", "Salli", "Ivy", "Kevin", "Ruth", "Stephen", "Danielle",
+        "Gregory", "Adriano", "Andres", "Aria", "Arlet", "Ayanda", "Camila", "Gabrielle",
+        "Hannah", "Kajal", "Liam", "Lupe", "Niamh", "Olivia", "Pedro", "Sergio",
+        "Maxim", "Tatyana", "Conchita", "Enrique", "Lucia", "Mia", "Miguel", "Penelope",
+        "Marlene", "Vicki", "Hans", "Bianca", "Carla", "Giorgio",
+    }
+    _FALLBACK_POLLY_VOICE = "Maxim"
+
+    def __init__(self, region=None, voice_id=None, session_id=None):
+        super().__init__(model_id="polly-transcribe", region=region, voice_id=voice_id, session_id=session_id)
+        # Polly voice IDs are proper-cased (e.g. "Matthew", not "matthew").
+        # Capitalize to fix frontend sending lowercase names, then validate.
+        raw_voice = voice_id or os.getenv("POLLY_VOICE_ID", "")
+        candidate = raw_voice.capitalize() if raw_voice else ""
+        if candidate in self._VALID_POLLY_VOICES:
+            self.voice_id = candidate
+        else:
+            self.voice_id = self._FALLBACK_POLLY_VOICE
+            print(f"⚠️ POLLY: voice_id {raw_voice!r} not recognized, defaulting to {self._FALLBACK_POLLY_VOICE!r}", flush=True)
+        print(f"🔊 POLLY: Using voice_id={self.voice_id!r} (raw input: {raw_voice!r})", flush=True)
+        self.polly_engine = os.getenv("POLLY_ENGINE", "neural")
+        self.language_code = os.getenv("TRANSCRIBE_LANGUAGE_CODE", "en-US")
+        self._loop = None
+
+        self._generation_id = 0
+        self._speaking_task = None
+        self._is_speaking = False
+        self._interrupt_lock = asyncio.Lock()
+
+        self._audio_buffer = bytearray()
+        self._speech_frames_seen = 0
+
+        self._polly_client = boto3.client("polly", region_name=self.deployment_region or "us-east-1")
+        self._transcribe_task = None
+        self._transcribe_queue = None
+        self._transcribe_ws = None
+        self._transcribe_available = True
+        self._transcribe_preflight_ok = None
+
+    async def start_session(self):
+        self._loop = asyncio.get_running_loop()
+
+        print(f"🧪 Starting Polly/Transcribe session (session_id={self.session_id}, voice_id={self.voice_id})", flush=True)
+
+        session_ok = self._ensure_session_exists(self.session_id)
+        if not session_ok:
+            logger.warning(f"Session {self.session_id} not in DB - continuing without persistence")
+
+        self.is_active = True
+        await self._transcribe_preflight_check()
+        print(json.dumps({"type": "debug", "text": "Polly/Transcribe ready"}), flush=True)
+        # Keep compatibility with existing server-side readiness checks.
+        print(json.dumps({"type": "debug", "text": "Nova Sonic ready"}), flush=True)
+
+    async def _transcribe_preflight_check(self):
+        """
+        Lightweight startup check for Transcribe WebSocket readiness.
+        Verifies SigV4 URL signing and a short WebSocket connect handshake.
+        """
+        if os.getenv("TRANSCRIBE_PREFLIGHT", "true").lower() not in ("1", "true", "yes", "on"):
+            print(json.dumps({"type": "debug", "text": "Transcribe preflight skipped (TRANSCRIBE_PREFLIGHT disabled)"}), flush=True)
+            self._transcribe_preflight_ok = None
+            return
+
+        try:
+            ws_url = self._build_transcribe_ws_url()
+        except Exception as e:
+            self._transcribe_preflight_ok = False
+            self._transcribe_available = False
+            msg = f"Transcribe preflight failed during signing: {e}"
+            logger.error(msg)
+            print(json.dumps({"type": "debug", "text": msg}), flush=True)
+            return
+
+        try:
+            await asyncio.wait_for(
+                self._probe_transcribe_ws(ws_url),
+                timeout=4.0,
+            )
+            self._transcribe_preflight_ok = True
+            print(json.dumps({"type": "debug", "text": "Transcribe preflight OK (signing + websocket handshake)"}), flush=True)
+        except Exception as e:
+            self._transcribe_preflight_ok = False
+            # Keep available=true to allow runtime retry during actual stream start.
+            msg = f"Transcribe preflight warning: {e}"
+            logger.warning(msg)
+            print(json.dumps({"type": "debug", "text": msg}), flush=True)
+
+    async def _probe_transcribe_ws(self, ws_url: str):
+        async with websockets.connect(
+            ws_url,
+            max_size=1024 * 1024,
+            ping_interval=None,
+            ping_timeout=None,
+            close_timeout=1,
+        ):
+            return
+
+    async def end_session(self):
+        self.is_active = False
+        await self._stop_transcribe_stream()
+        await self._interrupt_generation(reason="session_end")
+
+    async def start_audio_input(self):
+        self._audio_buffer = bytearray()
+        self._speech_frames_seen = 0
+        print(f"🎙️ POLLY: start_audio_input called (gen_id={self._generation_id}, is_speaking={self._is_speaking})", flush=True)
+        print(json.dumps({"type": "debug", "text": f"[POLLY] start_audio_input gen_id={self._generation_id}"}), flush=True)
+        await self._interrupt_generation(reason="barge_in_start")
+        await self._start_transcribe_stream()
+        print(f"🎙️ POLLY: Transcribe stream started (task={self._transcribe_task})", flush=True)
+
+    _audio_chunk_count = 0
+
+    async def send_audio_chunk(self, audio_bytes):
+        if not audio_bytes:
+            return
+
+        self._audio_buffer.extend(audio_bytes)
+        self._audio_chunk_count += 1
+
+        # Log every 50 chunks so we can confirm audio is flowing
+        if self._audio_chunk_count % 50 == 0:
+            task_ok = self._transcribe_task and not self._transcribe_task.done()
+            q_size = self._transcribe_queue.qsize() if self._transcribe_queue else -1
+            print(f"🎙️ POLLY: chunk #{self._audio_chunk_count}, buf={len(self._audio_buffer)}B, transcribe_task_alive={task_ok}, queue_size={q_size}", flush=True)
+
+        # Detect barge-in from energy while TTS is speaking.
+        if self._is_speaking and self._is_speech_frame(audio_bytes):
+            self._speech_frames_seen += 1
+            if self._speech_frames_seen >= 2:
+                await self._interrupt_generation(reason="barge_in_voice_detected")
+
+        if self._transcribe_task and not self._transcribe_task.done() and self._transcribe_queue:
+            try:
+                self._transcribe_queue.put_nowait(audio_bytes)
+            except asyncio.QueueFull:
+                logger.warning("Transcribe queue full, dropping oldest audio frame")
+        elif self._audio_chunk_count % 50 == 0:
+            print(f"⚠️ POLLY: Audio chunk NOT queued — transcribe_task={self._transcribe_task}, queue={self._transcribe_queue}", flush=True)
+
+    async def end_audio_input(self):
+        print(f"🎙️ POLLY: end_audio_input called — current transcript: '{self._current_user_input[:80]}'", flush=True)
+        print(json.dumps({"type": "debug", "text": f"[POLLY] end_audio called, transcript_len={len(self._current_user_input)}"}), flush=True)
+        await self._stop_transcribe_stream()
+        await self._handle_user_turn_complete()
+
+    async def _start_transcribe_stream(self):
+        await self._stop_transcribe_stream()
+
+        self._transcribe_queue = asyncio.Queue(maxsize=256)
+        self._transcribe_task = asyncio.create_task(self._run_transcribe_ws())
+
+    async def _stop_transcribe_stream(self):
+        if self._transcribe_queue:
+            try:
+                self._transcribe_queue.put_nowait(None)
+            except Exception:
+                pass
+
+        if self._transcribe_task and not self._transcribe_task.done():
+            self._transcribe_task.cancel()
+            try:
+                await self._transcribe_task
+            except asyncio.CancelledError:
+                pass
+        self._transcribe_task = None
+        self._transcribe_ws = None
+        self._transcribe_queue = None
+
+    def _build_transcribe_ws_url(self) -> str:
+        region = self.deployment_region or "us-east-1"
+        endpoint = f"https://transcribestreaming.{region}.amazonaws.com:8443/stream-transcription-websocket"
+
+        params = {
+            "language-code": self.language_code,
+            "media-encoding": "pcm",
+            "sample-rate": str(INPUT_SAMPLE_RATE),
+            "enable-partial-results-stabilization": "true",
+            "partial-results-stability": "medium",
+        }
+
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        if credentials is None:
+            raise RuntimeError("Missing AWS credentials for Transcribe WebSocket signing")
+
+        request = AWSRequest(method="GET", url=f"{endpoint}?{urlencode(params)}")
+        SigV4QueryAuth(credentials.get_frozen_credentials(), "transcribe", region, expires=300).add_auth(request)
+
+        return request.url.replace("https://", "wss://", 1)
+
+    def _encode_eventstream_message(self, headers: dict, payload: bytes) -> bytes:
+        header_bytes = b""
+        for key, value in headers.items():
+            name = key.encode("utf-8")
+            val = str(value).encode("utf-8")
+            header_bytes += struct.pack("!B", len(name))
+            header_bytes += name
+            header_bytes += struct.pack("!B", 7)  # string type
+            header_bytes += struct.pack("!H", len(val))
+            header_bytes += val
+
+        total_len = 16 + len(header_bytes) + len(payload)
+        prelude = struct.pack("!II", total_len, len(header_bytes))
+        prelude_crc = struct.pack("!I", zlib.crc32(prelude) & 0xFFFFFFFF)
+        message_wo_crc = prelude + prelude_crc + header_bytes + payload
+        message_crc = struct.pack("!I", zlib.crc32(message_wo_crc) & 0xFFFFFFFF)
+        return message_wo_crc + message_crc
+
+    def _decode_eventstream_message(self, message: bytes):
+        if not message or len(message) < 16:
+            return {}, b""
+
+        total_len, headers_len = struct.unpack("!II", message[:8])
+        if total_len != len(message):
+            raise ValueError("EventStream length mismatch")
+
+        prelude_crc_expected = struct.unpack("!I", message[8:12])[0]
+        prelude_crc_actual = zlib.crc32(message[:8]) & 0xFFFFFFFF
+        if prelude_crc_actual != prelude_crc_expected:
+            raise ValueError("EventStream prelude CRC mismatch")
+
+        message_crc_expected = struct.unpack("!I", message[-4:])[0]
+        message_crc_actual = zlib.crc32(message[:-4]) & 0xFFFFFFFF
+        if message_crc_actual != message_crc_expected:
+            raise ValueError("EventStream message CRC mismatch")
+
+        headers_raw = message[12:12 + headers_len]
+        payload = message[12 + headers_len:-4]
+
+        headers = {}
+        idx = 0
+        while idx < len(headers_raw):
+            name_len = headers_raw[idx]
+            idx += 1
+            name = headers_raw[idx:idx + name_len].decode("utf-8")
+            idx += name_len
+            h_type = headers_raw[idx]
+            idx += 1
+
+            if h_type == 7:  # string
+                value_len = struct.unpack("!H", headers_raw[idx:idx + 2])[0]
+                idx += 2
+                value = headers_raw[idx:idx + value_len].decode("utf-8")
+                idx += value_len
+            elif h_type == 0:  # true
+                value = True
+            elif h_type == 1:  # false
+                value = False
+            elif h_type == 2:
+                value = headers_raw[idx]
+                idx += 1
+            elif h_type == 3:
+                value = struct.unpack("!h", headers_raw[idx:idx + 2])[0]
+                idx += 2
+            elif h_type == 4:
+                value = struct.unpack("!i", headers_raw[idx:idx + 4])[0]
+                idx += 4
+            elif h_type in (5, 8):
+                value = struct.unpack("!q", headers_raw[idx:idx + 8])[0]
+                idx += 8
+            elif h_type == 6:
+                value_len = struct.unpack("!H", headers_raw[idx:idx + 2])[0]
+                idx += 2 + value_len
+                value = None
+            elif h_type == 9:
+                idx += 16
+                value = None
+            else:
+                raise ValueError(f"Unsupported EventStream header type: {h_type}")
+
+            headers[name] = value
+
+        return headers, payload
+
+    async def _transcribe_ws_writer(self, ws):
+        while True:
+            chunk = await self._transcribe_queue.get()
+            if chunk is None:
+                end_msg = self._encode_eventstream_message(
+                    {
+                        ":content-type": "application/octet-stream",
+                        ":event-type": "AudioEvent",
+                        ":message-type": "event",
+                    },
+                    b"",
+                )
+                await ws.send(end_msg)
+                break
+
+            msg = self._encode_eventstream_message(
+                {
+                    ":content-type": "application/octet-stream",
+                    ":event-type": "AudioEvent",
+                    ":message-type": "event",
+                },
+                chunk,
+            )
+            await ws.send(msg)
+
+    async def _transcribe_ws_reader(self, ws):
+        async for raw_msg in ws:
+            if isinstance(raw_msg, str):
+                continue
+
+            headers, payload = self._decode_eventstream_message(raw_msg)
+            message_type = headers.get(":message-type")
+
+            if message_type == "exception":
+                error_text = payload.decode("utf-8", errors="ignore")
+                raise RuntimeError(f"Transcribe exception event: {error_text}")
+
+            if headers.get(":event-type") != "TranscriptEvent":
+                continue
+
+            try:
+                transcript_obj = json.loads(payload.decode("utf-8"))
+            except Exception:
+                continue
+
+            results = transcript_obj.get("Transcript", {}).get("Results", [])
+            for result in results:
+                alternatives = result.get("Alternatives", [])
+                if not alternatives:
+                    continue
+                transcript = (alternatives[0].get("Transcript") or "").strip()
+                if not transcript:
+                    continue
+                is_partial = bool(result.get("IsPartial", True))
+                await self._on_transcript_event(transcript, is_partial)
+
+    async def _run_transcribe_ws(self):
+        reader_task = None
+        writer_task = None
+        try:
+            print(f"🔗 POLLY: Building Transcribe WS URL (region={self.deployment_region or 'us-east-1'}, lang={self.language_code})", flush=True)
+            ws_url = self._build_transcribe_ws_url()
+            print(f"🔗 POLLY: Connecting to Transcribe WS...", flush=True)
+            async with websockets.connect(
+                ws_url,
+                max_size=None,
+                ping_interval=None,
+                ping_timeout=None,
+                close_timeout=2,
+            ) as ws:
+                self._transcribe_ws = ws
+                print(f"✅ POLLY: Transcribe WS connected", flush=True)
+                print(json.dumps({"type": "debug", "text": "[POLLY] Transcribe WS connected"}), flush=True)
+                reader_task = asyncio.create_task(self._transcribe_ws_reader(ws))
+                writer_task = asyncio.create_task(self._transcribe_ws_writer(ws))
+
+                done, pending = await asyncio.wait(
+                    {reader_task, writer_task},
+                    return_when=asyncio.FIRST_EXCEPTION,
+                )
+
+                for task in pending:
+                    task.cancel()
+                for task in done:
+                    if task.cancelled():
+                        continue
+                    exc = task.exception()
+                    if exc:
+                        raise exc
+
+            print(f"🔗 POLLY: Transcribe WS closed normally", flush=True)
+
+        except asyncio.CancelledError:
+            print(f"🔗 POLLY: Transcribe WS task cancelled", flush=True)
+            raise
+        except Exception as e:
+            self._transcribe_available = False
+            logger.error(f"Transcribe WS stream failed: {e}")
+            print(f"❌ POLLY: Transcribe WS FAILED: {e}", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Transcribe error: {e}"}), flush=True)
+        finally:
+            # Always retrieve inner task exceptions so asyncio doesn't log
+            # "Task exception was never retrieved" warnings on intentional shutdown.
+            for task in [reader_task, writer_task]:
+                if task and not task.done():
+                    task.cancel()
+                if task and task.done() and not task.cancelled():
+                    try:
+                        task.exception()  # retrieve to silence the asyncio warning
+                    except Exception:
+                        pass
+
+    async def _on_transcript_event(self, transcript: str, is_partial: bool):
+        evt_type = "transcript_partial" if is_partial else "transcript_final"
+        label = "PARTIAL" if is_partial else "FINAL"
+        print(f"📝 POLLY TRANSCRIPT [{label}]: '{transcript}'", flush=True)
+        print(json.dumps({"type": evt_type, "text": transcript}), flush=True)
+
+        if not is_partial:
+            sep = " " if self._current_user_input and not self._current_user_input.endswith(" ") else ""
+            self._current_user_input = f"{self._current_user_input}{sep}{transcript}".strip()
+            print(f"📝 POLLY: Accumulated transcript now {len(self._current_user_input)} chars: '{self._current_user_input[:80]}'", flush=True)
+
+    async def _handle_user_turn_complete(self):
+        print(f"🎙️ POLLY: _handle_user_turn_complete — transcript='{self._current_user_input[:80]}'", flush=True)
+        if not (self._current_user_input and self._current_user_input.strip()):
+            print(f"⚠️ POLLY: _handle_user_turn_complete — transcript empty, skipping", flush=True)
+            print(json.dumps({"type": "debug", "text": "[POLLY] turn complete but transcript empty — no LLaMA call"}), flush=True)
+            return
+
+        captured = self._current_user_input.strip()
+        self._current_user_input = ""
+
+        print(f"🎙️ POLLY: Captured turn: '{captured[:120]}'", flush=True)
+        print(json.dumps({"type": "debug", "text": f"[POLLY] turn captured ({len(captured)} chars): {captured[:80]}"}), flush=True)
+
+        self._empathy_eval_sequence += 1
+        loop = asyncio.get_event_loop()
+        message_id = await loop.run_in_executor(None, self._save_user_message_to_db, self.session_id, captured)
+        print(json.dumps({"type": "user_message", "text": captured, "message_id": message_id}), flush=True)
+
+        if self.llm_completion:
+            asyncio.create_task(self._evaluate_diagnosis_async(captured))
+
+        self._generation_id += 1
+        gen_id = self._generation_id
+        print(f"🤖 POLLY: Spawning _generate_and_stream_reply (gen_id={gen_id})", flush=True)
+        self._speaking_task = asyncio.create_task(self._generate_and_stream_reply(captured, gen_id))
+
+    async def _generate_and_stream_reply(self, user_text: str, generation_id: int):
+        self._is_speaking = True
+        full_reply = ""
+        print(f"🤖 POLLY: _generate_and_stream_reply START (gen_id={generation_id}, current_gen={self._generation_id})", flush=True)
+        try:
+            try:
+                import rag_chain
+                print(f"🤖 POLLY: rag_chain import OK", flush=True)
+            except ImportError as import_err:
+                logger.error(f"rag_chain import failed (missing dependency?): {import_err}")
+                print(f"❌ POLLY: rag_chain import FAILED: {import_err}", flush=True)
+                print(json.dumps({"type": "debug", "text": f"[POLLY] rag_chain import error: {import_err}"}), flush=True)
+                return
+
+            print(f"🤖 POLLY: Calling rag_chain.call_llama_rag for: '{user_text[:80]}'", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] calling LLaMA RAG..."}), flush=True)
+
+            response_text = await rag_chain.call_llama_rag(
+                user_text=user_text,
+                session_id=self.session_id,
+                patient_name=self.patient_name,
+                patient_prompt=self.patient_prompt,
+                group_prompt=self.extra_system_prompt,
+                patient_id=self.patient_id,
+                table_name=self._dynamodb_table_name,
+            )
+
+            print(f"🤖 POLLY: rag_chain returned {len(response_text or '')} chars: '{(response_text or '')[:120]}'", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] LLaMA response {len(response_text or '')} chars"}), flush=True)
+
+            if generation_id != self._generation_id:
+                print(f"⚠️ POLLY: generation_id mismatch after rag_chain ({generation_id} vs {self._generation_id}), aborting", flush=True)
+                return
+
+            if not response_text or not response_text.strip():
+                print(f"⚠️ POLLY: LLaMA returned empty response — nothing to speak", flush=True)
+                print(json.dumps({"type": "debug", "text": "[POLLY] LLaMA returned empty response"}), flush=True)
+                return
+
+            chunks = self._semantic_chunks(response_text)
+            print(f"🔊 POLLY: Synthesizing {len(chunks)} semantic chunk(s) via Polly (voice={self.voice_id})", flush=True)
+
+            for idx, chunk in enumerate(chunks, start=1):
+                if generation_id != self._generation_id:
+                    print(f"⚠️ POLLY: Interrupted at chunk {idx}/{len(chunks)}", flush=True)
+                    break
+
+                full_reply += chunk
+                print(json.dumps({"type": "text", "text": chunk}), flush=True)
+
+                ssml = self._render_ssml(chunk)
+                print(f"🔊 POLLY: Synthesizing chunk {idx}/{len(chunks)}: '{chunk[:60]}'", flush=True)
+                audio_b64 = await self._synthesize_ssml_to_b64(ssml)
+
+                if not audio_b64:
+                    print(f"⚠️ POLLY: Polly returned no audio for chunk {idx}", flush=True)
+                    print(json.dumps({"type": "debug", "text": f"[POLLY] Polly returned no audio for chunk {idx}"}), flush=True)
+                    continue
+
+                audio_bytes = len(audio_b64) * 3 // 4  # approx decoded size
+                print(f"🔊 POLLY: Emitting audio chunk {idx}/{len(chunks)} (~{audio_bytes} bytes)", flush=True)
+
+                if generation_id != self._generation_id:
+                    print(f"⚠️ POLLY: Interrupted before emitting chunk {idx}", flush=True)
+                    break
+
+                print(json.dumps({
+                    "type": "audio",
+                    "data": audio_b64,
+                    "generation_id": generation_id,
+                    "chunk_seq": idx,
+                }), flush=True)
+
+            print(f"🤖 POLLY: _generate_and_stream_reply DONE — full_reply={len(full_reply)} chars", flush=True)
+
+            if full_reply.strip() and generation_id == self._generation_id:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._save_message_to_db, self.session_id, False, full_reply.strip(), None
+                )
+
+        except asyncio.CancelledError:
+            print(f"🔇 POLLY: speaking task cancelled (gen_id={generation_id})", flush=True)
+            logger.info("Polly speaking task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Polly speaking task failed: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            print(f"❌ POLLY: _generate_and_stream_reply EXCEPTION: {e}", flush=True)
+            print(f"❌ POLLY: traceback:\n{tb}", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] TTS error: {e}"}), flush=True)
+        finally:
+            self._is_speaking = False
+
+    async def _interrupt_generation(self, reason="interrupt"):
+        async with self._interrupt_lock:
+            self._generation_id += 1
+            if self._speaking_task and not self._speaking_task.done():
+                self._speaking_task.cancel()
+                try:
+                    await self._speaking_task
+                except asyncio.CancelledError:
+                    pass
+
+            print(json.dumps({
+                "type": "voice_interrupted",
+                "reason": reason,
+                "generation_id": self._generation_id,
+            }), flush=True)
+
+    def _semantic_chunks(self, text: str):
+        text = (text or "").strip()
+        if not text:
+            return []
+
+        parts = re.split(r"(?<=[.!?])\s+", text)
+        chunks = []
+        buf = ""
+        for part in parts:
+            candidate = (buf + " " + part).strip() if buf else part.strip()
+            if len(candidate) <= 220:
+                buf = candidate
+                continue
+            if buf:
+                chunks.append(buf)
+            buf = part.strip()
+        if buf:
+            chunks.append(buf)
+        return chunks
+
+    def _render_ssml(self, text: str) -> str:
+        # Strip bracketed stage directions before Polly reads them (e.g. [pauses]).
+        # Neural voices don't support the SSML pitch attribute, so omit it.
+        clean, _ = strip_vocal_cues(text or "")
+        safe_text = html.escape(clean.strip())
+        if not safe_text:
+            safe_text = "..."
+        return (
+            "<speak>"
+            "<prosody rate='95%'>"
+            f"{safe_text}"
+            "</prosody>"
+            "</speak>"
+        )
+
+    async def _synthesize_ssml_to_b64(self, ssml: str):
+        loop = asyncio.get_event_loop()
+
+        def _invoke():
+            response = self._polly_client.synthesize_speech(
+                Engine=self.polly_engine,
+                VoiceId=self.voice_id,
+                OutputFormat="pcm",
+                SampleRate=str(OUTPUT_SAMPLE_RATE),
+                TextType="ssml",
+                Text=ssml,
+            )
+            stream = response.get("AudioStream")
+            if not stream:
+                return None
+            return base64.b64encode(stream.read()).decode("utf-8")
+
+        try:
+            result = await loop.run_in_executor(None, _invoke)
+            if result:
+                print(f"🔊 POLLY: Synthesis OK, audio_b64 len={len(result)}", flush=True)
+            else:
+                print(f"⚠️ POLLY: Synthesis returned None (no AudioStream)", flush=True)
+            return result
+        except Exception as e:
+            logger.error(f"Polly synth failed: {e}")
+            print(f"❌ POLLY: Polly synthesis FAILED: {e}", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Polly synthesis error: {e}"}), flush=True)
+            return None
+
+    def _is_speech_frame(self, audio_bytes: bytes) -> bool:
+        if not audio_bytes:
+            return False
+        # Simple PCM16 RMS gate for low-latency barge-in detection.
+        try:
+            sample_count = len(audio_bytes) // 2
+            if sample_count == 0:
+                return False
+            total_sq = 0
+            for i in range(0, len(audio_bytes) - 1, 2):
+                sample = int.from_bytes(audio_bytes[i:i + 2], byteorder="little", signed=True)
+                total_sq += sample * sample
+            rms = (total_sq / sample_count) ** 0.5
+            return rms > 900.0
+        except Exception:
+            return False
+
+
 # Main execution loop
 if __name__ == "__main__":
     import sys
@@ -1760,6 +2398,7 @@ if __name__ == "__main__":
     import traceback
     
     nova = None
+    voice_runtime = (os.getenv("VOICE_RUNTIME", "polly").strip().lower())
     stdin_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
     def read_stdin_line():
@@ -1781,11 +2420,20 @@ if __name__ == "__main__":
             if cmd_type == "start_session":
                 if nova:
                     await nova.end_session()
-                
-                nova = NovaSonic(
-                    session_id = command.get("session_id", "default"),
-                    voice_id = command.get("voice_id")
-                )
+
+                session_id = command.get("session_id", "default")
+                voice_id = command.get("voice_id")
+
+                if voice_runtime == "polly":
+                    nova = PollyTranscribeSession(
+                        session_id=session_id,
+                        voice_id=voice_id,
+                    )
+                else:
+                    nova = NovaSonic(
+                        session_id=session_id,
+                        voice_id=voice_id,
+                    )
 
                 await nova.start_session()
 
@@ -1820,6 +2468,9 @@ if __name__ == "__main__":
 
             elif cmd_type == "text":
                 print(f"TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
+                if nova and isinstance(nova, PollyTranscribeSession):
+                    nova._current_user_input = command.get("data", "")
+                    await nova._handle_user_turn_complete()
             
             elif cmd_type == "end_session":
                 if nova:
@@ -1892,6 +2543,7 @@ if __name__ == "__main__":
         
         try:
             print(f"🚀 Nova Sonic Python process started", flush=True)
+            print(f"VOICE_RUNTIME: {voice_runtime}", flush=True)
             print(f"Python version: {sys.version}", flush=True)
             logger.info("Nova Sonic process initialized")
             
@@ -1904,7 +2556,10 @@ if __name__ == "__main__":
 
             if session_id and session_id != "default":
                 print(f"🚀 Auto-starting Nova Sonic session: {session_id}", flush=True)
-                nova = NovaSonic(session_id=session_id, voice_id=voice_id)
+                if voice_runtime == "polly":
+                    nova = PollyTranscribeSession(session_id=session_id, voice_id=voice_id)
+                else:
+                    nova = NovaSonic(session_id=session_id, voice_id=voice_id)
                 await nova.start_session()
                 print(f"NOVA SONIC SESSION STARTED SUCCESSFULLY!!!", flush=True)
             else:

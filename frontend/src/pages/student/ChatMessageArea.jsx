@@ -39,6 +39,7 @@ const ChatMessageArea = ({
             hasAiMessageAfter={() =>
               hasAiMessageAfter(messages, getMostRecentStudentMessageIndex())
             }
+            isPreview={message._preview === true}
           />
         ) : (
           <AIMessage

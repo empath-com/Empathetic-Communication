@@ -9,6 +9,7 @@ const StudentMessage = ({
   isMostRecent,
   onDelete,
   hasAiMessageAfter,
+  isPreview = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -76,8 +77,8 @@ const StudentMessage = ({
         )}
 
         {/* Chat Bubble for Student Message */}
-        <div className="bg-emerald-500 text-white rounded-2xl rounded-br-lg px-4 py-3 shadow-sm text-left">
-          <div className="text-sm font-medium leading-relaxed">
+        <div className={`rounded-2xl rounded-br-lg px-4 py-3 shadow-sm text-left ${isPreview ? "bg-emerald-200 text-emerald-800 opacity-70" : "bg-emerald-500 text-white"}`}>
+          <div className={`text-sm leading-relaxed ${isPreview ? "italic font-normal" : "font-medium"}`}>
             {processedMessage.split("```").map((part, index) => {
               if (index % 2 === 1) {
                 const [language, ...codeLines] = part.split("\n");

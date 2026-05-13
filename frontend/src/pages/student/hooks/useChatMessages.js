@@ -767,20 +767,25 @@ export default function useChatMessages({
         alert("Session completed successfully!");
       };
 
+      const VOICE_PREVIEW_ID_USER = "VOICE_TRANSCRIPT_PREVIEW";
+
       const handleVoiceUserMessage = (data) => {
         const { text, message_id } = data;
         if (!text) return;
 
-        // Add the student's utterance to the chat
-        setMessages((prev) => [
-          ...prev,
-          {
-            message_id: message_id || `voice_user_${Date.now()}`,
-            student_sent: true,
-            message_content: text,
-            time_sent: new Date().toISOString(),
-          },
-        ]);
+        // Replace the live transcript preview bubble with the confirmed message.
+        setMessages((prev) => {
+          const withoutPreview = prev.filter((m) => m.message_id !== VOICE_PREVIEW_ID_USER);
+          return [
+            ...withoutPreview,
+            {
+              message_id: message_id || `voice_user_${Date.now()}`,
+              student_sent: true,
+              message_content: text,
+              time_sent: new Date().toISOString(),
+            },
+          ];
+        });
 
         // Trigger empathy evaluation via the REST endpoint (mirrors text-chat flow)
         const sid = sessionRef.current?.session_id;
@@ -796,12 +801,51 @@ export default function useChatMessages({
         }
       };
 
+      // Ephemeral preview bubble shown while the user is speaking.
+      // Replaced by the real message when voice-user-message arrives.
+      const VOICE_PREVIEW_ID = "VOICE_TRANSCRIPT_PREVIEW";
+
+      const handleTranscriptPartial = (data) => {
+        if (!data.text) return;
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.message_id === VOICE_PREVIEW_ID);
+          if (idx !== -1) {
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], message_content: data.text };
+            return updated;
+          }
+          return [
+            ...prev,
+            {
+              message_id: VOICE_PREVIEW_ID,
+              student_sent: true,
+              message_content: data.text,
+              time_sent: new Date().toISOString(),
+              _preview: true,
+            },
+          ];
+        });
+      };
+
+      const handleTranscriptFinal = (data) => {
+        if (!data.text) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.message_id === VOICE_PREVIEW_ID
+              ? { ...m, message_content: data.text }
+              : m
+          )
+        );
+      };
+
       socket.off("audio-chunk");
       socket.off("text-message");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
       socket.off("nova-debug");
       socket.off("voice-user-message");
+      socket.off("voice-transcript-partial");
+      socket.off("voice-transcript-final");
 
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
@@ -809,6 +853,8 @@ export default function useChatMessages({
       socket.on("diagnosis-complete", handleDiagnosisComplete);
       socket.on("nova-debug", (data) => console.log("🐞 NOVA:", data.message));
       socket.on("voice-user-message", handleVoiceUserMessage);
+      socket.on("voice-transcript-partial", handleTranscriptPartial);
+      socket.on("voice-transcript-final", handleTranscriptFinal);
     };
     setupSocketListeners();
   }, []);

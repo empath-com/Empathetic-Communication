@@ -141,3 +141,4 @@ cdk/text_generation/src/__pycache__
 .rex
 .claude/skills/ndx*
 .n-dx.json
+cdk/socket-server/__pycache__/nova_sonic.cpython-312.pyc

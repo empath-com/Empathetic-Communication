@@ -118,6 +118,8 @@ io.on("connection", (socket) => {
     console.log(`🐍 PYTHON_CMD env var: ${process.env.PYTHON_CMD}`);
     console.log(`🐍 Using command: ${pythonCmd}`);
     console.log(`🐍 Attempting to spawn: ${pythonCmd} nova_sonic.py`);
+    console.log(`🔊 VOICE_RUNTIME env: ${process.env.VOICE_RUNTIME || "(not set — defaults to polly in Python)"}`);
+    console.log(`📋 Session config: session_id=${config.session_id}, voice_id=${config.voice_id}, patient_id=${config.patient_id}`);
     
     try {
       novaProcess = spawn(pythonCmd, ["nova_sonic.py"], {
@@ -161,7 +163,14 @@ io.on("connection", (socket) => {
 
             // ─ Audio chunks ───────────────────────────────────────────────
             if (parsed.type === "audio") {
-              // Skip debug file saving for better performance
+              // First audio chunk from Python means the response is flowing —
+              // re-enable audio input so barge-in works during playback.
+              if (waitingForResponse) {
+                waitingForResponse = false;
+                if (responseWaitTimeout) { clearTimeout(responseWaitTimeout); responseWaitTimeout = null; }
+                console.log("🔓 First audio chunk received — waitingForResponse cleared, barge-in enabled");
+              }
+              console.log(`🔊 Emitting audio-chunk to client (b64_len=${parsed.data?.length}, gen=${parsed.generation_id ?? "?"})`);
               socket.emit("audio-chunk", { data: parsed.data });
             }
             // ─ Debug messages ───────────────────────────────────────────
@@ -171,7 +180,7 @@ io.on("connection", (socket) => {
               // "Nova Sonic ready" may arrive as a debug message
               if (parsed.text && parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
-                console.log("✅ NOVA SONIC READY - Voice empathy evaluation enabled");
+                console.log("✅ NOVA SONIC READY (via debug event) — novaReady=true");
                 socket.emit("nova-started", { status: "Nova Sonic session started" });
               }
             }
@@ -182,6 +191,11 @@ io.on("connection", (socket) => {
             }
             // ─ Text messages ─────────────────────────────────────────────
             else if (parsed.type === "text") {
+              if (waitingForResponse) {
+                waitingForResponse = false;
+                if (responseWaitTimeout) { clearTimeout(responseWaitTimeout); responseWaitTimeout = null; }
+                console.log("🔓 First text chunk received — waitingForResponse cleared");
+              }
               console.log("💬 NOVA TEXT:", parsed.text);
               socket.emit("text-message", { text: parsed.text });
               if (parsed.text.includes("Nova Sonic ready")) {
@@ -247,6 +261,24 @@ io.on("connection", (socket) => {
             else if (parsed.type === "user_message") {
               console.log("🎤 VOICE USER MESSAGE:", parsed.text?.substring(0, 50));
               socket.emit("voice-user-message", { text: parsed.text, message_id: parsed.message_id });
+            }
+            // ─ Realtime transcript stream (Transcribe) ───────────────────
+            else if (parsed.type === "transcript_partial") {
+              socket.emit("voice-transcript-partial", { text: parsed.text });
+              // Also surface in the debug panel so it's visible during speaking
+              socket.emit("nova-debug", { message: `🎙️ [partial] ${parsed.text}`, timestamp: Date.now() });
+            }
+            else if (parsed.type === "transcript_final") {
+              socket.emit("voice-transcript-final", { text: parsed.text });
+              socket.emit("nova-debug", { message: `🎙️ [final] ${parsed.text}`, timestamp: Date.now() });
+            }
+            // ─ Interrupt / barge-in events ───────────────────────────────
+            else if (parsed.type === "voice_interrupted") {
+              console.log("⛔ VOICE INTERRUPTED:", parsed.reason);
+              socket.emit("voice-interrupted", {
+                reason: parsed.reason,
+                generation_id: parsed.generation_id,
+              });
             }
           } catch {
             // Plain‑text fallback
@@ -349,11 +381,18 @@ io.on("connection", (socket) => {
 
   // ─── Audio‑input from client ──────────────────────────────────────────────
   let audioStarted = false;
+  // waitingForResponse: true between end-audio and the first audio/text response
+  // chunk from Python. Prevents buffered audio-input packets (sent just before
+  // the user stopped) from triggering a new start_audio that would cancel the
+  // in-flight LLaMA/Polly reply via _interrupt_generation.
+  let waitingForResponse = false;
+  let responseWaitTimeout = null;
+
   socket.on("audio-input", (msg) => {
-    console.log(
-      "🎤 Received audio-input, size:",
-      msg.data ? msg.data.length : "no data"
-    );
+    if (waitingForResponse) {
+      // Drain buffered packets silently — response is being generated
+      return;
+    }
     if (novaProcess && novaProcess.stdin.writable && novaReady) {
       if (!audioStarted) {
         novaProcess.stdin.write(JSON.stringify({ type: "start_audio" }) + "\n");
@@ -363,7 +402,6 @@ io.on("connection", (socket) => {
       novaProcess.stdin.write(
         JSON.stringify({ type: "audio", data: msg.data }) + "\n"
       );
-      console.log("📤 Sent audio to Nova process");
     } else {
       console.log("❌ Cannot send audio - not ready or stdin closed");
     }
@@ -432,10 +470,25 @@ io.on("connection", (socket) => {
 
   // ─── End‑audio event ─────────────────────────────────────────────────────
   socket.on("end-audio", () => {
+    console.log(`🛑 end-audio received — novaProcess=${!!novaProcess}, writable=${novaProcess?.stdin?.writable}, novaReady=${novaReady}`);
     if (novaProcess && novaProcess.stdin.writable && novaReady) {
       novaProcess.stdin.write(JSON.stringify({ type: "end_audio" }) + "\n");
       audioStarted = false;
-      console.log("🛑 Sent end_audio to Nova process");
+
+      // Block new start_audio until Python sends back a response chunk.
+      // This prevents trailing audio-input packets (sent just before the user
+      // stopped) from triggering _interrupt_generation and cancelling the reply.
+      waitingForResponse = true;
+      if (responseWaitTimeout) clearTimeout(responseWaitTimeout);
+      responseWaitTimeout = setTimeout(() => {
+        console.log("⏱️ responseWait timeout — re-enabling audio input");
+        waitingForResponse = false;
+        responseWaitTimeout = null;
+      }, 30000);
+
+      console.log("🛑 Sent end_audio to Nova process, waitingForResponse=true");
+    } else {
+      console.log("⚠️ end-audio NOT forwarded — Nova not ready or process missing");
     }
   });
 
