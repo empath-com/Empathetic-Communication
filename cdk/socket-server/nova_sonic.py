@@ -372,7 +372,16 @@ Keep your responses brief — one or two sentences. Share concerns gradually whe
 You may use short vocal cues in brackets to shape how you sound, such as [hesitantly], [sighs softly], [voice quieter], or [relieved].{extras}"""
 
     def get_system_prompt(self, patient_name=None, patient_prompt=None, llm_completion=None):
-        """Cached system prompt retrieval with medical document integration using centralized connection manager"""
+        """
+        Build and cache the Nova Sonic system prompt.
+
+        Structure mirrors rag_chain._build_chain() and conversation.py exactly:
+          1. Admin system prompt from system_prompt_history (DB) or hardcoded default
+          2. Group prompt (extra_system_prompt / EXTRA_SYSTEM_PROMPT env var)
+          3. "Additional details" block with patient-specific prompt
+          4. Voice Emotion Guidance (Nova Sonic only — bracketed vocal cues)
+          5. Medical context from vectorstore (session-start retrieval)
+        """
         if self._hybrid_mode:
             if self._cached_system_prompt:
                 return self._cached_system_prompt
@@ -383,99 +392,80 @@ You may use short vocal cues in brackets to shape how you sound, such as [hesita
         if self._cached_system_prompt:
             return self._cached_system_prompt
 
-        # first try to use patient_prompt from environment
-        env_patient_prompt = self.patient_prompt
+        role = SIMULATED_ROLE
+        pro = PRACTITIONER_ROLE
         env_patient_name = self.patient_name
+        env_patient_prompt = self.patient_prompt
+        group_prompt = self.extra_system_prompt or ""
+
         print(f"PROMPT DEBUG: patient name = '{env_patient_name}'", flush=True)
         print(f"PROMPT DEBUG: patient prompt length = {len(env_patient_prompt) if env_patient_prompt else 'N/A'}", flush=True)
+        print(f"PROMPT DEBUG: group prompt length = {len(group_prompt) if group_prompt else 'N/A'}", flush=True)
 
-        # if we have a patient prompt, use it
-        if env_patient_prompt and env_patient_prompt.strip():
-            print(f"USING PATIENT PROMPT FROM ENVIRONMENT", flush=True)
-            base_prompt = env_patient_prompt
+        # ── Step 1: Admin system prompt from DB / default ──────────────────────
+        # Use helpers.prompts.get_system_prompt() which is the same function
+        # rag_chain._build_chain() calls — reads system_prompt_history, falls back
+        # to get_default_system_prompt().  Import locally to avoid circular refs.
+        try:
+            from helpers.prompts import get_system_prompt as load_db_system_prompt
+            admin_prompt = load_db_system_prompt(env_patient_name)
+            print(f"PROMPT: loaded admin system prompt ({len(admin_prompt)} chars)", flush=True)
+        except Exception as e:
+            logger.warning(f"Could not load admin system prompt from DB, using built-in default: {e}")
+            admin_prompt = self.get_default_system_prompt(env_patient_name)
 
-            # inject patient name if provided
-            if env_patient_name and "{patient_name}" in base_prompt:
-                base_prompt = base_prompt.replace("{patient_name}", env_patient_name)
-            elif env_patient_name:
-                base_prompt = f"You are {env_patient_name}." + base_prompt
-        
-        elif self.extra_system_prompt and self.extra_system_prompt.strip():
-            # extra_system_prompt (from frontend system_prompt field) is a full instruction — use it as the base
-            # and clear it so it isn't appended again below
-            base_prompt = self.extra_system_prompt
-            if env_patient_name and "{patient_name}" not in base_prompt:
-                base_prompt = f"You are {env_patient_name}. " + base_prompt
-            self.extra_system_prompt = ""
-            print(f"USING EXTRA SYSTEM PROMPT AS BASE (skipping DB)", flush=True)
+        # ── Step 2: Assemble prompt matching rag_chain/_build_chain() ──────────
+        # Preamble + admin system prompt + group prompt + patient additional details
+        prompt = f"""CRITICAL: You are {env_patient_name or f'a {role}'}, a {role.upper()} seeking help from a {pro}.
+NEVER act as an expert or {pro}. ALWAYS respond as a {role}.
 
-        else:
-            # ok now try database
-            try:
-                logger.info("VOICE_SYSTEM_PROMPT: checking DATABASE")
-                conn = get_pg_connection()
-                cursor = conn.cursor()
-                cursor.execute(
-                    'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
-                )
-                result = cursor.fetchone()
-                cursor.close()
-                return_pg_connection(conn)
+{admin_prompt}
+{group_prompt}
 
-                if result and result[0]:
-                    base_prompt = result[0]
-                    print(f"USING PROMPT FROM DATABASE", flush=True)
-                    logger.info("VOICE SYSTEM PROMPT SUCCESS, Retrieved from database")
-                else:
-                    # default prompt
-                    base_prompt = self.get_default_system_prompt(env_patient_name)
-                    print("USING DEFAULT PROMPT", flush=True)
-                    logger.info("VOICE SYSTEM PROMPT FALLBACK - using default prompt")
+Additional details about your personality, symptoms or condition:
+{env_patient_prompt if env_patient_prompt else "No additional details provided."}
+"""
 
-            except Exception as e:
-                logger.error(f"Error retrieving system prompt: {e}")
-                base_prompt = self.get_default_system_prompt(env_patient_name)
-                print(f"USING DEFAULT PROMPT - DATABASE ERROR", flush=True)
+        # Clear extra_system_prompt — it is now incorporated as the group prompt above
+        self.extra_system_prompt = ""
 
-        # add medical document context if available
-        medical_context = self._get_medical_context()
-        if medical_context:
-            base_prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
-            print(f"VOICE: added medical document context", flush=True)
-
-        # add extra system prompt if provided
-        if self.extra_system_prompt:
-            base_prompt += f"\n\n{self.extra_system_prompt}"
-            print(f"VOICE: added extra system prompt", flush=True)
-
-        # Inject voice emotion guidance if the prompt doesn't already include it.
-        # This ensures custom/DB prompts also benefit from bracketed vocal cues.
-        if "Voice Emotion Guidance" not in base_prompt:
-            _role = SIMULATED_ROLE
-            _pro = PRACTITIONER_ROLE
-            base_prompt += f"""
-
+        # ── Step 3: Voice Emotion Guidance (Nova Sonic–specific) ───────────────
+        # Ensures bracketed vocal cues are present even when the admin prompt is
+        # fully custom and doesn't mention them.
+        if "Voice Emotion Guidance" not in prompt:
+            prompt += f"""
 ## Voice Emotion Guidance
-You are speaking aloud, so use short bracketed vocal cues to shape how your voice sounds. These cues are rendered as real speech — they make you sound like a genuine {_role} rather than a flat recording.
+You are speaking aloud, so use short bracketed vocal cues to shape how your voice sounds. These cues are rendered as real speech — they make you sound like a genuine {role} rather than a flat recording.
 
 Use cues like:
 - [sighs softly] — when tired or worried
 - [hesitantly] — when unsure or embarrassed
 - [voice quieter] — when sharing something personal
 - [nervous laugh] — when deflecting or downplaying a concern
-- [relieved] — when the {_pro} says something reassuring
+- [relieved] — when the {pro} says something reassuring
 - [concerned] — when describing a concern that worries you
 - [voice trailing off] — when you're not sure how to describe something
 
 Do NOT write theatrical stage directions like "looks down tearfully", "breaks down crying", or "sobs uncontrollably" — these are for written text, not voice. Keep cues short (one to three words) and focused on how you sound, not how you look."""
-            print(f"VOICE: injected voice emotion guidance", flush=True)
+            print(f"PROMPT: injected Voice Emotion Guidance", flush=True)
 
-        print(f"====================================", flush=True) # just for readability
+        # ── Step 4: Medical context from vectorstore ────────────────────────────
+        # Session-start retrieval — the best we can do for Nova Sonic full mode
+        # since the system prompt is static.  Polly/hybrid mode gets per-turn RAG
+        # via rag_chain.py instead.
+        medical_context = self._get_medical_context()
+        if medical_context:
+            prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
+            print(f"PROMPT: appended medical context ({len(medical_context)} chars)", flush=True)
+        else:
+            print(f"PROMPT: no medical context available", flush=True)
+
+        print(f"====================================", flush=True)
         print(f"FINAL PROMPT PREVIEW:", flush=True)
-        print(f"{base_prompt[:300]}...", flush=True)
+        print(f"{prompt[:300]}...", flush=True)
         print(f"====================================", flush=True)
 
-        self._cached_system_prompt = base_prompt
+        self._cached_system_prompt = prompt
         return self._cached_system_prompt
 
 
@@ -626,7 +616,8 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None, rag_chain.ensure_chain,
-                self.patient_id, self.patient_name, self.patient_prompt, self.extra_system_prompt, self._dynamodb_table_name,
+                self.patient_id, self.patient_name, self.patient_prompt, self.extra_system_prompt,
+                self._dynamodb_table_name, self.llm_completion,
             )
             print(f"🤖 HYBRID: LLaMA chain pre-warmed for patient_id={self.patient_id!r}", flush=True)
         except Exception as e:
@@ -1153,6 +1144,7 @@ Provide structured evaluation with detailed justifications for each score.
                 self.patient_prompt,
                 self.extra_system_prompt,
                 self._dynamodb_table_name,
+                self.llm_completion,
             )
 
             # Chain is ready — now suppress Nova Sonic's own audio and call LLaMA.
@@ -1167,6 +1159,7 @@ Provide structured evaluation with detailed justifications for each score.
                 group_prompt=self.extra_system_prompt,
                 patient_id=self.patient_id,
                 table_name=self._dynamodb_table_name,
+                llm_completion=self.llm_completion,
             )
             if response_text and response_text.strip():
                 print(f"🤖 HYBRID: LLaMA OK ({len(response_text)} chars), injecting into Nova Sonic", flush=True)
@@ -1501,14 +1494,20 @@ Provide structured evaluation with detailed justifications for each score.
             connection_string = f"postgresql://{secret['username']}:{secret['password']}@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
             vectorstore = PGVector(embedding_function=embeddings, collection_name=self.patient_id, connection_string=connection_string)
 
-            # Build a patient-specific query so retrieval is relevant to this patient's documents
-            patient_context_query = f"patient symptoms condition medical history"
-            if self.patient_name:
-                patient_context_query = f"{self.patient_name} symptoms condition medical history"
+            # Build a patient-specific query — use patient_prompt first (most semantically rich),
+            # fall back to patient name + generic medical terms.  Mirrors the per-turn query
+            # that rag_chain.py's history-aware retriever would construct for the first turn.
+            if self.patient_prompt and self.patient_prompt.strip():
+                # First 500 chars of the patient's own prompt captures the scenario best
+                patient_context_query = self.patient_prompt[:500]
+            elif self.patient_name:
+                patient_context_query = f"{self.patient_name} symptoms condition medical history diagnosis"
+            else:
+                patient_context_query = "patient symptoms condition medical history diagnosis"
 
-            # Get relevant medical documents — use k=5 to match text_generation retriever depth
+            # Fetch k=10 chunks (same retriever depth as text_generation's as_retriever default)
             try:
-                docs = vectorstore.similarity_search(patient_context_query, k=5)
+                docs = vectorstore.similarity_search(patient_context_query, k=10)
 
                 if docs and len(docs) > 0:
                     # Filter out empty documents
@@ -1516,8 +1515,10 @@ Provide structured evaluation with detailed justifications for each score.
 
                     if valid_docs:
                         medical_context = "\n\n".join([doc.page_content for doc in valid_docs])
-                        logger.info(f"📋 VOICE: Retrieved {len(valid_docs)} valid medical documents")
-                        return medical_context[:4000]  # Allow substantial context for accurate patient portrayal
+                        logger.info(f"📋 VOICE: Retrieved {len(valid_docs)} valid medical document chunks ({len(medical_context)} chars)")
+                        # 8 000 chars gives Nova Sonic substantially more context than the old 4 000
+                        # cap while staying within its system-prompt token budget.
+                        return medical_context[:8000]
                     else:
                         logger.info("📋 VOICE: Found documents but all were empty")
                         return None
@@ -2260,6 +2261,7 @@ class PollyTranscribeSession(NovaSonic):
                 group_prompt=self.extra_system_prompt,
                 patient_id=self.patient_id,
                 table_name=self._dynamodb_table_name,
+                llm_completion=self.llm_completion,
             )
 
             print(f"🤖 POLLY: rag_chain returned {len(response_text or '')} chars: '{(response_text or '')[:120]}'", flush=True)
@@ -2273,6 +2275,15 @@ class PollyTranscribeSession(NovaSonic):
                 print(f"⚠️ POLLY: LLaMA returned empty response — nothing to speak", flush=True)
                 print(json.dumps({"type": "debug", "text": "[POLLY] LLaMA returned empty response"}), flush=True)
                 return
+
+            # Mirror NovaSonic._handle_event SESSION COMPLETED handling: strip the marker
+            # from the spoken text and emit diagnosis_complete so the frontend reacts.
+            diagnosis_achieved = "SESSION COMPLETED" in response_text
+            if diagnosis_achieved and self.llm_completion:
+                response_text = response_text.replace("SESSION COMPLETED", "").strip()
+                response_text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
+                print(f"🎯 POLLY: SESSION COMPLETED detected — diagnosis achieved", flush=True)
+                print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
 
             chunks = self._semantic_chunks(response_text)
             print(f"🔊 POLLY: Synthesizing {len(chunks)} semantic chunk(s) via Polly (voice={self.voice_id})", flush=True)

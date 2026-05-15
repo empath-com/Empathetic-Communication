@@ -56,12 +56,15 @@ def _build_chain(
     patient_id: str,
     llm_model_id: str,
     table_name: str,
+    llm_completion: bool = False,
 ) -> RunnableWithMessageHistory:
     """
     Build a conversational RAG chain for the given patient.
     Mirrors conversation.py get_response() exactly:
       - system prompt loaded from DB (system_prompt_history), hardcoded fallback
       - group_prompt appended (from simulation_groups.system_prompt via EXTRA_SYSTEM_PROMPT)
+      - patient_prompt as "Additional details" (not base prompt)
+      - completion_string when llm_completion=True (matches conversation.py)
       - same LangChain retrieval chain structure
     """
     region = os.getenv("AWS_REGION", "us-east-1")
@@ -97,6 +100,20 @@ def _build_chain(
 
     role = SIMULATED_ROLE
     pro = PRACTITIONER_ROLE
+
+    # Mirrors conversation.py: tell the patient when to end the session
+    if llm_completion:
+        completion_string = (
+            f"Continue this process until you determine that me, the {pro}, has properly "
+            f"addressed your concerns. Once that happens, include SESSION COMPLETED in your "
+            f"response and politely end the conversation."
+        )
+    else:
+        completion_string = (
+            f"Once I, the {pro}, have given you a response, politely leave the conversation "
+            f"and wish me goodbye. Regardless of the outcome, stop talking to me."
+        )
+
     final_system_prompt = f"""
 <|begin_of_text|>
 <|start_header_id|>{role}<|end_header_id|>
@@ -109,6 +126,8 @@ NEVER act as an expert or {pro}. ALWAYS respond as a {role}.
 
 Additional details about your personality, symptoms or condition:
 {patient_prompt if patient_prompt else "No additional details provided."}
+
+{completion_string}
 
 <|eot_id|>
 <|start_header_id|>documents<|end_header_id|>
@@ -139,6 +158,7 @@ def ensure_chain(
     patient_prompt: str,
     group_prompt: str,
     table_name: str,
+    llm_completion: bool = False,
 ) -> None:
     """
     Build and cache the LLaMA chain for the given patient/group combination.
@@ -148,9 +168,9 @@ def ensure_chain(
     llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
     rds_endpoint = os.getenv("RDS_PROXY_ENDPOINT", "")
     sm_secret = os.getenv("SM_DB_CREDENTIALS", "")
-    print(f"🤖 RAG_CHAIN: ensure_chain — patient_id={patient_id!r}, name={patient_name!r}, model={llm_model_id!r}", flush=True)
+    print(f"🤖 RAG_CHAIN: ensure_chain — patient_id={patient_id!r}, name={patient_name!r}, model={llm_model_id!r}, llm_completion={llm_completion}", flush=True)
     print(f"🤖 RAG_CHAIN: env — RDS_PROXY_ENDPOINT={'SET' if rds_endpoint else 'MISSING'}, SM_DB_CREDENTIALS={'SET' if sm_secret else 'MISSING'}", flush=True)
-    cache_key = (patient_id or "default", group_prompt or "")
+    cache_key = (patient_id or "default", group_prompt or "", llm_completion)
     if cache_key not in _chain_cache:
         logger.info(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id!r}")
         print(f"🤖 RAG_CHAIN: Building chain for patient_id={patient_id!r}", flush=True)
@@ -161,6 +181,7 @@ def ensure_chain(
             patient_id=patient_id,
             llm_model_id=llm_model_id,
             table_name=table_name,
+            llm_completion=llm_completion,
         )
         logger.info(f"🤖 RAG_CHAIN: Chain built for patient_id={patient_id!r}")
         print(f"🤖 RAG_CHAIN: Chain successfully built for patient_id={patient_id!r}", flush=True)
@@ -176,13 +197,15 @@ async def call_llama_rag(
     group_prompt: str,
     patient_id: str,
     table_name: str,
+    llm_completion: bool = False,
 ) -> str:
     """
     Invoke LLaMA 3 70B + pgvector RAG for the given user utterance.
     Returns the plain-text patient response.
     """
-    ensure_chain(patient_id, patient_name, patient_prompt, group_prompt, table_name)
-    chain = _chain_cache[(patient_id or "default", group_prompt or "")]
+    ensure_chain(patient_id, patient_name, patient_prompt, group_prompt, table_name, llm_completion)
+    cache_key = (patient_id or "default", group_prompt or "", llm_completion)
+    chain = _chain_cache[cache_key]
 
     def _invoke():
         return chain.invoke(

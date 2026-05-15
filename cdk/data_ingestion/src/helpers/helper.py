@@ -102,6 +102,24 @@ def store_group_data(
         logger.error("VectorStore could not be initialized")
         return
 
+    # Grant the readwrite DB role SELECT on langchain tables so voice/rag_chain can query embeddings.
+    # data_ingestion runs as the admin DB user (the only user that owns these tables), so this
+    # is the only place where the GRANT can succeed. Without it, the user-level credentials
+    # used by nova_sonic.py / rag_chain.py cannot read the vectorstore.
+    try:
+        cursor = connection.cursor()
+        cursor.execute("GRANT SELECT ON langchain_pg_embedding TO readwrite")
+        cursor.execute("GRANT SELECT ON langchain_pg_collection TO readwrite")
+        connection.commit()
+        cursor.close()
+        logger.info("Granted readwrite SELECT on langchain tables")
+    except Exception as grant_err:
+        logger.warning(f"Could not grant readwrite on langchain tables: {grant_err}")
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+
     # Process all files in the "documents" folder
     process_documents(
         bucket=bucket,
