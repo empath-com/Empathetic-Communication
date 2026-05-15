@@ -69,36 +69,35 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const [patientAge, setPatientAge] = useState("");
   const [patientGender, setPatientGender] = useState("");
   const [patientPrompt, setPatientPrompt] = useState("");
-  // Voice selection state — Polly neural voice IDs (proper-cased, backend does .capitalize() for safety)
+  // Voice selection state — Polly neural-only voice IDs (proper-cased).
+  // Excluded: Ivy/Kevin (child voices — high-pitched, unsuitable for adult patients),
+  // and standard-engine-only voices (Marlene, Hans, Carla, Giorgio, Conchita, Enrique,
+  // Penelope, Miguel, Tatyana, Maxim) which fail when backend runs POLLY_ENGINE=neural.
   const feminineVoices = [
     "Amy", "Emma",                                      // English - British
     "Aria",                                             // English - New Zealand
     "Ayanda",                                           // English - South African
-    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli", "Ivy", // English - US
+    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli", // English - US
     "Kajal",                                            // English - Indian
     "Niamh",                                            // English - Irish
     "Olivia",                                           // English - Australian
     "Gabrielle",                                        // French - Canadian
-    "Hannah", "Marlene", "Vicki",                       // German
-    "Bianca", "Carla",                                  // Italian
+    "Hannah", "Vicki",                                  // German
+    "Bianca",                                           // Italian
     "Camila",                                           // Portuguese - Brazilian
-    "Tatyana",                                          // Russian
-    "Conchita", "Lucia",                                // Spanish - Castilian
-    "Lupe", "Penelope",                                 // Spanish - US
+    "Lucia",                                            // Spanish - Castilian
+    "Lupe",                                             // Spanish - US
     "Mia",                                              // Spanish - Mexican
     "Arlet",                                            // Catalan
   ];
   const masculineVoices = [
     "Arthur", "Brian",                                  // English - British
-    "Gregory", "Joey", "Justin", "Matthew", "Stephen", "Kevin", // English - US
+    "Gregory", "Joey", "Justin", "Matthew", "Stephen",  // English - US
     "Liam",                                             // French - Canadian
-    "Hans",                                             // German
-    "Giorgio", "Sergio",                                // Italian
+    "Sergio",                                           // Italian
     "Adriano",                                          // Portuguese - Brazilian
-    "Maxim",                                            // Russian
     "Andres",                                           // Spanish - Colombian
-    "Enrique",                                          // Spanish - Castilian
-    "Miguel", "Pedro",                                  // Spanish - US
+    "Pedro",                                            // Spanish - US
   ];
   const voiceLabels = {
     Amy: "English - British", Emma: "English - British",
@@ -107,20 +106,17 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
     Ayanda: "English - South African",
     Danielle: "English - US", Joanna: "English - US", Kendra: "English - US",
     Kimberly: "English - US", Ruth: "English - US", Salli: "English - US",
-    Ivy: "English - US (Child)",
     Gregory: "English - US", Joey: "English - US", Justin: "English - US",
     Matthew: "English - US", Stephen: "English - US",
-    Kevin: "English - US (Child)",
     Kajal: "English - Indian",
     Niamh: "English - Irish",
     Olivia: "English - Australian",
     Gabrielle: "French - Canadian", Liam: "French - Canadian",
-    Hannah: "German", Marlene: "German", Vicki: "German", Hans: "German",
-    Bianca: "Italian", Carla: "Italian", Giorgio: "Italian", Sergio: "Italian",
+    Hannah: "German", Vicki: "German",
+    Bianca: "Italian", Sergio: "Italian",
     Camila: "Portuguese - Brazilian", Adriano: "Portuguese - Brazilian",
-    Tatyana: "Russian", Maxim: "Russian",
-    Conchita: "Spanish - Castilian", Lucia: "Spanish - Castilian", Enrique: "Spanish - Castilian",
-    Lupe: "Spanish - US", Penelope: "Spanish - US", Miguel: "Spanish - US", Pedro: "Spanish - US",
+    Lucia: "Spanish - Castilian",
+    Lupe: "Spanish - US", Pedro: "Spanish - US",
     Mia: "Spanish - Mexican",
     Andres: "Spanish - Colombian",
     Arlet: "Catalan",
