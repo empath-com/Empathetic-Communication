@@ -69,22 +69,61 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const [patientAge, setPatientAge] = useState("");
   const [patientGender, setPatientGender] = useState("");
   const [patientPrompt, setPatientPrompt] = useState("");
-  // Voice selection state
-  const feminineVoices = ["tiffany", "amy", "ambre", "beatrice", "greta", "lupe"]; 
-  const masculineVoices = ["matthew", "florian", "lorenzo", "lennart", "carlos"]; 
-  // Friendly display labels mapped to backend voice IDs
+  // Voice selection state — Polly neural voice IDs (proper-cased, backend does .capitalize() for safety)
+  const feminineVoices = [
+    "Amy", "Emma",                                      // English - British
+    "Aria",                                             // English - New Zealand
+    "Ayanda",                                           // English - South African
+    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli", "Ivy", // English - US
+    "Kajal",                                            // English - Indian
+    "Niamh",                                            // English - Irish
+    "Olivia",                                           // English - Australian
+    "Gabrielle",                                        // French - Canadian
+    "Hannah", "Marlene", "Vicki",                       // German
+    "Bianca", "Carla",                                  // Italian
+    "Camila",                                           // Portuguese - Brazilian
+    "Tatyana",                                          // Russian
+    "Conchita", "Lucia",                                // Spanish - Castilian
+    "Lupe", "Penelope",                                 // Spanish - US
+    "Mia",                                              // Spanish - Mexican
+    "Arlet",                                            // Catalan
+  ];
+  const masculineVoices = [
+    "Arthur", "Brian",                                  // English - British
+    "Gregory", "Joey", "Justin", "Matthew", "Stephen", "Kevin", // English - US
+    "Liam",                                             // French - Canadian
+    "Hans",                                             // German
+    "Giorgio", "Sergio",                                // Italian
+    "Adriano",                                          // Portuguese - Brazilian
+    "Maxim",                                            // Russian
+    "Andres",                                           // Spanish - Colombian
+    "Enrique",                                          // Spanish - Castilian
+    "Miguel", "Pedro",                                  // Spanish - US
+  ];
   const voiceLabels = {
-    tiffany: "US English (Female)",
-    amy: "UK English (Female)",
-    ambre: "French (Female)",
-    beatrice: "Italian (Female)",
-    greta: "German (Female)",
-    lupe: "Spanish (Female)",
-    matthew: "US English (Male)",
-    florian: "German (Male)",
-    lorenzo: "Italian (Male)",
-    lennart: "Dutch (Male)",
-    carlos: "Spanish (Male)"
+    Amy: "English - British", Emma: "English - British",
+    Arthur: "English - British", Brian: "English - British",
+    Aria: "English - New Zealand",
+    Ayanda: "English - South African",
+    Danielle: "English - US", Joanna: "English - US", Kendra: "English - US",
+    Kimberly: "English - US", Ruth: "English - US", Salli: "English - US",
+    Ivy: "English - US (Child)",
+    Gregory: "English - US", Joey: "English - US", Justin: "English - US",
+    Matthew: "English - US", Stephen: "English - US",
+    Kevin: "English - US (Child)",
+    Kajal: "English - Indian",
+    Niamh: "English - Irish",
+    Olivia: "English - Australian",
+    Gabrielle: "French - Canadian", Liam: "French - Canadian",
+    Hannah: "German", Marlene: "German", Vicki: "German", Hans: "German",
+    Bianca: "Italian", Carla: "Italian", Giorgio: "Italian", Sergio: "Italian",
+    Camila: "Portuguese - Brazilian", Adriano: "Portuguese - Brazilian",
+    Tatyana: "Russian", Maxim: "Russian",
+    Conchita: "Spanish - Castilian", Lucia: "Spanish - Castilian", Enrique: "Spanish - Castilian",
+    Lupe: "Spanish - US", Penelope: "Spanish - US", Miguel: "Spanish - US", Pedro: "Spanish - US",
+    Mia: "Spanish - Mexican",
+    Andres: "Spanish - Colombian",
+    Arlet: "Catalan",
   };
   const [availableVoices, setAvailableVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState("");
@@ -605,7 +644,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
               onChange={e => setSelectedVoice(e.target.value)}
             >
               {availableVoices.map(v => (
-                <MenuItem key={v} value={v}>{voiceLabels[v] || v}</MenuItem>
+                <MenuItem key={v} value={v}>{v} — {voiceLabels[v] || v}</MenuItem>
               ))}
             </Select>
           </FormControl>
