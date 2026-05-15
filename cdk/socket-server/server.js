@@ -151,15 +151,22 @@ io.on("connection", (socket) => {
     }
 
     // Capture stdout and stderr
+    // Large JSON messages (audio chunks, ~40-80 KB base64) are split across
+    // multiple stdout data events. Accumulate into a line buffer so each
+    // complete newline-terminated JSON object is parsed atomically.
+    let stdoutLineBuffer = "";
+
     novaProcess.stdout.on("data", (data) => {
-      data
-        .toString()
-        .split("\n")
+      stdoutLineBuffer += data.toString();
+      const lines = stdoutLineBuffer.split("\n");
+      // The last element is either empty or an incomplete line — keep it
+      stdoutLineBuffer = lines.pop() ?? "";
+      lines
         .filter(Boolean)
         .forEach((line) => {
           try {
             const parsed = JSON.parse(line);
-            console.log("📤 NOVA JSON:", parsed);
+            if (parsed.type !== "audio") console.log("📤 NOVA JSON:", parsed);
 
             // ─ Audio chunks ───────────────────────────────────────────────
             if (parsed.type === "audio") {
