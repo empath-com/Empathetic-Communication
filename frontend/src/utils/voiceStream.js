@@ -145,6 +145,18 @@ export async function stopSpokenLLM(waitForResponse = true) {
     input = null;
   }
 
+  // Stop mic tracks immediately so the browser mic indicator turns off now,
+  // not after the 60-second waitForResponse timeout.
+  if (globalStream) {
+    try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    globalStream = null;
+  }
+
+  if (audioContext) {
+    try { audioContext.close(); } catch (e) {}
+    audioContext = null;
+  }
+
   console.log("Sending end-audio to trigger AI response...");
   socket.emit("end-audio");
 
@@ -189,20 +201,10 @@ export async function stopSpokenLLM(waitForResponse = true) {
     });
   }
 
-  // Only tear down shared contexts if the user hasn't already re-enabled voice.
+  // Only tear down the playback context if the user hasn't already re-enabled voice.
   // If novaStarted is true here, a new session started while we were waiting —
-  // leave its contexts alone.
+  // leave its playbackCtx alone.
   if (!novaStarted) {
-    if (globalStream) {
-      try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
-      globalStream = null;
-    }
-
-    if (audioContext) {
-      try { audioContext.close(); } catch (e) {}
-      audioContext = null;
-    }
-
     if (playbackCtx && playbackCtx.state !== "closed") {
       try { playbackCtx.close(); } catch (e) {}
       playbackCtx = null;

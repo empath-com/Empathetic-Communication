@@ -231,7 +231,7 @@ const routes = {
     ) {
       const { patient_id, instructor_email, simulation_group_id } =
         event.queryStringParameters;
-      const { patient_name, patient_age, patient_gender, patient_prompt } =
+      const { patient_name, patient_age, patient_gender, patient_prompt, voice_id } =
         JSON.parse(event.body || "{}");
 
       if (
@@ -264,7 +264,8 @@ const routes = {
                         patient_name = ${patient_name},
                         patient_age = ${patient_age},
                         patient_gender = ${patient_gender},
-                        patient_prompt = ${patient_prompt}
+                        patient_prompt = ${patient_prompt},
+                        voice_id = COALESCE(${voice_id ?? null}, voice_id)
                     WHERE patient_id = ${patient_id};
                 `;
 

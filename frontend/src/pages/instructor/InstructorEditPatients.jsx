@@ -79,6 +79,57 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
   const [profilePicturePreview, setProfilePicturePreview] = useState(null);
   const [profilePictureForCrop, setProfilePictureForCrop] = useState(null);
 
+  const feminineVoices = [
+    "Amy", "Emma",
+    "Aria",
+    "Ayanda",
+    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli",
+    "Kajal",
+    "Niamh",
+    "Olivia",
+    "Gabrielle",
+    "Hannah", "Vicki",
+    "Bianca",
+    "Camila",
+    "Lucia",
+    "Lupe",
+    "Mia",
+    "Arlet",
+  ];
+  const masculineVoices = [
+    "Arthur", "Brian",
+    "Gregory", "Joey", "Justin", "Matthew", "Stephen",
+    "Liam",
+    "Sergio",
+    "Adriano",
+    "Andres",
+    "Pedro",
+  ];
+  const voiceLabels = {
+    Amy: "English - British", Emma: "English - British",
+    Arthur: "English - British", Brian: "English - British",
+    Aria: "English - New Zealand",
+    Ayanda: "English - South African",
+    Danielle: "English - US", Joanna: "English - US", Kendra: "English - US",
+    Kimberly: "English - US", Ruth: "English - US", Salli: "English - US",
+    Gregory: "English - US", Joey: "English - US", Justin: "English - US",
+    Matthew: "English - US", Stephen: "English - US",
+    Kajal: "English - Indian",
+    Niamh: "English - Irish",
+    Olivia: "English - Australian",
+    Gabrielle: "French - Canadian", Liam: "French - Canadian",
+    Hannah: "German", Vicki: "German",
+    Bianca: "Italian", Sergio: "Italian",
+    Camila: "Portuguese - Brazilian", Adriano: "Portuguese - Brazilian",
+    Lucia: "Spanish - Castilian",
+    Lupe: "Spanish - US", Pedro: "Spanish - US",
+    Mia: "Spanish - Mexican",
+    Andres: "Spanish - Colombian",
+    Arlet: "Catalan",
+  };
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState("");
+
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
@@ -257,8 +308,24 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       setPatientAge(patientData.patient_age);
       setPatientGender(patientData.patient_gender);
       setPatientPrompt(patientData.patient_prompt);
+      setSelectedVoice(patientData.voice_id || "");
     }
   }, [patientData]);
+
+  useEffect(() => {
+    if (!patientGender) return;
+    if (patientGender.toLowerCase() === "female") {
+      setAvailableVoices(feminineVoices);
+      setSelectedVoice(prev => feminineVoices.includes(prev) ? prev : feminineVoices[0]);
+    } else if (patientGender.toLowerCase() === "male") {
+      setAvailableVoices(masculineVoices);
+      setSelectedVoice(prev => masculineVoices.includes(prev) ? prev : masculineVoices[0]);
+    } else {
+      const all = [...feminineVoices, ...masculineVoices];
+      setAvailableVoices(all);
+      setSelectedVoice(prev => all.includes(prev) ? prev : all[0]);
+    }
+  }, [patientGender]);
 
   useEffect(() => {
     if (patient) {
@@ -354,6 +421,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
           patient_age: patientAge,
           patient_gender: patientGender,
           patient_prompt: patientPrompt,
+          voice_id: selectedVoice || null,
         }),
       }
     );
@@ -557,6 +625,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
         patient_age: patientAge,
         patient_gender: patientGender,
         patient_prompt: patientPrompt,
+        voice_id: selectedVoice || null,
       };
 
       await updatePatient();
@@ -740,6 +809,21 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
             <MenuItem value="Other">Other</MenuItem>
           </Select>
         </FormControl>
+
+        {patientGender && (
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Voice</InputLabel>
+            <Select
+              value={selectedVoice}
+              label="Voice"
+              onChange={(e) => setSelectedVoice(e.target.value)}
+            >
+              {availableVoices.map(v => (
+                <MenuItem key={v} value={v}>{v} — {voiceLabels[v] || v}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
 
         <TextField
           label="Patient Prompt"

@@ -25,7 +25,7 @@ import requests
 import websockets
 from urllib.parse import urlencode
 from langchain_community.embeddings import BedrockEmbeddings
-from langchain_community.vectorstores import PGVector
+from langchain_postgres import PGVector
 from voice_db_manager import voice_db_manager, get_pg_connection, return_pg_connection
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
@@ -1569,9 +1569,10 @@ Provide structured evaluation with detailed justifications for each score.
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0", client=bedrock_client)
             
-            # Connect to vectorstore using RDS proxy
-            connection_string = f"postgresql://{secret['username']}:{secret['password']}@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
-            vectorstore = PGVector(embedding_function=embeddings, collection_name=self.patient_id, connection_string=connection_string)
+            # Connect to vectorstore using RDS proxy — must use psycopg3 driver to
+            # match the langchain_postgres schema created by data_ingestion.
+            connection_string = f"postgresql+psycopg://{secret['username']}:{secret['password']}@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
+            vectorstore = PGVector(embeddings=embeddings, collection_name=self.patient_id, connection=connection_string, use_jsonb=True)
             
             # Search for relevant medical documents
             try:
