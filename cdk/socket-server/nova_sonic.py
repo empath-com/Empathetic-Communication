@@ -136,6 +136,9 @@ class NovaSonic:
         # Cache system prompt and bedrock client
         self._cached_system_prompt = None
         self._bedrock_client = None
+        # Cached objects for diagnosis evaluation — built once per session on first call
+        self._db_secret_cache = None
+        self._diagnosis_vectorstore = None
         self._chat_context = None
         self._current_user_input = ""
         self._current_assistant_text = ""      # Accumulated text for current assistant turn
@@ -955,6 +958,38 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         if not self._bedrock_client:
             self._bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
         return self._bedrock_client
+
+    def _get_diagnosis_vectorstore(self):
+        """Cached PGVector + embeddings for diagnosis evaluation. Built once per session."""
+        if self._diagnosis_vectorstore is not None:
+            return self._diagnosis_vectorstore
+
+        if self._db_secret_cache is None:
+            db_secret_name = os.getenv("SM_DB_CREDENTIALS")
+            rds_endpoint = os.getenv("RDS_PROXY_ENDPOINT")
+            if not db_secret_name or not rds_endpoint:
+                return None
+            secrets_client = boto3.client("secretsmanager")
+            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+            self._db_secret_cache = json.loads(secret_response["SecretString"])
+
+        secret = self._db_secret_cache
+        rds_endpoint = os.getenv("RDS_PROXY_ENDPOINT")
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v2:0",
+            client=self._get_bedrock_client(),
+        )
+        connection_string = (
+            f"postgresql+psycopg://{secret['username']}:{secret['password']}"
+            f"@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
+        )
+        self._diagnosis_vectorstore = PGVector(
+            embeddings=embeddings,
+            collection_name=self.patient_id,
+            connection=connection_string,
+            use_jsonb=True,
+        )
+        return self._diagnosis_vectorstore
     
     def _get_empathy_prompt(self):
         """Retrieve the latest empathy prompt from the empathy_prompt_history table using centralized connection manager."""
@@ -1552,27 +1587,10 @@ Provide structured evaluation with detailed justifications for each score.
                 logger.warning("🩺 VOICE: No patient_id available for diagnosis evaluation")
                 return
             
-            # Get database connection details
-            db_secret_name = os.getenv("SM_DB_CREDENTIALS")
-            rds_endpoint = os.getenv("RDS_PROXY_ENDPOINT")
-            
-            if not db_secret_name or not rds_endpoint:
+            vectorstore = self._get_diagnosis_vectorstore()
+            if vectorstore is None:
                 logger.warning("🩺 VOICE: Database credentials not available for diagnosis")
                 return
-            
-            # Get database credentials
-            secrets_client = boto3.client('secretsmanager')
-            secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
-            secret = json.loads(secret_response['SecretString'])
-            
-            # Create bedrock client and embeddings
-            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
-            embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0", client=bedrock_client)
-            
-            # Connect to vectorstore using RDS proxy — must use psycopg3 driver to
-            # match the langchain_postgres schema created by data_ingestion.
-            connection_string = f"postgresql+psycopg://{secret['username']}:{secret['password']}@{rds_endpoint}:{secret['port']}/{secret['dbname']}"
-            vectorstore = PGVector(embeddings=embeddings, collection_name=self.patient_id, connection=connection_string, use_jsonb=True)
             
             # Search for relevant medical documents
             try:
@@ -1603,7 +1621,7 @@ Provide structured evaluation with detailed justifications for each score.
             }
             
             try:
-                response = bedrock_client.invoke_model(
+                response = self._get_bedrock_client().invoke_model(
                     modelId="amazon.nova-lite-v1:0",
                     contentType="application/json",
                     accept="application/json",
@@ -1611,15 +1629,14 @@ Provide structured evaluation with detailed justifications for each score.
                 )
                 logger.info("✅ VOICE: DIAGNOSIS MODEL CALL SUCCESSFUL")
             except Exception as model_error:
-                logger.warning(f"🩺 VOICE: Nova Lite failed in deployment region, trying us-east-1: {model_error}")
-                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                response = fallback_client.invoke_model(
+                logger.warning(f"🩺 VOICE: Nova Lite failed, retrying: {model_error}")
+                response = self._get_bedrock_client().invoke_model(
                     modelId="amazon.nova-lite-v1:0",
                     contentType="application/json",
                     accept="application/json",
                     body=json.dumps(body)
                 )
-                logger.info("✅ VOICE: DIAGNOSIS FALLBACK CALL SUCCESSFUL")
+                logger.info("✅ VOICE: DIAGNOSIS RETRY CALL SUCCESSFUL")
             
             result = json.loads(response["body"].read())
             verdict_text = result["output"]["message"]["content"][0]["text"].strip()
@@ -2297,28 +2314,40 @@ class PollyTranscribeSession(NovaSonic):
             chunks = self._semantic_chunks(response_text)
             print(f"🔊 POLLY: Synthesizing {len(chunks)} semantic chunk(s) via Polly (voice={self.voice_id})", flush=True)
 
-            for idx, chunk in enumerate(chunks, start=1):
+            # Fan-out all Polly synthesis calls concurrently so total wait time is
+            # max(chunk_times) instead of sum(chunk_times).  We still emit audio in
+            # chunk order (await task[i] before task[i+1]) so playback is sequential.
+            ssml_list = [self._render_ssml(chunk) for chunk in chunks]
+            synthesis_tasks = [
+                asyncio.create_task(self._synthesize_ssml_to_b64(ssml))
+                for ssml in ssml_list
+            ]
+
+            for idx, (chunk, task) in enumerate(zip(chunks, synthesis_tasks), start=1):
                 if generation_id != self._generation_id:
                     print(f"⚠️ POLLY: Interrupted at chunk {idx}/{len(chunks)}", flush=True)
+                    for t in synthesis_tasks[idx - 1:]:
+                        t.cancel()
                     break
 
                 full_reply += chunk
                 print(json.dumps({"type": "text", "text": chunk}), flush=True)
 
-                ssml = self._render_ssml(chunk)
-                print(f"🔊 POLLY: Synthesizing chunk {idx}/{len(chunks)}: '{chunk[:60]}'", flush=True)
-                audio_b64 = await self._synthesize_ssml_to_b64(ssml)
+                print(f"🔊 POLLY: Awaiting chunk {idx}/{len(chunks)}: '{chunk[:60]}'", flush=True)
+                audio_b64 = await task
 
                 if not audio_b64:
                     print(f"⚠️ POLLY: Polly returned no audio for chunk {idx}", flush=True)
                     print(json.dumps({"type": "debug", "text": f"[POLLY] Polly returned no audio for chunk {idx}"}), flush=True)
                     continue
 
-                audio_bytes = len(audio_b64) * 3 // 4  # approx decoded size
+                audio_bytes = len(audio_b64) * 3 // 4
                 print(f"🔊 POLLY: Emitting audio chunk {idx}/{len(chunks)} (~{audio_bytes} bytes)", flush=True)
 
                 if generation_id != self._generation_id:
                     print(f"⚠️ POLLY: Interrupted before emitting chunk {idx}", flush=True)
+                    for t in synthesis_tasks[idx:]:
+                        t.cancel()
                     break
 
                 print(json.dumps({

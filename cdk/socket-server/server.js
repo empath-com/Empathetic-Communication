@@ -160,9 +160,14 @@ io.on("connection", (socket) => {
     // multiple stdout data events. Accumulate into a line buffer so each
     // complete newline-terminated JSON object is parsed atomically.
     let stdoutLineBuffer = "";
+    const STDOUT_BUFFER_MAX = 10 * 1024 * 1024; // 10 MB — guard against OOM from malformed JSON
 
     novaProcess.stdout.on("data", (data) => {
       stdoutLineBuffer += data.toString();
+      if (stdoutLineBuffer.length > STDOUT_BUFFER_MAX) {
+        console.error(`⚠️ stdoutLineBuffer exceeded ${STDOUT_BUFFER_MAX / 1e6} MB — truncating to prevent OOM`);
+        stdoutLineBuffer = stdoutLineBuffer.slice(-1024); // keep tail in case it's mid-line
+      }
       const lines = stdoutLineBuffer.split("\n");
       // The last element is either empty or an incomplete line — keep it
       stdoutLineBuffer = lines.pop() ?? "";
