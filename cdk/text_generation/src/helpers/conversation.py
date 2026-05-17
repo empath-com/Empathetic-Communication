@@ -277,8 +277,8 @@ def get_response(
     role = SIMULATED_ROLE
     pro = PRACTITIONER_ROLE
     completion_string = f"""
-                Once I, the {pro}, have given you a response, politely leave the conversation and wish me goodbye.
-                Regardless of the outcome, stop talking to me.
+                Once the {pro} has responded to your concern, politely end the conversation and say goodbye.
+                Regardless of the outcome, do not continue the conversation further.
                 """
     if llm_completion:
         completion_string = f"""

@@ -104,14 +104,14 @@ def _build_chain(
     # Mirrors conversation.py: tell the patient when to end the session
     if llm_completion:
         completion_string = (
-            f"Continue this process until you determine that me, the {pro}, has properly "
+            f"Continue this process until you determine that the {pro} has properly "
             f"addressed your concerns. Once that happens, include SESSION COMPLETED in your "
             f"response and politely end the conversation."
         )
     else:
         completion_string = (
-            f"Once I, the {pro}, have given you a response, politely leave the conversation "
-            f"and wish me goodbye. Regardless of the outcome, stop talking to me."
+            f"Once the {pro} has responded to your concern, politely end the conversation "
+            f"and say goodbye. Regardless of the outcome, do not continue the conversation further."
         )
 
     final_system_prompt = f"""

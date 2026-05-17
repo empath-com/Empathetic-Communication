@@ -655,10 +655,24 @@ def handle_empathy_evaluation(
                 "body": json.dumps({"error": "Failed to evaluate empathy"})
             }
 
-        # Persist to DB if a specific message_id was supplied (backfill path)
+        # Persist to DB: either to the specific message (text chat / backfill),
+        # or to the most recent student message in the session (voice chat).
         if message_id:
             update_message_empathy(message_id, empathy_evaluation)
-            logger.info(f"✅ Backfill: empathy evaluation saved for message {message_id}")
+            logger.info(f"✅ Empathy evaluation saved for message {message_id}")
+        else:
+            # Voice mode: no message_id supplied — save to the latest student message
+            # in the session so fetchEmpathySummary can find it later.
+            latest_student = next(
+                (msg for msg in reversed(scoped_messages) if msg.get("student_sent")),
+                None,
+            )
+            if latest_student:
+                latest_id = latest_student.get("message_id")
+                update_message_empathy(latest_id, empathy_evaluation)
+                logger.info(f"✅ Voice: empathy evaluation saved to latest student message {latest_id}")
+            else:
+                logger.warning("⚠️ Voice: no student message found in session to attach empathy evaluation")
 
         # Build feedback using the appropriate formatter
         if empathy_tool == "PRISM":

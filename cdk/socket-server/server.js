@@ -76,6 +76,7 @@ io.on("connection", (socket) => {
 
   let novaProcess = null;
   let novaReady = false;
+  let diagnosisCompleted = false;
 
   // Small delay then log active client count
   setTimeout(() => {
@@ -89,8 +90,11 @@ io.on("connection", (socket) => {
   // ─── Start Nova Sonic ──────────────────────────────────────────────────────
   socket.on("start-nova-sonic", async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
-    
+
     audioStarted = false;
+    // Clear any lingering end-audio wait so the new session's mic input isn't silently dropped
+    waitingForResponse = false;
+    if (responseWaitTimeout) { clearTimeout(responseWaitTimeout); responseWaitTimeout = null; }
 
     // Kill any previous process
     if (novaProcess) {
@@ -98,6 +102,7 @@ io.on("connection", (socket) => {
       novaProcess = null;
     }
     novaReady = false;
+    diagnosisCompleted = false;
 
     // Get Cognito Identity Pool credentials for user-specific access
     console.log("🔑 Getting Cognito Identity Pool credentials for user:", socket.userEmail);
@@ -256,11 +261,15 @@ io.on("connection", (socket) => {
             // ─ Diagnosis completion ──────────────────────────────────────
             else if (parsed.type === "diagnosis_complete") {
               console.log("🎯 DIAGNOSIS COMPLETE:", parsed.text);
-              socket.emit("diagnosis-complete", { message: parsed.text });
+              if (!diagnosisCompleted) {
+                diagnosisCompleted = true;
+                socket.emit("diagnosis-complete", { message: parsed.text });
+              }
             }
             else if (parsed.type === "diagnosis_verdict") {
               console.log("🩺 DIAGNOSIS VERDICT:", parsed.verdict);
-              if (parsed.verdict) {
+              if (parsed.verdict && !diagnosisCompleted) {
+                diagnosisCompleted = true;
                 socket.emit("diagnosis-complete", { message: "Session completed successfully" });
               }
             }
@@ -312,7 +321,8 @@ io.on("connection", (socket) => {
               socket.emit("empathy-status", { message: line, timestamp: Date.now() });
             }
             // Handle diagnosis completion in plain text fallback
-            if (line.includes("SESSION COMPLETED")) {
+            if (line.includes("SESSION COMPLETED") && !diagnosisCompleted) {
+              diagnosisCompleted = true;
               socket.emit("diagnosis-complete", { message: "Session completed successfully" });
             }
           }

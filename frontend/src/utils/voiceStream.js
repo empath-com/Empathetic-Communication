@@ -129,6 +129,10 @@ export async function startSpokenLLM(
 export async function stopSpokenLLM(waitForResponse = true) {
   console.log("🛑 Stopping Nova Sonic voice stream...");
 
+  // Reset immediately so a re-enable attempt doesn't hit the guard in startSpokenLLM
+  // and get stuck with a forever-spinning loader. Context cleanup is guarded below.
+  novaStarted = false;
+
   const socket = await getSocket();
 
   if (processor) {
@@ -185,24 +189,28 @@ export async function stopSpokenLLM(waitForResponse = true) {
     });
   }
 
-  if (globalStream) {
-    try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
-    globalStream = null;
+  // Only tear down shared contexts if the user hasn't already re-enabled voice.
+  // If novaStarted is true here, a new session started while we were waiting —
+  // leave its contexts alone.
+  if (!novaStarted) {
+    if (globalStream) {
+      try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+      globalStream = null;
+    }
+
+    if (audioContext) {
+      try { audioContext.close(); } catch (e) {}
+      audioContext = null;
+    }
+
+    if (playbackCtx && playbackCtx.state !== "closed") {
+      try { playbackCtx.close(); } catch (e) {}
+      playbackCtx = null;
+    }
+
+    socket.off("nova-started");
   }
 
-  if (audioContext) {
-    try { audioContext.close(); } catch (e) {}
-    audioContext = null;
-  }
-
-  // Close the shared playback context so it's freshly created next session
-  if (playbackCtx && playbackCtx.state !== "closed") {
-    try { playbackCtx.close(); } catch (e) {}
-    playbackCtx = null;
-  }
-
-  socket.off("nova-started");
-  novaStarted = false;
   console.log("🛑 Stopped PCM voice stream");
 }
 

@@ -170,6 +170,7 @@ export default function useChatMessages({
 
   // Voice refs
   const allowAudioRef = useRef(false);
+  const diagnosisCompletedRef = useRef(false);
 
   // Stable refs so socket listeners (set up once) always see fresh values
   const patientRef = useRef(patient);
@@ -275,11 +276,12 @@ export default function useChatMessages({
   const callEmpathyEvaluation = async (pending, sessionId) => {
     try {
       const { token } = await getAuth();
-      const url =
+      let url =
         `${import.meta.env.VITE_API_ENDPOINT}student/empathy_evaluation` +
         `?session_id=${encodeURIComponent(sessionId)}` +
         `&patient_id=${encodeURIComponent(pending.patientId)}` +
         `&simulation_group_id=${encodeURIComponent(pending.groupId)}`;
+      if (pending.messageId) url += `&message_id=${encodeURIComponent(pending.messageId)}`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -764,6 +766,8 @@ export default function useChatMessages({
       };
 
       const handleDiagnosisComplete = () => {
+        if (diagnosisCompletedRef.current) return;
+        diagnosisCompletedRef.current = true;
         alert("Session completed successfully!");
       };
 
@@ -787,7 +791,8 @@ export default function useChatMessages({
           ];
         });
 
-        // Trigger empathy evaluation via the REST endpoint (mirrors text-chat flow)
+        // Trigger empathy evaluation via the REST endpoint (mirrors text-chat flow).
+        // Pass message_id so the Lambda can persist the result to this specific row.
         const sid = sessionRef.current?.session_id;
         if (empathyEnabledRef.current && patientRef.current && groupRef.current && sid) {
           callEmpathyEvaluationRef.current(
@@ -795,6 +800,7 @@ export default function useChatMessages({
               messageContent: text,
               patientId: patientRef.current.patient_id,
               groupId: groupRef.current.simulation_group_id,
+              messageId: message_id || null,
             },
             sid
           );
@@ -867,6 +873,7 @@ export default function useChatMessages({
       socket.off("nova-started");
       socket.on("nova-started", () => {
         console.log("Nova backend ready in StudentChat!");
+        diagnosisCompletedRef.current = false;
         setNovaStarted(true);
       });
     };
