@@ -2418,18 +2418,50 @@ class PollyTranscribeSession(NovaSonic):
             chunks.append(buf)
         return chunks
 
+    # Voices verified to support <amazon:domain name="conversational"> on the
+    # neural engine. Source: AWS Polly SSML reference (2024).
+    _CONVERSATIONAL_VOICES = {
+        # English – US
+        "Ivy", "Joanna", "Joey", "Justin", "Kendra", "Kimberly",
+        "Matthew", "Ruth", "Salli", "Stephen",
+        # English – UK
+        "Amy", "Arthur", "Brian", "Emma",
+        # English – Australian
+        "Olivia",
+        # Spanish – US
+        "Lupe", "Pedro",
+    }
+
     def _render_ssml(self, text: str) -> str:
-        # Strip bracketed stage directions before Polly reads them (e.g. [pauses]).
-        # Neural voices don't support the SSML pitch attribute, so omit it.
+        """
+        Convert a plain-text patient utterance to SSML that sounds natural:
+          • <amazon:auto-breaths>  — adds breathing between phrases
+          • <amazon:domain name="conversational"> — dialogue-tuned voice model
+            (applied only to voices that support it)
+          • <break> at sentence boundaries — prevents rushed run-on delivery
+          • <prosody rate="90%"> — slightly deliberate pace for a patient
+        """
         clean, _ = strip_vocal_cues(text or "")
-        safe_text = html.escape(clean.strip())
-        if not safe_text:
-            safe_text = "..."
+        clean = clean.strip() or "..."
+
+        # Escape HTML entities in the text body first, then inject SSML break
+        # tags at sentence boundaries.  html.escape doesn't touch . ! ? so the
+        # regex is safe to run on the already-escaped string.
+        safe_text = html.escape(clean)
+        safe_text = re.sub(r'([.!?])\s+', r'\1<break time="350ms"/> ', safe_text)
+
+        if self.voice_id in self._CONVERSATIONAL_VOICES:
+            inner = f'<amazon:domain name="conversational">{safe_text}</amazon:domain>'
+        else:
+            inner = safe_text
+
         return (
             "<speak>"
-            "<prosody rate='95%'>"
-            f"{safe_text}"
+            "<amazon:auto-breaths frequency='medium' volume='x-soft' duration='medium'>"
+            "<prosody rate='90%'>"
+            f"{inner}"
             "</prosody>"
+            "</amazon:auto-breaths>"
             "</speak>"
         )
 
