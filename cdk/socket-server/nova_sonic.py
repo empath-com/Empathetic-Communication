@@ -2418,63 +2418,90 @@ class PollyTranscribeSession(NovaSonic):
             chunks.append(buf)
         return chunks
 
-    # Voices verified to support <amazon:domain name="conversational"> on the
-    # neural engine. Source: AWS Polly SSML reference (2024).
-    _CONVERSATIONAL_VOICES = {
-        # English – US
-        "Ivy", "Joanna", "Joey", "Justin", "Kendra", "Kimberly",
-        "Matthew", "Ruth", "Salli", "Stephen",
-        # English – UK
-        "Amy", "Arthur", "Brian", "Emma",
-        # English – Australian
-        "Olivia",
-        # Spanish – US
-        "Lupe", "Pedro",
+    # Voices that support the generative engine. When a voice is in this set
+    # the engine is switched to "generative" automatically, which gives far more
+    # natural, emotionally engaged speech than neural TTS.
+    # Source: AWS Polly generative voice list (2024).
+    _GENERATIVE_VOICES = {
+        "Olivia",                                           # English – Australian
+        "Amy", "Brian",                                     # English – British
+        "Kajal",                                            # English – Indian
+        "Niamh",                                            # English – Irish
+        "Aria",                                             # English – New Zealand
+        "Ayanda",                                           # English – South African
+        "Danielle", "Joanna", "Matthew", "Ruth",            # English – US
+        "Salli", "Stephen", "Tiffany",                      # English – US
+        "Gabrielle", "Liam",                                # French – Canadian
+        "Hannah",                                           # German – Austrian
+        "Vicki",                                            # German – Germany
+        "Bianca",                                           # Italian
+        "Camila",                                           # Portuguese – Brazilian
+        "Lucia", "Sergio",                                  # Spanish – Spain
+        "Lupe", "Pedro",                                    # Spanish – US
+        "Mia",                                              # Spanish – Mexican
+    }
+
+    # Neural-only voices that support <amazon:domain name="conversational">.
+    # Not applied to generative voices — naturalness is already in the model.
+    _CONVERSATIONAL_NEURAL_VOICES = {
+        "Ivy", "Joey", "Justin", "Kendra", "Kimberly",     # English – US (neural only)
+        "Arthur", "Emma",                                   # English – British (neural only)
     }
 
     def _render_ssml(self, text: str) -> str:
         """
-        Convert a plain-text patient utterance to SSML that sounds natural:
-          • <amazon:auto-breaths>  — adds breathing between phrases
-          • <amazon:domain name="conversational"> — dialogue-tuned voice model
-            (applied only to voices that support it)
-          • <break> at sentence boundaries — prevents rushed run-on delivery
-          • <prosody rate="90%"> — slightly deliberate pace for a patient
+        Build SSML for a patient utterance.
+
+        Generative voices: <prosody> + <break> only — amazon:domain and
+        amazon:auto-breaths are Standard/Neural-only tags and cause
+        InvalidSsmlException on the generative engine.
+
+        Neural voices: additionally wrap with <amazon:domain name="conversational">
+        for voices that support it.
         """
         clean, _ = strip_vocal_cues(text or "")
         clean = clean.strip() or "..."
 
-        # Escape HTML entities in the text body first, then inject SSML break
-        # tags at sentence boundaries.  html.escape doesn't touch . ! ? so the
-        # regex is safe to run on the already-escaped string.
+        # Escape HTML entities first, then inject SSML break tags at sentence
+        # boundaries. html.escape doesn't touch . ! ? so the regex is safe on
+        # the already-escaped string.
         safe_text = html.escape(clean)
         safe_text = re.sub(r'([.!?])\s+', r'\1<break time="350ms"/> ', safe_text)
 
-        if self.voice_id in self._CONVERSATIONAL_VOICES:
+        if self.voice_id in self._GENERATIVE_VOICES:
+            # Generative engine: emotional naturalness is built into the model;
+            # only basic SSML is supported.
+            inner = safe_text
+        elif self.voice_id in self._CONVERSATIONAL_NEURAL_VOICES:
             inner = f'<amazon:domain name="conversational">{safe_text}</amazon:domain>'
         else:
             inner = safe_text
 
         return (
             "<speak>"
-            "<amazon:auto-breaths frequency='medium' volume='x-soft' duration='medium'>"
             "<prosody rate='90%'>"
             f"{inner}"
             "</prosody>"
-            "</amazon:auto-breaths>"
             "</speak>"
         )
 
-    # Polly neural PCM supports 8000 or 16000 Hz only (not 24000).
-    # The frontend WAV header must match this value.
+    # PCM sample rate sent to Polly.  Both neural and generative engines support
+    # 16000 Hz; the frontend WAV header is hardcoded to match this value.
     POLLY_SAMPLE_RATE = 16000
 
     async def _synthesize_ssml_to_b64(self, ssml: str):
+        # Auto-upgrade to the generative engine for voices that support it;
+        # fall back to the configured engine (default: neural) for others.
+        engine = (
+            "generative"
+            if self.voice_id in self._GENERATIVE_VOICES
+            else self.polly_engine
+        )
         loop = asyncio.get_event_loop()
 
         def _invoke():
             response = self._polly_client.synthesize_speech(
-                Engine=self.polly_engine,
+                Engine=engine,
                 VoiceId=self.voice_id,
                 OutputFormat="pcm",
                 SampleRate=str(self.POLLY_SAMPLE_RATE),
