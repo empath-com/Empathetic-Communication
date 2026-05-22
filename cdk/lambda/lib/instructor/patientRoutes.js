@@ -328,7 +328,7 @@ const routes = {
       try {
         // Query to get all patients for the given simulation group
         const simulationPatients = await sqlConnection`
-                SELECT p.patient_id, p.patient_name, p.patient_age, p.patient_gender, p.patient_prompt, p.llm_completion
+                SELECT p.patient_id, p.patient_name, p.patient_age, p.patient_gender, p.patient_prompt, p.llm_completion, p.voice_id
                 FROM "patients" p
                 WHERE p.simulation_group_id = ${simulation_group_id}
                 ORDER BY p.patient_name ASC;

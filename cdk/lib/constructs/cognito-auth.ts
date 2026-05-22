@@ -233,7 +233,7 @@ export function createCognitoAuth(
         ),
         // Add Polly permission for Polly/Transcribe voice pipeline
         createPolicyStatement(
-          ["polly:SynthesizeSpeech"],
+          ["polly:SynthesizeSpeech", "polly:StartSpeechSynthesisStream"],
           ["*"]
         ),
         // Add Secrets Manager permissions for Nova Sonic

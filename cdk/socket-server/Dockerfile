@@ -1,12 +1,15 @@
-FROM node:18-alpine
+FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install Python, pip, and wget (needed for debugging)
-RUN apk add --no-cache python3 py3-pip wget
+# Install Node.js 22 LTS and wget
+RUN apt-get update && apt-get install -y curl wget && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
-# Force rebuild on 2026-02-10 - CORS domain configurable via parameter
-ENV REBUILD_TIMESTAMP=2026-02-10-v7
+# Force rebuild on 2026-05-21
+ENV REBUILD_TIMESTAMP=2026-05-21-v1
 
 # Install Node.js dependencies
 COPY package.json ./
@@ -17,10 +20,9 @@ COPY *.py ./
 COPY helpers/ ./helpers/
 COPY requirements.txt ./
 
-# Upgrade pip and setuptools, clear cache, then install requirements
-RUN pip3 install --break-system-packages --upgrade pip setuptools && \
-    pip3 cache purge && \
-    pip3 install --break-system-packages -r requirements.txt
+RUN pip install --upgrade pip setuptools && \
+    pip cache purge && \
+    pip install -r requirements.txt
 
 # Copy server files
 COPY server.js ./
@@ -31,5 +33,5 @@ ENV AWS_DEFAULT_REGION=us-east-1
 # Listen on HTTP port
 EXPOSE 80
 
-# Launch your HTTP + WebSocket server
+# Launch HTTP + WebSocket server
 CMD ["node", "server.js"]

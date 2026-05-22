@@ -308,7 +308,11 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       setPatientAge(patientData.patient_age);
       setPatientGender(patientData.patient_gender);
       setPatientPrompt(patientData.patient_prompt);
-      setSelectedVoice(patientData.voice_id || "");
+      const allVoices = [...feminineVoices, ...masculineVoices];
+      const normalizedVoice = patientData.voice_id
+        ? (allVoices.find(v => v.toLowerCase() === patientData.voice_id.toLowerCase()) || patientData.voice_id)
+        : "";
+      setSelectedVoice(normalizedVoice);
     }
   }, [patientData]);
 

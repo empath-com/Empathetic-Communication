@@ -3,7 +3,6 @@ import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { Code, Runtime } from "aws-cdk-lib/aws-lambda";
 import { DatabaseStack } from "../database-stack";
 import { VpcStack } from "../vpc-stack";
@@ -25,12 +24,12 @@ export function createAppSyncApi(
   scope: cdk.Stack,
   props: AppSyncStreamingProps
 ): AppSyncStreamingResult {
-  const { id, userPool, db, vpcStack, postgres, lambdaRole } = props;
+  const { userPool, db, vpcStack, postgres, lambdaRole } = props;
 
   // Create AppSync API for text streaming
   const appSyncApi = new appsync.GraphqlApi(scope, "TextStreamingApi", {
     name: "text-streaming-api",
-    schema: appsync.SchemaFile.fromAsset("lib/schema.graphql"),
+    definition: appsync.Definition.fromFile("lib/schema.graphql"),
     authorizationConfig: {
       defaultAuthorization: {
         authorizationType: appsync.AuthorizationType.USER_POOL,

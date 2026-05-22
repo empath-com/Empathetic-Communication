@@ -717,7 +717,7 @@ export default function useChatMessages({
       };
 
       const handleTextMessage = (data) => {
-        console.log("Voice text message received:", data.text);
+        console.log(`[${new Date().toLocaleTimeString()}] Voice text message received:`, data.text);
         const normalized = normalizeVoiceLine(data.text);
         if (!normalized) return;
 
@@ -857,7 +857,7 @@ export default function useChatMessages({
       socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
-      socket.on("nova-debug", (data) => console.log("🐞 NOVA:", data.message));
+      socket.on("nova-debug", (data) => console.log(`[${new Date().toLocaleTimeString()}] 🐞 NOVA:`, data.message));
       socket.on("voice-user-message", handleVoiceUserMessage);
       socket.on("voice-transcript-partial", handleTranscriptPartial);
       socket.on("voice-transcript-final", handleTranscriptFinal);

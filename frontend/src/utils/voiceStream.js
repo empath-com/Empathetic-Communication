@@ -2,6 +2,8 @@
 
 import { getSocket } from "./socket";
 
+const ts = () => new Date().toLocaleTimeString();
+
 let audioContext;  // mic capture context (16 kHz)
 let processor;
 let input;
@@ -57,7 +59,7 @@ export async function startSpokenLLM(
 
   socket.once("nova-started", () => {
     if (novaStarted) return;
-    console.log("✅ Nova backend ready!");
+    console.log(`[${ts()}] ✅ Nova backend ready!`);
     novaStarted = true;
 
     setTimeout(async () => {
@@ -95,7 +97,7 @@ export async function startSpokenLLM(
           input.connect(processor);
           processor.connect(audioContext.destination);
           setLoading(false);
-          console.log("🎤 Microphone connected and streaming");
+          console.log(`[${ts()}] 🎤 Microphone connected and streaming`);
         })
         .catch((err) => {
           setLoading(false);
@@ -129,7 +131,7 @@ export async function startSpokenLLM(
 }
 
 export async function stopSpokenLLM(waitForResponse = true) {
-  console.log("🛑 Stopping Nova Sonic voice stream...");
+  console.log(`[${ts()}] 🛑 Stopping Nova Sonic voice stream...`);
 
   // Reset immediately so a re-enable attempt doesn't hit the guard in startSpokenLLM
   // and get stuck with a forever-spinning loader. Context cleanup is guarded below.
@@ -159,7 +161,7 @@ export async function stopSpokenLLM(waitForResponse = true) {
     audioContext = null;
   }
 
-  console.log("Sending end-audio to trigger AI response...");
+  console.log(`[${ts()}] Sending end-audio to trigger AI response...`);
   socket.emit("end-audio");
 
   if (waitForResponse) {
@@ -215,7 +217,7 @@ export async function stopSpokenLLM(waitForResponse = true) {
     socket.off("nova-started");
   }
 
-  console.log("🛑 Stopped PCM voice stream");
+  console.log(`[${ts()}] 🛑 Stopped PCM voice stream`);
 }
 
 export function stopAudioPlayback() {
@@ -232,7 +234,7 @@ export function stopAudioPlayback() {
 
     isPlaying = false;
     audioBuffer = [];
-    console.log("🔇 Audio playback stopped");
+    console.log(`[${ts()}] 🔇 Audio playback stopped`);
   } catch (e) {
     console.error("❌ Failed to stop audio playback:", e);
   }
@@ -258,7 +260,7 @@ export function playAudio(audioBytes) {
     }
 
     audioBuffer.push(audioBytes);
-    console.log("🔊 Buffered audio chunk", {
+    console.log(`[${ts()}] 🔊 Buffered audio chunk`, {
       chunkSize: audioBytes.length,
       totalBuffered: audioBuffer.length,
       isPlaying,
@@ -268,11 +270,11 @@ export function playAudio(audioBytes) {
 
     if (!isPlaying) {
       if (audioBuffer.length >= 5) {
-        console.log("⚡ Buffered 5+ chunks, playing immediately...");
+        console.log(`[${ts()}] ⚡ Buffered 5+ chunks, playing immediately...`);
         clearTimeout(bufferTimeout);
         playBufferedAudio();
       } else {
-        console.log("⏳ Waiting for more chunks or timeout (300ms)...");
+        console.log(`[${ts()}] ⏳ Waiting for more chunks or timeout (300ms)...`);
         bufferTimeout = setTimeout(playBufferedAudio, 300);
       }
     }
