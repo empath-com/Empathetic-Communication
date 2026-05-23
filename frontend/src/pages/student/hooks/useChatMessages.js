@@ -710,8 +710,15 @@ export default function useChatMessages({
       const socket = await getSocket();
       if (!socket.connected) socket.connect();
 
+      // DIAGNOSTIC: log every socket event so we can tell if audio-chunk arrives at all
+      socket.onAny((event, ...args) => {
+        if (event === "audio-chunk") {
+          console.log(`[${new Date().toLocaleTimeString()}] 📡 SOCKET EVENT: audio-chunk`, { dataLen: args[0]?.data?.length, allowAudio: allowAudioRef.current });
+        }
+      });
+
       const handleAudio = (data) => {
-        console.log("📡 audio-chunk received", { hasData: !!data?.data, allowAudio: allowAudioRef.current });
+        console.log(`[${new Date().toLocaleTimeString()}] 📡 audio-chunk handler called`, { hasData: !!data?.data, allowAudio: allowAudioRef.current });
         if (!allowAudioRef.current || !data.data) return;
         playAudio(data.data);
       };

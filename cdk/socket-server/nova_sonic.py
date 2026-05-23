@@ -1820,6 +1820,8 @@ class PollyTranscribeSession(NovaSonic):
         self.voice_id = candidate or self._FALLBACK_POLLY_VOICE
         if not candidate:
             print(f"⚠️ POLLY: No voice_id provided, defaulting to {self._FALLBACK_POLLY_VOICE!r}", flush=True)
+        # TEMPORARY: force a known generative voice for testing — remove before release
+        self.voice_id = "Matthew"
         print(f"🔊 POLLY: Using voice_id={self.voice_id!r} (raw input: {raw_voice!r})", flush=True)
         self.polly_engine = os.getenv("POLLY_ENGINE", "neural")
         self.language_code = os.getenv("TRANSCRIBE_LANGUAGE_CODE", "en-US")
@@ -1840,6 +1842,7 @@ class PollyTranscribeSession(NovaSonic):
         self._transcribe_ws = None
         self._transcribe_available = True
         self._transcribe_preflight_ok = None
+        self._transcribe_ready = asyncio.Event()  # set when the WS is open
 
         # Auto-turn: fires the AI response after AUTO_TURN_DELAY seconds of silence
         self._auto_turn_task = None
@@ -1966,8 +1969,12 @@ class PollyTranscribeSession(NovaSonic):
             return
         print(f"🔄 POLLY: Restarting Transcribe for next turn", flush=True)
         await self.start_audio_input()
-        # Emit "ready" only after Transcribe WS is connected so the user's first
-        # words aren't lost to a race between the prompt and connection setup.
+        # Wait until the Transcribe WebSocket is actually open before telling the
+        # user they can speak — otherwise the first words fall into a gap.
+        try:
+            await asyncio.wait_for(self._transcribe_ready.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            print(f"⚠️ POLLY: Timed out waiting for Transcribe WS", flush=True)
         print(json.dumps({"type": "debug", "text": "[POLLY] Ready for your next message"}), flush=True)
 
     async def end_audio_input(self):
@@ -1981,7 +1988,7 @@ class PollyTranscribeSession(NovaSonic):
 
     async def _start_transcribe_stream(self):
         await self._stop_transcribe_stream()
-
+        self._transcribe_ready.clear()
         self._transcribe_queue = asyncio.Queue(maxsize=256)
         self._transcribe_task = asyncio.create_task(self._run_transcribe_ws())
 
@@ -2179,6 +2186,7 @@ class PollyTranscribeSession(NovaSonic):
                 close_timeout=2,
             ) as ws:
                 self._transcribe_ws = ws
+                self._transcribe_ready.set()
                 print(f"✅ POLLY: Transcribe WS connected", flush=True)
                 print(json.dumps({"type": "debug", "text": "[POLLY] Transcribe WS connected"}), flush=True)
                 reader_task = asyncio.create_task(self._transcribe_ws_reader(ws))
@@ -2496,10 +2504,10 @@ class PollyTranscribeSession(NovaSonic):
     # 16000 Hz; the frontend WAV header is hardcoded to match this value.
     POLLY_SAMPLE_RATE = 16000
 
-    async def _synthesize_ssml_to_b64(self, ssml: str):
-        # Auto-upgrade to the generative engine for voices that support it;
-        # fall back to the configured engine (default: neural) for others.
-        engine = (
+    async def _synthesize_ssml_to_b64(self, ssml: str, engine_override: str = None):
+        # engine_override lets callers force a specific engine (e.g. "neural" when
+        # the generative engine is unavailable via SynthesizeSpeech in this region).
+        engine = engine_override or (
             "generative"
             if self.voice_id in self._GENERATIVE_VOICES
             else self.polly_engine
@@ -2590,42 +2598,54 @@ class PollyTranscribeSession(NovaSonic):
             flush=True,
         )
         try:
-            async for pcm_chunk in client.start_speech_synthesis_stream(
-                text=clean,
-                voice_id=self.voice_id,
-                engine="generative",
-                language_code=language_code,
-                output_format="pcm",
-                sample_rate=str(self.POLLY_SAMPLE_RATE),
-            ):
-                if generation_id != self._generation_id:
-                    print(
-                        f"⚠️ POLLY: Streaming interrupted at chunk_seq={chunk_seq}",
-                        flush=True,
-                    )
-                    break
-                chunk_seq += 1
-                audio_b64 = base64.b64encode(pcm_chunk).decode("utf-8")
-                print(json.dumps({
-                    "type": "audio",
-                    "data": audio_b64,
-                    "generation_id": generation_id,
-                    "chunk_seq": chunk_seq,
-                }), flush=True)
-        except Exception as e:
-            print(f"❌ POLLY: Bidirectional streaming failed, falling back to SSML: {e}", flush=True)
-            print(json.dumps({"type": "debug", "text": f"[POLLY] Streaming error (SSML fallback): {e}"}), flush=True)
-            if generation_id == self._generation_id:
-                ssml = self._render_ssml(clean)
-                audio_b64 = await self._synthesize_ssml_to_b64(ssml)
-                if audio_b64:
-                    chunk_seq = 1
+            async with asyncio.timeout(5.0):
+                async for pcm_chunk in client.start_speech_synthesis_stream(
+                    text=clean,
+                    voice_id=self.voice_id,
+                    engine="generative",
+                    language_code=language_code,
+                    output_format="pcm",
+                    sample_rate=str(self.POLLY_SAMPLE_RATE),
+                ):
+                    if generation_id != self._generation_id:
+                        print(
+                            f"⚠️ POLLY: Streaming interrupted at chunk_seq={chunk_seq}",
+                            flush=True,
+                        )
+                        break
+                    chunk_seq += 1
+                    audio_b64 = base64.b64encode(pcm_chunk).decode("utf-8")
+                    print(f"AUDIO_EMIT chunk_seq={chunk_seq} pcm_bytes={len(pcm_chunk)} b64_len={len(audio_b64)}", flush=True)
                     print(json.dumps({
                         "type": "audio",
                         "data": audio_b64,
                         "generation_id": generation_id,
                         "chunk_seq": chunk_seq,
                     }), flush=True)
+        except asyncio.TimeoutError:
+            print(f"⏱️ POLLY: Bidirectional streaming timed out after 5s", flush=True)
+            print(json.dumps({"type": "debug", "text": "[POLLY] Streaming timed out (SSML fallback)"}), flush=True)
+        except Exception as e:
+            print(f"❌ POLLY: Bidirectional streaming failed: {e}", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Streaming error (SSML fallback): {e}"}), flush=True)
+
+        # Fallback: streaming either timed out, threw, or returned 0 chunks.
+        # Force neural engine — SynthesizeSpeech with engine="generative" is only
+        # available in select regions, whereas neural works everywhere.
+        if chunk_seq == 0 and generation_id == self._generation_id:
+            print(f"⚠️ POLLY: Streaming delivered 0 chunks — using neural SSML fallback", flush=True)
+            print(json.dumps({"type": "debug", "text": "[POLLY] Using SSML fallback (0 streaming chunks)"}), flush=True)
+            ssml = self._render_ssml(clean)
+            audio_b64 = await self._synthesize_ssml_to_b64(ssml, engine_override="neural")
+            if audio_b64:
+                chunk_seq = 1
+                print(f"AUDIO_EMIT_FALLBACK b64_len={len(audio_b64)}", flush=True)
+                print(json.dumps({
+                    "type": "audio",
+                    "data": audio_b64,
+                    "generation_id": generation_id,
+                    "chunk_seq": chunk_seq,
+                }), flush=True)
 
         print(f"🔊 POLLY: Streaming complete ({chunk_seq} PCM chunks emitted)", flush=True)
         return clean

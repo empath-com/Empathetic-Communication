@@ -187,8 +187,11 @@ io.on("connection", (socket) => {
                 if (responseWaitTimeout) { clearTimeout(responseWaitTimeout); responseWaitTimeout = null; }
                 console.log("🔓 First audio chunk received — waitingForResponse cleared, barge-in enabled");
               }
-              console.log(`🔊 Emitting audio-chunk to client (b64_len=${parsed.data?.length}, gen=${parsed.generation_id ?? "?"})`);
+              const b64Len = parsed.data?.length ?? 0;
+              console.log(`🔊 AUDIO CHUNK from Python: gen=${parsed.generation_id ?? "?"}, seq=${parsed.chunk_seq ?? "?"}, b64_len=${b64Len}`);
+              console.log(`🔊 Emitting audio-chunk to socket ${socket.id} (connected=${socket.connected})`);
               socket.emit("audio-chunk", { data: parsed.data });
+              console.log(`🔊 audio-chunk emitted OK`);
             }
             // ─ Debug messages ───────────────────────────────────────────
             else if (parsed.type === "debug") {
