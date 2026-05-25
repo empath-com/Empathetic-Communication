@@ -46,6 +46,72 @@ class LLM_evaluation(BaseModel):
     verdict: str = Field(description="'True' if the student has properly diagnosed the patient, 'False' otherwise.")
 
 
+
+def _is_tooluse_sequence_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "invalid sequence" in message and "tooluse" in message
+
+
+def _build_no_evidence_evaluation(tool: str, transcript: str, bedrock_client) -> dict:
+    reason = "Insufficient transcript evidence for criterion-level empathy scoring."
+
+    if tool == "PRISM":
+        evaluation = {k: 1 for k in PRISM_CRITERIA}
+        evaluation["judge_reasoning"] = {
+            "prepare_justification": reason,
+            "recognise_justification": reason,
+            "interact_justification": reason,
+            "self_assess_justification": reason,
+            "master_justification": reason,
+            "overall_assessment": (
+                "You sent a very short message, so there is not enough evidence yet to evaluate your empathic communication. "
+                "In your next turn, acknowledge the patient concern, reflect it back, and offer a collaborative next step."
+            )
+        }
+        evaluation["feedback"] = {
+            "strengths": ["You initiated the interaction, which keeps the conversation open."],
+            "improvement_suggestions": [
+                "Write 2-3 sentences that include one reflective statement and one clarifying question.",
+                "Name the patient concern in your own words before giving advice."
+            ],
+            "forward_target": "Interact"
+        }
+        evaluation["evaluation_tool"] = "PRISM"
+    else:
+        evaluation = {k: 1 for k in CARE_CRITERIA}
+        evaluation["judge_reasoning"] = {
+            "making_feel_at_ease_justification": reason,
+            "letting_tell_story_justification": reason,
+            "really_listening_justification": reason,
+            "interested_in_whole_person_justification": reason,
+            "understanding_concerns_justification": reason,
+            "showing_care_compassion_justification": reason,
+            "being_positive_justification": reason,
+            "explaining_clearly_justification": reason,
+            "helping_take_control_justification": reason,
+            "making_plan_of_action_justification": reason,
+            "overall_assessment": (
+                "You sent a very short message, so there is not enough evidence yet to evaluate your empathic communication. "
+                "In your next turn, acknowledge the patient concern, reflect it back, and offer a collaborative next step."
+            )
+        }
+        evaluation["feedback"] = {
+            "strengths": ["You initiated the interaction, which keeps the conversation open."],
+            "improvement_suggestions": [
+                "Write 2-3 sentences that include one reflective statement and one clarifying question.",
+                "Confirm the patient's main concern before proposing a plan."
+            ],
+            "forward_target": "really_listening"
+        }
+        evaluation["evaluation_tool"] = "CARE"
+
+    evaluation["evaluation_method"] = "Rule-based fallback"
+    evaluation["judge_model"] = bedrock_client.get("model_id", "unknown")
+    evaluation["fallback_reason"] = "short_or_tooluse_invalid_sequence"
+    evaluation["transcript_chars"] = len((transcript or "").strip())
+    return evaluation
+
+
 def _collect_text_fragments(value) -> list:
     fragments = []
     if isinstance(value, str):
@@ -202,15 +268,25 @@ STRICT RETRY MODE:
                 )
                 logger.info("✅ BEDROCK MODEL CALL SUCCESSFUL")
             except Exception as model_error:
+                if _is_tooluse_sequence_error(model_error):
+                    logger.warning("ToolUse invalid-sequence error detected; returning no-evidence fallback")
+                    return _build_no_evidence_evaluation("CARE", student_response, bedrock_client)
+
                 logger.warning(f"Nova Lite failed in deployment region, trying us-east-1: {model_error}")
-                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                response = fallback_client.invoke_model(
-                    modelId="amazon.nova-lite-v1:0",
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(body)
-                )
-                logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
+                try:
+                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    response = fallback_client.invoke_model(
+                        modelId="amazon.nova-lite-v1:0",
+                        contentType="application/json",
+                        accept="application/json",
+                        body=json.dumps(body)
+                    )
+                    logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
+                except Exception as fallback_error:
+                    if _is_tooluse_sequence_error(fallback_error):
+                        logger.warning("ToolUse invalid-sequence error in fallback region; returning no-evidence fallback")
+                        return _build_no_evidence_evaluation("CARE", student_response, bedrock_client)
+                    raise
 
             result = json.loads(response["body"].read())
 
@@ -241,7 +317,7 @@ STRICT RETRY MODE:
             if not evaluation:
                 logger.error(f"❌ NO TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
                 if attempt >= MAX_GROUNDING_RETRIES:
-                    return None
+                    return _build_no_evidence_evaluation("CARE", student_response, bedrock_client)
                 continue
 
             logger.info(f"✅ STRUCTURED OUTPUT RECEIVED - Keys: {list(evaluation.keys())}")
@@ -345,14 +421,24 @@ STRICT RETRY MODE:
                     body=json.dumps(body)
                 )
             except Exception as model_error:
+                if _is_tooluse_sequence_error(model_error):
+                    logger.warning("PRISM ToolUse invalid-sequence error detected; returning no-evidence fallback")
+                    return _build_no_evidence_evaluation("PRISM", student_response, bedrock_client)
+
                 logger.warning(f"Nova Lite failed, trying us-east-1: {model_error}")
-                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                response = fallback_client.invoke_model(
-                    modelId="amazon.nova-lite-v1:0",
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(body)
-                )
+                try:
+                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    response = fallback_client.invoke_model(
+                        modelId="amazon.nova-lite-v1:0",
+                        contentType="application/json",
+                        accept="application/json",
+                        body=json.dumps(body)
+                    )
+                except Exception as fallback_error:
+                    if _is_tooluse_sequence_error(fallback_error):
+                        logger.warning("PRISM ToolUse invalid-sequence error in fallback region; returning no-evidence fallback")
+                        return _build_no_evidence_evaluation("PRISM", student_response, bedrock_client)
+                    raise
 
             result = json.loads(response["body"].read())
             usage = result.get("usage", {})
@@ -371,7 +457,7 @@ STRICT RETRY MODE:
             if not evaluation:
                 logger.error(f"❌ NO PRISM TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
                 if attempt >= MAX_GROUNDING_RETRIES:
-                    return None
+                    return _build_no_evidence_evaluation("PRISM", student_response, bedrock_client)
                 continue
 
             for key in PRISM_CRITERIA:

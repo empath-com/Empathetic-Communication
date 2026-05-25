@@ -2579,9 +2579,13 @@ class PollyTranscribeSession(NovaSonic):
 
     def _get_polly_streaming_client(self) -> PollyStreamingClient:
         if self._polly_streaming_client is None:
-            region = self.deployment_region or "us-east-1"
-            self._polly_streaming_client = PollyStreamingClient(region=region)
-            print(f"🔊 POLLY: Created PollyStreamingClient (region={region})", flush=True)
+            # StartSpeechSynthesisStream (HTTP/2 bidirectional) is only available
+            # in select regions. ca-central-1 is NOT among them — use us-east-1.
+            # The regular SynthesizeSpeech client stays on the deployment region.
+            streaming_region = "us-east-1"
+            self._polly_streaming_client = PollyStreamingClient(region=streaming_region)
+            print(f"🔊 POLLY: Created PollyStreamingClient (region={streaming_region}, deployment={self.deployment_region})", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Streaming client: region={streaming_region}"}), flush=True)
         return self._polly_streaming_client
 
     async def _synthesize_and_emit_streaming(self, response_text: str, generation_id: int) -> str:
@@ -2606,14 +2610,22 @@ class PollyTranscribeSession(NovaSonic):
 
         language_code = self._VOICE_LANGUAGE_CODES.get(self.voice_id, "en-US")
         client = self._get_polly_streaming_client()
-        chunk_seq = 0
+
+        # Collect all PCM chunks into one buffer before emitting.
+        # Emitting each chunk separately causes audible discontinuities: the Web
+        # Audio resampler (16 kHz → 48 kHz browser rate) introduces a phase
+        # boundary at every buffer join, and the variable-size chunks from Polly
+        # can be misaligned relative to each other. One contiguous PCM blob is
+        # always clean.
+        all_pcm = bytearray()
+        received_chunks = 0
         print(
             f"🔊 POLLY: Starting bidirectional stream "
             f"(voice={self.voice_id}, lang={language_code}, chars={len(clean)})",
             flush=True,
         )
         try:
-            async with asyncio.timeout(5.0):
+            async with asyncio.timeout(10.0):
                 async for pcm_chunk in client.start_speech_synthesis_stream(
                     text=clean,
                     voice_id=self.voice_id,
@@ -2624,28 +2636,39 @@ class PollyTranscribeSession(NovaSonic):
                 ):
                     if generation_id != self._generation_id:
                         print(
-                            f"⚠️ POLLY: Streaming interrupted at chunk_seq={chunk_seq}",
+                            f"⚠️ POLLY: Streaming interrupted after {received_chunks} chunks",
                             flush=True,
                         )
+                        all_pcm.clear()
                         break
-                    chunk_seq += 1
-                    if chunk_seq == 1:
-                        self._barge_in_enabled = True  # user may now barge in
-                        print(json.dumps({"type": "debug", "text": f"[POLLY] ✅ Generative streaming: first chunk received"}), flush=True)
-                    audio_b64 = base64.b64encode(pcm_chunk).decode("utf-8")
-                    print(f"AUDIO_EMIT chunk_seq={chunk_seq} pcm_bytes={len(pcm_chunk)} b64_len={len(audio_b64)}", flush=True)
-                    print(json.dumps({
-                        "type": "audio",
-                        "data": audio_b64,
-                        "generation_id": generation_id,
-                        "chunk_seq": chunk_seq,
-                    }), flush=True)
+                    received_chunks += 1
+                    all_pcm.extend(pcm_chunk)
+                    print(f"AUDIO_COLLECT chunk={received_chunks} pcm_bytes={len(pcm_chunk)} total={len(all_pcm)}", flush=True)
         except asyncio.TimeoutError:
-            print(f"⏱️ POLLY: Bidirectional streaming timed out after 5s", flush=True)
+            print(f"⏱️ POLLY: Bidirectional streaming timed out after 10s", flush=True)
             print(json.dumps({"type": "debug", "text": "[POLLY] Streaming timed out (SSML fallback)"}), flush=True)
+            all_pcm.clear()
         except Exception as e:
             print(f"❌ POLLY: Bidirectional streaming failed: {e}", flush=True)
             print(json.dumps({"type": "debug", "text": f"[POLLY] Streaming error (SSML fallback): {e}"}), flush=True)
+            all_pcm.clear()
+
+        chunk_seq = 0
+        if all_pcm and generation_id == self._generation_id:
+            # Ensure the buffer is aligned to 16-bit samples
+            if len(all_pcm) % 2 != 0:
+                all_pcm = all_pcm[:-1]
+            chunk_seq = 1
+            self._barge_in_enabled = True
+            audio_b64 = base64.b64encode(bytes(all_pcm)).decode("utf-8")
+            print(json.dumps({"type": "debug", "text": f"[POLLY] ✅ Generative streaming: {received_chunks} chunks → {len(all_pcm)} PCM bytes"}), flush=True)
+            print(f"AUDIO_EMIT_STREAMING total_bytes={len(all_pcm)} b64_len={len(audio_b64)}", flush=True)
+            print(json.dumps({
+                "type": "audio",
+                "data": audio_b64,
+                "generation_id": generation_id,
+                "chunk_seq": chunk_seq,
+            }), flush=True)
 
         # Fallback: streaming either timed out, threw, or returned 0 chunks.
         # Force neural engine — SynthesizeSpeech with engine="generative" is only
@@ -2657,7 +2680,7 @@ class PollyTranscribeSession(NovaSonic):
             audio_b64 = await self._synthesize_ssml_to_b64(ssml, engine_override="neural")
             if audio_b64:
                 chunk_seq = 1
-                self._barge_in_enabled = True  # user may now barge in
+                self._barge_in_enabled = True
                 print(f"AUDIO_EMIT_FALLBACK b64_len={len(audio_b64)}", flush=True)
                 print(json.dumps({
                     "type": "audio",
@@ -2667,8 +2690,8 @@ class PollyTranscribeSession(NovaSonic):
                 }), flush=True)
 
         if chunk_seq > 0:
-            print(json.dumps({"type": "debug", "text": f"[POLLY] Audio complete: {chunk_seq} chunk(s)"}), flush=True)
-        print(f"🔊 POLLY: Streaming complete ({chunk_seq} PCM chunks emitted)", flush=True)
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Audio complete: {received_chunks} streaming chunk(s) → 1 emit"}), flush=True)
+        print(f"🔊 POLLY: Streaming complete ({received_chunks} PCM chunks collected, {chunk_seq} emitted)", flush=True)
         return clean
 
     def _is_speech_frame(self, audio_bytes: bytes) -> bool:

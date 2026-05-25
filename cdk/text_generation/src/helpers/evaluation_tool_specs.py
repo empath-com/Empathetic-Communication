@@ -39,14 +39,21 @@ PRISM_CRITERIA_LABELS = {
 def get_care_tool_spec() -> dict:
     _pro = PRACTITIONER_ROLE
     _role = SIMULATED_ROLE
-    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other criteria."
+    _J = (
+        "1-3 short sentences. Quote or paraphrase transcript evidence when available. "
+        "If evidence is insufficient (for example, very short transcript), state that explicitly and use a low score. "
+        "Do not merge with other criteria."
+    )
     return {
         "toolSpec": {
             "name": "submit_empathy_evaluation",
             "description": (
                 f"Evaluate the {_pro} using 10 CARE criteria, each scored 1-5 "
                 "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
-                "Populate every field. Do not omit, merge, or rename any field."
+                "Populate every field. Do not omit, merge, or rename any field. "
+                "If the transcript is too short or lacks evidence, still return a complete object: "
+                "prefer low scores (typically 1-2), concise justifications that explicitly say evidence is limited, "
+                "and practical next-step feedback."
             ),
             "inputSchema": {
                 "json": {
@@ -94,7 +101,10 @@ def get_care_tool_spec() -> dict:
                         },
                         "judge_reasoning": {
                             "type": "object",
-                            "description": "Separate justification for each criterion. Every field is required. Do not combine justifications.",
+                            "description": (
+                                "Separate justification for each criterion. Every field is required. "
+                                "Do not combine justifications. If evidence is limited, explicitly write that evidence is insufficient."
+                            ),
                             "properties": {
                                 "making_feel_at_ease_justification":        {"type": "string", "description": _J},
                                 "letting_tell_story_justification":         {"type": "string", "description": _J},
@@ -111,7 +121,8 @@ def get_care_tool_spec() -> dict:
                                     "description": (
                                         "Brief coach summary using 'you'. "
                                         "Do not repeat individual justifications. "
-                                        "Highlight the key pattern across the conversation."
+                                        "Highlight the key pattern across the conversation. "
+                                        "If transcript is minimal, state that there is not enough evidence yet and suggest what to do next."
                                     )
                                 }
                             },
@@ -134,12 +145,18 @@ def get_care_tool_spec() -> dict:
                             "properties": {
                                 "strengths": {
                                     "type": "array",
-                                    "description": "1-2 specific strengths with transcript evidence.",
+                                    "description": (
+                                        "1-2 specific strengths when evidence exists. "
+                                        "If transcript is minimal, provide one realistic baseline strength (for example, initiated interaction)."
+                                    ),
                                     "items": {"type": "string"}
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
+                                    "description": (
+                                        "1-2 actionable improvement suggestions. "
+                                        "For limited evidence, provide concrete next-turn guidance without inventing details."
+                                    ),
                                     "items": {"type": "string"}
                                 },
                                 "forward_target": {
@@ -173,14 +190,21 @@ def get_care_tool_spec() -> dict:
 def get_prism_tool_spec() -> dict:
     _pro = PRACTITIONER_ROLE
     _role = SIMULATED_ROLE
-    _J = "2-4 sentences. Quote or paraphrase transcript evidence. Explain the score. Do not merge with other dimensions."
+    _J = (
+        "1-3 short sentences. Quote or paraphrase transcript evidence when available. "
+        "If evidence is insufficient (for example, very short transcript), state that explicitly and use a low score. "
+        "Do not merge with other dimensions."
+    )
     return {
         "toolSpec": {
             "name": "submit_prism_evaluation",
             "description": (
                 f"Evaluate the {_pro} using the PRISM framework (5 dimensions), each scored 1-5 "
                 "(1=Emerging, 2=Developing, 3=Competent, 4=Proficient, 5=Advanced). "
-                "Populate every field. Do not omit, merge, or rename any field."
+                "Populate every field. Do not omit, merge, or rename any field. "
+                "If the transcript is too short or lacks evidence, still return a complete object: "
+                "prefer low scores (typically 1-2), concise justifications that explicitly say evidence is limited, "
+                "and practical next-step feedback."
             ),
             "inputSchema": {
                 "json": {
@@ -223,7 +247,10 @@ def get_prism_tool_spec() -> dict:
                         },
                         "judge_reasoning": {
                             "type": "object",
-                            "description": "Separate justification for each PRISM dimension. Every field is required. Do not combine justifications.",
+                            "description": (
+                                "Separate justification for each PRISM dimension. Every field is required. "
+                                "Do not combine justifications. If evidence is limited, explicitly write that evidence is insufficient."
+                            ),
                             "properties": {
                                 "prepare_justification":     {"type": "string", "description": _J},
                                 "recognise_justification":   {"type": "string", "description": _J},
@@ -235,7 +262,8 @@ def get_prism_tool_spec() -> dict:
                                     "description": (
                                         "Brief coach summary using 'you'. "
                                         "Do not repeat individual justifications. "
-                                        "Highlight the key pattern across the conversation."
+                                        "Highlight the key pattern across the conversation. "
+                                        "If transcript is minimal, state that there is not enough evidence yet and suggest what to do next."
                                     )
                                 }
                             },
@@ -250,12 +278,18 @@ def get_prism_tool_spec() -> dict:
                             "properties": {
                                 "strengths": {
                                     "type": "array",
-                                    "description": "1-2 specific strengths with transcript evidence.",
+                                    "description": (
+                                        "1-2 specific strengths when evidence exists. "
+                                        "If transcript is minimal, provide one realistic baseline strength (for example, initiated interaction)."
+                                    ),
                                     "items": {"type": "string"}
                                 },
                                 "improvement_suggestions": {
                                     "type": "array",
-                                    "description": "1-2 actionable improvement suggestions with evidence-based rationale.",
+                                    "description": (
+                                        "1-2 actionable improvement suggestions. "
+                                        "For limited evidence, provide concrete next-turn guidance without inventing details."
+                                    ),
                                     "items": {"type": "string"}
                                 },
                                 "forward_target": {

@@ -16,7 +16,9 @@ let animationId;
 // Shared playback AudioContext — created once during a user gesture so Chrome's
 // autoplay policy never suspends it when we later call source.start() in a timer.
 let playbackCtx = null;
-let currentSource = null; // AudioBufferSourceNode currently playing
+let workletNode = null;        // AudioWorkletNode running pcm-playback-processor
+let workletInitPromise = null; // single-flight init guard
+let isPlaying = false;         // true while worklet has samples buffered
 
 // ─── Called from StudentChat during the voice-toggle click (user gesture) ─────
 export function initPlaybackContext() {
@@ -28,7 +30,6 @@ export function initPlaybackContext() {
       outputChannels: playbackCtx.destination?.maxChannelCount,
     });
   }
-  // Resume immediately while we're inside the user-gesture stack frame.
   if (playbackCtx.state === "suspended") {
     console.log("⏸️  AudioContext suspended, attempting resume...");
     playbackCtx.resume().then(() => {
@@ -39,6 +40,49 @@ export function initPlaybackContext() {
   } else {
     console.log("✅ AudioContext already running", { state: playbackCtx.state });
   }
+  // Eagerly initialise the worklet while we're in the user-gesture stack frame,
+  // so the AudioContext is unlocked before the first audio chunk arrives.
+  _ensureWorkletReady().catch((e) => console.error("❌ Worklet pre-init failed:", e));
+}
+
+async function _ensureWorkletReady() {
+  if (workletInitPromise) return workletInitPromise;
+
+  workletInitPromise = (async () => {
+    if (!playbackCtx || playbackCtx.state === "closed") {
+      playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (playbackCtx.state === "suspended") {
+      await playbackCtx.resume();
+    }
+
+    await playbackCtx.audioWorklet.addModule("/pcm-playback-processor.js");
+
+    workletNode = new AudioWorkletNode(playbackCtx, "pcm-playback-processor");
+
+    // Wire: workletNode → analyser → destination
+    analyser = playbackCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    dataArray = new Uint8Array(analyser.fftSize);
+
+    workletNode.connect(analyser);
+    analyser.connect(playbackCtx.destination);
+
+    workletNode.port.onmessage = ({ data }) => {
+      if (data.type === "ended") {
+        isPlaying = false;
+        console.log(`[${ts()}] ⏹️  Worklet: audio buffer drained`);
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+      }
+    };
+
+    console.log("✅ PCM playback worklet ready", { sampleRate: playbackCtx.sampleRate });
+  })();
+
+  return workletInitPromise;
 }
 
 export async function startSpokenLLM(
@@ -183,9 +227,8 @@ export async function stopSpokenLLM(waitForResponse = true) {
       const onAudioChunk = () => {
         receivedResponse = true;
         if (responseTimer) clearTimeout(responseTimer);
-        responseTimer = setTimeout(() => {
-          if (!isPlaying && audioBuffer.length === 0) cleanup();
-        }, 7000);
+        // 7 s after the last chunk is enough for any TTS response to finish playing.
+        responseTimer = setTimeout(cleanup, 7000);
       };
 
       const onTextMessage = (data) => {
@@ -207,12 +250,14 @@ export async function stopSpokenLLM(waitForResponse = true) {
 
   // Only tear down the playback context if the user hasn't already re-enabled voice.
   // If novaStarted is true here, a new session started while we were waiting —
-  // leave its playbackCtx alone.
+  // leave its worklet/playbackCtx alone.
   if (!novaStarted) {
     if (playbackCtx && playbackCtx.state !== "closed") {
       try { playbackCtx.close(); } catch (e) {}
       playbackCtx = null;
     }
+    workletNode = null;
+    workletInitPromise = null;
 
     socket.off("nova-started");
   }
@@ -227,186 +272,53 @@ export function stopAudioPlayback() {
       animationId = null;
     }
 
-    if (currentSource) {
-      try { currentSource.stop(); } catch (e) {}
-      currentSource = null;
+    if (workletNode) {
+      workletNode.port.postMessage({ type: "stop" });
     }
 
     isPlaying = false;
-    audioBuffer = [];
     console.log(`[${ts()}] 🔇 Audio playback stopped`);
   } catch (e) {
     console.error("❌ Failed to stop audio playback:", e);
   }
 }
 
-// ─── Audio buffer ──────────────────────────────────────────────────────────────
-let audioBuffer = [];
-let isPlaying = false;
-let bufferTimeout = null;
-
-const AUDIO_BUFFER_MAX = 50; // ~2 MB of base64 at typical chunk sizes
-
-export function playAudio(audioBytes) {
+export async function playAudio(audioBytes) {
   try {
     if (!audioBytes || audioBytes.length === 0) {
       console.error("🔊 Empty audio data received");
       return;
     }
 
-    if (audioBuffer.length >= AUDIO_BUFFER_MAX) {
-      audioBuffer.shift(); // drop oldest to prevent unbounded growth
-      console.warn("⚠️ Audio buffer full — dropped oldest chunk");
-    }
+    // Decode base64 → raw bytes → Int16Array (little-endian 16-bit PCM).
+    const byteChars = atob(audioBytes);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
 
-    audioBuffer.push(audioBytes);
-    console.log(`[${ts()}] 🔊 Buffered audio chunk`, {
-      chunkSize: audioBytes.length,
-      totalBuffered: audioBuffer.length,
-      isPlaying,
+    // Ensure the buffer is aligned to 16-bit sample boundaries.
+    const alignedLength = byteArray.length & ~1;
+    const samples = new Int16Array(byteArray.buffer, 0, alignedLength / 2);
+
+    console.log(`[${ts()}] 🔊 Sending PCM to worklet`, {
+      bytes: alignedLength,
+      samples: samples.length,
     });
 
-    if (bufferTimeout) clearTimeout(bufferTimeout);
+    await _ensureWorkletReady();
 
-    if (!isPlaying) {
-      if (audioBuffer.length >= 5) {
-        console.log(`[${ts()}] ⚡ Buffered 5+ chunks, playing immediately...`);
-        clearTimeout(bufferTimeout);
-        playBufferedAudio();
-      } else {
-        console.log(`[${ts()}] ⏳ Waiting for more chunks or timeout (300ms)...`);
-        bufferTimeout = setTimeout(playBufferedAudio, 300);
-      }
+    isPlaying = true;
+    // Transfer ownership of the ArrayBuffer to the worklet thread (zero-copy).
+    workletNode.port.postMessage({ type: "chunk", samples }, [samples.buffer]);
+
+    if (!animationId) {
+      startWaveformVisualizer(analyser.fftSize);
     }
   } catch (error) {
     console.error("❌ Audio processing failed:", error);
   }
 }
 
-async function playBufferedAudio() {
-  if (audioBuffer.length === 0 || isPlaying) return;
-  isPlaying = true;
-
-  try {
-    console.log("🎵 Starting playback of buffered audio chunks...", { chunkCount: audioBuffer.length });
-    // ── Decode base64 chunks → raw PCM bytes ──────────────────────────────
-    let totalLength = 0;
-    const byteArrays = audioBuffer.map((chunk) => {
-      const byteChars = atob(chunk);
-      const bytes = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-      totalLength += bytes.length;
-      return bytes;
-    });
-    audioBuffer = [];
-    console.log("✅ Decoded base64 chunks to PCM bytes", { totalBytes: totalLength });
-
-    const pcm = new Uint8Array(totalLength);
-    let off = 0;
-    for (const arr of byteArrays) { pcm.set(arr, off); off += arr.length; }
-
-    // ── Build WAV ArrayBuffer (44-byte header + PCM) ──────────────────────
-    const wav = new ArrayBuffer(44 + pcm.length);
-    const v = new DataView(wav);
-    const w = new Uint8Array(wav);
-
-    // RIFF chunk
-    w.set([82,73,70,70], 0);                          // "RIFF"
-    v.setUint32(4, 36 + pcm.length, true);            // file size - 8
-    w.set([87,65,86,69], 8);                          // "WAVE"
-    // fmt  chunk
-    w.set([102,109,116,32], 12);                      // "fmt "
-    v.setUint32(16, 16, true);                        // chunk size
-    v.setUint16(20, 1, true);                         // PCM
-    v.setUint16(22, 1, true);                         // mono
-    v.setUint32(24, 16000, true);                     // sample rate — must match POLLY_SAMPLE_RATE in nova_sonic.py
-    v.setUint32(28, 16000 * 2, true);                 // byte rate
-    v.setUint16(32, 2, true);                         // block align
-    v.setUint16(34, 16, true);                        // bits per sample
-    // data chunk
-    w.set([100,97,116,97], 36);                       // "data"
-    v.setUint32(40, pcm.length, true);
-    w.set(pcm, 44);
-
-    // ── Get (or create) the shared playback context ────────────────────────
-    if (!playbackCtx || playbackCtx.state === "closed") {
-      playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
-      console.log("🔊 Created new playback context for audio");
-    }
-    if (playbackCtx.state === "suspended") {
-      console.log("⏸️  Resuming suspended AudioContext...");
-      await playbackCtx.resume();
-      console.log("✅ AudioContext resumed", { state: playbackCtx.state });
-    }
-
-    console.log("📊 AudioContext ready", {
-      state: playbackCtx.state,
-      sampleRate: playbackCtx.sampleRate,
-      destinationChannels: playbackCtx.destination?.maxChannelCount,
-    });
-
-    // ── Decode WAV → AudioBuffer ──────────────────────────────────────────
-    console.log("🔄 Decoding WAV audio data...");
-    const decoded = await playbackCtx.decodeAudioData(wav);
-    console.log("✅ WAV decoded", { duration: decoded.duration, channels: decoded.numberOfChannels });
-
-    // ── Wire: source → analyser → gain → destination ──────────────────────
-    analyser = playbackCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    dataArray = new Uint8Array(analyser.fftSize);
-
-    // Create gain node for explicit volume control
-    const gainNode = playbackCtx.createGain();
-    gainNode.gain.value = 1.0;
-    console.log("🔉 Created gain node", { gain: gainNode.gain.value });
-
-    const source = playbackCtx.createBufferSource();
-    source.buffer = decoded;
-    
-    console.log("🔗 Wiring audio components...");
-    source.connect(analyser);
-    analyser.connect(gainNode);
-    gainNode.connect(playbackCtx.destination);
-    console.log("✅ Audio chain connected: source → analyser → gain → destination");
-
-    console.log("📊 Destination info", {
-      maxChannelCount: playbackCtx.destination?.maxChannelCount,
-      numberOfInputs: playbackCtx.destination?.numberOfInputs,
-    });
-
-    currentSource = source;
-    startWaveformVisualizer(analyser.fftSize);
-
-    source.onended = () => {
-      currentSource = null;
-      isPlaying = false;
-      console.log("⏹️  Audio source finished playing");
-      if (audioBuffer.length > 0) setTimeout(playBufferedAudio, 50);
-    };
-
-    console.log("▶️  Starting audio playback...");
-    source.start(0);
-    console.log("✅ Source.start() called successfully");
-  } catch (error) {
-    console.error("❌ Playback failed:", error, {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    });
-    isPlaying = false;
-    audioBuffer = [];
-    
-    // Diagnostic info
-    console.log("🔍 Audio system diagnostics:", {
-      contextState: playbackCtx?.state,
-      destinationChannels: playbackCtx?.destination?.maxChannelCount,
-      hasAudioOutputDevice: playbackCtx?.destination?.maxChannelCount > 0,
-    });
-  }
-}
-
 function startWaveformVisualizer(bufferLength) {
-  console.log("🎨 Starting waveform visualizer with buffer length:", bufferLength);
   const canvas = document.getElementById("audio-visualizer");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -455,5 +367,4 @@ function startWaveformVisualizer(bufferLength) {
   }
 
   draw();
-  console.log("🎵 Waveform visualizer active");
 }
