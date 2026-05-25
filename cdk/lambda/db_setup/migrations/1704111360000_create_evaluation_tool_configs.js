@@ -13,7 +13,7 @@ exports.up = (pgm) => {
       ON "evaluation_tool_configs" ("tool_name");
   `);
 
-  // Grant permissions to app users
+  /* Grant permissions to app users */
   pgm.sql(`
     GRANT SELECT, INSERT, UPDATE, DELETE ON "evaluation_tool_configs" TO readwrite;
     GRANT SELECT, INSERT, UPDATE, DELETE ON "evaluation_tool_configs" TO tablecreator;

@@ -469,7 +469,6 @@ Provide structured evaluation with detailed justifications for each score.
       setToolConfigHistoryIndex(0);
       setToolConfigJsonError("");
     } catch (error) {
-      console.error("Error fetching tool config:", error);
       showAlert("Failed to fetch tool configuration", "error");
     } finally {
       setLoading(false);

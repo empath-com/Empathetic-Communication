@@ -166,9 +166,10 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
 
     # Guard: transcripts that are too short cannot yield meaningful empathy scores and
     # may cause the model to produce an invalid tool-use sequence (ModelErrorException).
-    if not student_response or len(student_response.strip()) < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
+    transcript_len = len(student_response.strip()) if student_response else 0
+    if transcript_len < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
         logger.warning(
-            f"⚠️ Transcript too short ({len(student_response.strip() if student_response else '')} chars "
+            f"⚠️ Transcript too short ({transcript_len} chars "
             f"< {MIN_TRANSCRIPT_CHARS_FOR_EVAL}); returning minimum-score evaluation without LLM call."
         )
         return _build_too_short_care_evaluation(bedrock_client)
@@ -357,9 +358,10 @@ def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_
 
     # Guard: transcripts that are too short cannot yield meaningful empathy scores and
     # may cause the model to produce an invalid tool-use sequence (ModelErrorException).
-    if not student_response or len(student_response.strip()) < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
+    transcript_len = len(student_response.strip()) if student_response else 0
+    if transcript_len < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
         logger.warning(
-            f"⚠️ PRISM transcript too short ({len(student_response.strip() if student_response else '')} chars "
+            f"⚠️ PRISM transcript too short ({transcript_len} chars "
             f"< {MIN_TRANSCRIPT_CHARS_FOR_EVAL}); returning minimum-score evaluation without LLM call."
         )
         return _build_too_short_prism_evaluation(bedrock_client)
