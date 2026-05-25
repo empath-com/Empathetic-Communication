@@ -1469,6 +1469,131 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /admin/evaluation_tool_configs:
+    <<: *commonOptions
+    get:
+      tags:
+        - Admin
+      summary: Get evaluation tool configurations
+      operationId: admin_get_evaluation_tool_configs_GET
+      parameters:
+        - in: query
+          name: tool_name
+          schema:
+            type: string
+            enum: [CARE, PRISM]
+          required: false
+          description: Filter by tool name (CARE or PRISM). Returns all tools when omitted.
+      responses:
+        "200":
+          description: Evaluation tool configuration(s)
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+  /admin/update_evaluation_tool_config:
+    <<: *commonOptions
+    post:
+      tags:
+        - Admin
+      summary: Update an evaluation tool configuration
+      operationId: admin_update_evaluation_tool_config_POST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tool_name:
+                  type: string
+                  enum: [CARE, PRISM]
+                  description: Evaluation tool to configure
+                config_json:
+                  type: object
+                  description: Full tool spec JSON (Bedrock toolSpec format)
+              required:
+                - tool_name
+                - config_json
+      responses:
+        "200":
+          description: Tool config updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+  /admin/restore_evaluation_tool_config:
+    <<: *commonOptions
+    post:
+      tags:
+        - Admin
+      summary: Restore a previous evaluation tool configuration from history
+      operationId: admin_restore_evaluation_tool_config_POST
+      parameters:
+        - in: query
+          name: config_id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of the history entry to restore
+      responses:
+        "200":
+          description: Tool config restored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "404":
+          description: History entry not found
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /student/patient_voice_id:
     options:
       summary: CORS support

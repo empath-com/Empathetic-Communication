@@ -1,4 +1,8 @@
+import logging
 import os
+
+logging.basicConfig(level=logging.INFO)
+_logger = logging.getLogger(__name__)
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
 PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
@@ -274,3 +278,66 @@ def get_prism_tool_spec() -> dict:
             }
         }
     }
+
+
+def _load_tool_spec_from_db(tool_name: str) -> dict | None:
+    """
+    Try to load the latest tool spec configuration for *tool_name* from the
+    ``evaluation_tool_configs`` database table.
+
+    Returns the stored ``config_json`` dict on success, or ``None`` if no row
+    exists or if the DB is unavailable.  Callers should fall back to the
+    hard-coded defaults when ``None`` is returned.
+    """
+    try:
+        # Late import to avoid circular dependency and to allow the module to be
+        # imported in environments where the DB connection is not yet available.
+        from .db_connection_manager import get_db_cursor
+
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT config_json
+                FROM evaluation_tool_configs
+                WHERE tool_name = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (tool_name,),
+            )
+            row = cursor.fetchone()
+
+        if row and row[0]:
+            _logger.info(f"✅ Loaded {tool_name} tool spec from DB")
+            return row[0]
+
+        _logger.info(f"ℹ️ No DB config found for {tool_name}, using built-in default")
+        return None
+
+    except Exception as exc:
+        _logger.warning(f"⚠️ Could not load {tool_name} tool spec from DB ({exc}); using built-in default")
+        return None
+
+
+def get_care_tool_spec_effective() -> dict:
+    """
+    Return the effective CARE tool spec.  If an admin has stored a custom
+    configuration in the database it takes precedence; otherwise the built-in
+    default from :func:`get_care_tool_spec` is used.
+    """
+    db_spec = _load_tool_spec_from_db("CARE")
+    if db_spec:
+        return db_spec
+    return get_care_tool_spec()
+
+
+def get_prism_tool_spec_effective() -> dict:
+    """
+    Return the effective PRISM tool spec.  If an admin has stored a custom
+    configuration in the database it takes precedence; otherwise the built-in
+    default from :func:`get_prism_tool_spec` is used.
+    """
+    db_spec = _load_tool_spec_from_db("PRISM")
+    if db_spec:
+        return db_spec
+    return get_prism_tool_spec()

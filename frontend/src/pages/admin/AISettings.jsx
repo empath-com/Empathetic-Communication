@@ -34,6 +34,7 @@ import {
   Psychology as PsychologyIcon,
   Chat as ChatIcon,
   History as HistoryIcon,
+  Build as BuildIcon,
 } from "@mui/icons-material";
 import { useAuthentication } from "../../hooks/useAuth";
 import { fetchAuthSession } from "aws-amplify/auth";
@@ -73,6 +74,13 @@ const AISettings = () => {
   const [authToken, setAuthToken] = useState(null);
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
   const [openEmpathyConfirmDialog, setOpenEmpathyConfirmDialog] = useState(false);
+
+  // Tool config state
+  const [selectedToolName, setSelectedToolName] = useState("CARE");
+  const [toolConfigJson, setToolConfigJson] = useState("");
+  const [toolConfigHistory, setToolConfigHistory] = useState([]);
+  const [toolConfigHistoryIndex, setToolConfigHistoryIndex] = useState(0);
+  const [toolConfigJsonError, setToolConfigJsonError] = useState("");
   
   // Generate default prompt with environment-based roles
   const getDefaultPrompt = () => {
@@ -238,6 +246,7 @@ Provide structured evaluation with detailed justifications for each score.
     if (authToken) {
       fetchSystemPrompts();
       fetchEmpathyPrompts();
+      fetchEvaluationToolConfig("CARE");
     }
   }, [authToken]);
 
@@ -443,6 +452,86 @@ Provide structured evaluation with detailed justifications for each score.
     }
   };
 
+  const fetchEvaluationToolConfig = async (toolName) => {
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/evaluation_tool_configs?tool_name=${toolName}`,
+        { headers: { Authorization: token } }
+      );
+      const data = await response.json();
+      setToolConfigJson(
+        data.current_config ? JSON.stringify(data.current_config, null, 2) : ""
+      );
+      setToolConfigHistory(data.history || []);
+      setToolConfigHistoryIndex(0);
+      setToolConfigJsonError("");
+    } catch (error) {
+      console.error("Error fetching tool config:", error);
+      showAlert("Failed to fetch tool configuration", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateEvaluationToolConfig = async () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(toolConfigJson);
+    } catch {
+      setToolConfigJsonError("Invalid JSON — please fix the syntax before saving.");
+      return;
+    }
+    setToolConfigJsonError("");
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/update_evaluation_tool_config`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: token },
+          body: JSON.stringify({ tool_name: selectedToolName, config_json: parsed }),
+        }
+      );
+      if (response.ok) {
+        showAlert("Tool configuration saved successfully", "success");
+        fetchEvaluationToolConfig(selectedToolName);
+      } else {
+        showAlert("Failed to save tool configuration", "error");
+      }
+    } catch (error) {
+      showAlert("Failed to save tool configuration", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const restoreEvaluationToolConfig = async (configId) => {
+    setLoading(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}/admin/restore_evaluation_tool_config?config_id=${configId}`,
+        { method: "POST", headers: { Authorization: token } }
+      );
+      if (response.ok) {
+        showAlert("Tool configuration restored successfully", "success");
+        fetchEvaluationToolConfig(selectedToolName);
+      } else {
+        showAlert("Failed to restore tool configuration", "error");
+      }
+    } catch (error) {
+      showAlert("Failed to restore tool configuration", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const showAlert = (message, severity) => {
     setAlert({ show: true, message, severity });
     setTimeout(
@@ -539,6 +628,7 @@ Provide structured evaluation with detailed justifications for each score.
         >
           <Tab icon={<ChatIcon />} iconPosition="start" label="System Prompt" />
           <Tab icon={<PsychologyIcon />} iconPosition="start" label="Empathy Prompt" />
+          <Tab icon={<BuildIcon />} iconPosition="start" label="Tool Config" />
         </Tabs>
       </Paper>
 
@@ -779,6 +869,162 @@ Provide structured evaluation with detailed justifications for each score.
                 <Button
                   startIcon={<RestoreIcon />}
                   onClick={() => restoreEmpathyPrompt(empathyPromptHistory[empathyHistoryIndex].history_id)}
+                  disabled={loading}
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    backgroundColor: "#10b981",
+                    "&:hover": { backgroundColor: "#059669" },
+                  }}
+                >
+                  Restore This Version
+                </Button>
+              </>
+            ) : (
+              <Box sx={{ textAlign: "center", py: 4 }}>
+                <Typography color="text.secondary">No history available</Typography>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      </TabPanel>
+
+      {/* ===== TAB 2: TOOL CONFIGURATION ===== */}
+      <TabPanel value={activeTab} index={2}>
+        <Card sx={{ mb: 4, boxShadow: 3, borderRadius: 2, width: "100%" }}>
+          <CardContent sx={{ p: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <BuildIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                Evaluation Tool Config Manager
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Customise the JSON schema sent to the AI for empathy evaluation. A custom config
+              overrides the built-in default for the selected tool; deleting the DB row reverts
+              to the built-in. Changes affect ALL users.
+            </Typography>
+            <FormControl size="small" sx={{ mb: 3, minWidth: 240 }}>
+              <InputLabel id="tool-config-tool-label">Evaluation Tool</InputLabel>
+              <Select
+                labelId="tool-config-tool-label"
+                value={selectedToolName}
+                label="Evaluation Tool"
+                onChange={(e) => {
+                  setSelectedToolName(e.target.value);
+                  fetchEvaluationToolConfig(e.target.value);
+                }}
+              >
+                <MenuItem value="CARE">CARE Measure</MenuItem>
+                <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+              </Select>
+            </FormControl>
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              <Typography variant="body2">
+                <strong>Advanced setting.</strong> The JSON must follow the{" "}
+                <strong>Bedrock toolSpec</strong> format. An invalid schema may cause evaluation
+                failures. Leave empty to use the built-in default.
+              </Typography>
+            </Alert>
+            <TextField
+              fullWidth
+              multiline
+              minRows={14}
+              maxRows={28}
+              value={toolConfigJson}
+              onChange={(e) => {
+                setToolConfigJson(e.target.value);
+                setToolConfigJsonError("");
+              }}
+              placeholder={`Paste the Bedrock toolSpec JSON for the ${selectedToolName} tool here, or leave empty to use the built-in default…`}
+              variant="outlined"
+              sx={{ mb: 1, fontFamily: "monospace" }}
+              inputProps={{ style: { fontFamily: "monospace", fontSize: "0.85rem" } }}
+              error={!!toolConfigJsonError}
+            />
+            {toolConfigJsonError && (
+              <Typography variant="caption" color="error" sx={{ mb: 2, display: "block" }}>
+                {toolConfigJsonError}
+              </Typography>
+            )}
+            <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", mt: 2 }}>
+              <Button
+                startIcon={<SaveIcon />}
+                onClick={updateEvaluationToolConfig}
+                disabled={loading || !toolConfigJson.trim()}
+                variant="contained"
+                sx={{
+                  borderRadius: 2,
+                  backgroundColor: "#10b981",
+                  "&:hover": { backgroundColor: "#059669" },
+                }}
+              >
+                {loading ? "Saving..." : `Save ${selectedToolName} Config`}
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Tool Config History */}
+        <Card sx={{ mt: 3, boxShadow: 3, borderRadius: 2, width: "100%" }}>
+          <CardContent sx={{ p: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
+              <HistoryIcon sx={{ mr: 1, color: "#10b981" }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
+                {selectedToolName} Config History
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Browse earlier versions. Restore any version you want to use.
+            </Typography>
+            {toolConfigHistory.length > 0 ? (
+              <>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", mb: 2 }}>
+                  <IconButton
+                    onClick={() => setToolConfigHistoryIndex((p) => Math.max(0, p - 1))}
+                    disabled={toolConfigHistoryIndex === 0}
+                  >
+                    <ArrowBackIosNewIcon />
+                  </IconButton>
+                  <Typography variant="body1" sx={{ mx: 2, fontWeight: 500 }}>
+                    Version {toolConfigHistoryIndex + 1} of {toolConfigHistory.length}
+                  </Typography>
+                  <IconButton
+                    onClick={() =>
+                      setToolConfigHistoryIndex((p) => Math.min(toolConfigHistory.length - 1, p + 1))
+                    }
+                    disabled={toolConfigHistoryIndex >= toolConfigHistory.length - 1}
+                  >
+                    <ArrowForwardIosIcon />
+                  </IconButton>
+                </Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 2, textAlign: "center" }}
+                >
+                  Saved: {formatDate(toolConfigHistory[toolConfigHistoryIndex]?.created_at)}
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={8}
+                  maxRows={12}
+                  value={
+                    toolConfigHistory[toolConfigHistoryIndex]?.config_json
+                      ? JSON.stringify(toolConfigHistory[toolConfigHistoryIndex].config_json, null, 2)
+                      : ""
+                  }
+                  InputProps={{ readOnly: true }}
+                  variant="outlined"
+                  sx={{ mb: 2, fontFamily: "monospace" }}
+                  inputProps={{ style: { fontFamily: "monospace", fontSize: "0.85rem" } }}
+                />
+                <Button
+                  startIcon={<RestoreIcon />}
+                  onClick={() =>
+                    restoreEvaluationToolConfig(toolConfigHistory[toolConfigHistoryIndex].config_id)
+                  }
                   disabled={loading}
                   variant="contained"
                   fullWidth
