@@ -1830,6 +1830,7 @@ class PollyTranscribeSession(NovaSonic):
         self._generation_id = 0
         self._speaking_task = None
         self._is_speaking = False
+        self._barge_in_enabled = False  # only True after first audio chunk emitted
         self._interrupt_lock = asyncio.Lock()
 
         self._audio_buffer = bytearray()
@@ -1935,8 +1936,10 @@ class PollyTranscribeSession(NovaSonic):
             q_size = self._transcribe_queue.qsize() if self._transcribe_queue else -1
             print(f"🎙️ POLLY: chunk #{self._audio_chunk_count}, buf={len(self._audio_buffer)}B, transcribe_task_alive={task_ok}, queue_size={q_size}", flush=True)
 
-        # Detect barge-in from energy while TTS is speaking.
-        if self._is_speaking and self._is_speech_frame(audio_bytes):
+        # Detect barge-in from energy while TTS is speaking — but only after the first
+        # audio chunk has been emitted (_barge_in_enabled). This prevents residual mic
+        # audio from the user's own utterance from immediately aborting the response.
+        if self._is_speaking and self._barge_in_enabled and self._is_speech_frame(audio_bytes):
             self._speech_frames_seen += 1
             if self._speech_frames_seen >= 2:
                 await self._interrupt_generation(reason="barge_in_voice_detected")
@@ -2273,7 +2276,11 @@ class PollyTranscribeSession(NovaSonic):
         self._speaking_task = asyncio.create_task(self._generate_and_stream_reply(captured, gen_id))
 
     async def _generate_and_stream_reply(self, user_text: str, generation_id: int):
-        self._is_speaking = True
+        # Don't set _is_speaking yet — barge-in should only interrupt active Polly
+        # synthesis, not the LLM call. Disable barge-in entirely until the first audio
+        # chunk is actually emitted; reset counters so residual mic frames can't fire it.
+        self._barge_in_enabled = False
+        self._speech_frames_seen = 0
         full_reply = ""
         print(f"🤖 POLLY: _generate_and_stream_reply START (gen_id={generation_id}, current_gen={self._generation_id})", flush=True)
         try:
@@ -2324,6 +2331,12 @@ class PollyTranscribeSession(NovaSonic):
             chunks = self._semantic_chunks(response_text)
             print(f"🔊 POLLY: Synthesizing {len(chunks)} semantic chunk(s) via Polly (voice={self.voice_id})", flush=True)
 
+            # Enable barge-in now that Polly synthesis is about to start.
+            self._is_speaking = True
+
+            tts_mode = "generative-streaming" if self.voice_id in self._GENERATIVE_VOICES else f"ssml-{self.polly_engine}"
+            print(json.dumps({"type": "debug", "text": f"[POLLY] TTS: voice={self.voice_id}, mode={tts_mode}, chars={len(response_text)}"}), flush=True)
+
             if self.voice_id in self._GENERATIVE_VOICES:
                 # Bidirectional streaming: first PCM byte arrives ~300 ms after the
                 # request, well before synthesis of the full response is complete.
@@ -2365,6 +2378,8 @@ class PollyTranscribeSession(NovaSonic):
                             t.cancel()
                         break
 
+                    if idx == 1:
+                        self._barge_in_enabled = True  # user may now barge in
                     print(json.dumps({
                         "type": "audio",
                         "data": audio_b64,
@@ -2614,6 +2629,9 @@ class PollyTranscribeSession(NovaSonic):
                         )
                         break
                     chunk_seq += 1
+                    if chunk_seq == 1:
+                        self._barge_in_enabled = True  # user may now barge in
+                        print(json.dumps({"type": "debug", "text": f"[POLLY] ✅ Generative streaming: first chunk received"}), flush=True)
                     audio_b64 = base64.b64encode(pcm_chunk).decode("utf-8")
                     print(f"AUDIO_EMIT chunk_seq={chunk_seq} pcm_bytes={len(pcm_chunk)} b64_len={len(audio_b64)}", flush=True)
                     print(json.dumps({
@@ -2639,6 +2657,7 @@ class PollyTranscribeSession(NovaSonic):
             audio_b64 = await self._synthesize_ssml_to_b64(ssml, engine_override="neural")
             if audio_b64:
                 chunk_seq = 1
+                self._barge_in_enabled = True  # user may now barge in
                 print(f"AUDIO_EMIT_FALLBACK b64_len={len(audio_b64)}", flush=True)
                 print(json.dumps({
                     "type": "audio",
@@ -2647,6 +2666,8 @@ class PollyTranscribeSession(NovaSonic):
                     "chunk_seq": chunk_seq,
                 }), flush=True)
 
+        if chunk_seq > 0:
+            print(json.dumps({"type": "debug", "text": f"[POLLY] Audio complete: {chunk_seq} chunk(s)"}), flush=True)
         print(f"🔊 POLLY: Streaming complete ({chunk_seq} PCM chunks emitted)", flush=True)
         return clean
 
@@ -2799,7 +2820,9 @@ if __name__ == "__main__":
         while True:
             await asyncio.sleep(5) # checking every 5 seconds
 
-            if nova and nova.is_active:
+            # Only restart the Bedrock response task for NovaSonic sessions.
+            # PollyTranscribeSession has no stream and must not run _process_responses.
+            if nova and nova.is_active and isinstance(nova, NovaSonic):
                 if nova.response is None or nova.response.done():
                     if nova.response and nova.response.done():
                         # checking for failure
