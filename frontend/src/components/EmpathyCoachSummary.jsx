@@ -70,6 +70,15 @@ const CriteriaBreakdown = ({ empathyData, dimensions }) => (
   </Box>
 );
 
+const removeScoreMentionsFromAssessment = (text) => {
+  if (!text || typeof text !== "string") return "";
+
+  const scoreSentencePattern = /[^.!?\n]*\b(empathy\s*score|overall\s*score|score\s*of\s*\d+(?:\.\d+)?)\b[^.!?\n]*[.!?]?/gi;
+  const cleaned = text.replace(scoreSentencePattern, " ");
+
+  return cleaned.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+};
+
 const EmpathyCoachSummary = ({ empathyData }) => {
   if (!empathyData) {
     return <Typography>No empathy data available.</Typography>;
@@ -83,6 +92,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
   const overallScore = empathyData.overall_score || 0;
   const overallPct = (overallScore / 5) * 100;
   const overallColor = getScoreColor(overallScore);
+  const coachAssessment = removeScoreMentionsFromAssessment(empathyData.summary);
 
   return (
     <Box sx={{ width: "100%", p: 2 }}>
@@ -120,7 +130,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
             </TableRow>
 
             {/* Coach Assessment */}
-            {empathyData.summary && (
+            {coachAssessment && (
               <TableRow>
                 <TableCell
                   component="th"
@@ -131,7 +141,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
                 </TableCell>
                 <TableCell sx={{ verticalAlign: "top" }}>
                   <Typography sx={{ whiteSpace: "pre-line" }}>
-                    {empathyData.summary}
+                    {coachAssessment}
                   </Typography>
                 </TableCell>
               </TableRow>

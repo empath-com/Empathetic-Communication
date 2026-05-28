@@ -157,6 +157,7 @@ export default function useChatMessages({
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const messagesRef = useRef(messages);
 
   // AppSync streaming refs
   const streamSubRef = useRef(null);
@@ -171,12 +172,51 @@ export default function useChatMessages({
   // Voice refs
   const allowAudioRef = useRef(false);
   const diagnosisCompletedRef = useRef(false);
+  const pendingDiagnosisCompleteRef = useRef(null);
 
   // Stable refs so socket listeners (set up once) always see fresh values
   const patientRef = useRef(patient);
   const groupRef = useRef(group);
   const sessionRef = useRef(session);
   const callEmpathyEvaluationRef = useRef(null);
+
+  const hasAtLeastOneFullTurn = useCallback(() => {
+    const currentMessages = Array.isArray(messagesRef.current) ? messagesRef.current : [];
+    const hasStudentMessage = currentMessages.some((m) => m?.student_sent === true);
+    const hasAssistantMessage = currentMessages.some((m) => m?.student_sent === false);
+    return hasStudentMessage && hasAssistantMessage;
+  }, []);
+
+  const applyCompletionEffects = useCallback(async () => {
+    if (diagnosisCompletedRef.current) return;
+    if (!hasAtLeastOneFullTurn()) return;
+
+    diagnosisCompletedRef.current = true;
+    pendingDiagnosisCompleteRef.current = null;
+
+    if (patientRef.current && groupRef.current) {
+      try {
+        const { token, email } = await getAuth();
+        const scoreUrl =
+          `${import.meta.env.VITE_API_ENDPOINT}student/update_patient_score` +
+          `?patient_id=${encodeURIComponent(patientRef.current.patient_id)}` +
+          `&student_email=${encodeURIComponent(email)}` +
+          `&simulation_group_id=${encodeURIComponent(groupRef.current.simulation_group_id)}` +
+          `&llm_verdict=true`;
+        fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
+      } catch (e) {
+        console.error("Failed to update patient score after voice completion:", e);
+      }
+    }
+
+    alert("Session completed successfully!");
+  }, [getAuth, hasAtLeastOneFullTurn]);
+
+  useEffect(() => {
+    if (pendingDiagnosisCompleteRef.current) {
+      applyCompletionEffects();
+    }
+  }, [messages, applyCompletionEffects]);
 
   // Keep empathyEnabledRef in sync
   useEffect(() => {
@@ -186,6 +226,7 @@ export default function useChatMessages({
   useEffect(() => { patientRef.current = patient; }, [patient]);
   useEffect(() => { groupRef.current = group; }, [group]);
   useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   // --- Scroll to bottom on new messages ---
   useEffect(() => {
@@ -772,10 +813,16 @@ export default function useChatMessages({
         }
       };
 
-      const handleDiagnosisComplete = () => {
+      const handleDiagnosisComplete = (payload) => {
         if (diagnosisCompletedRef.current) return;
-        diagnosisCompletedRef.current = true;
-        alert("Session completed successfully!");
+
+        const hasCompletionMessage =
+          typeof payload?.message === "string" &&
+          payload.message.toLowerCase().includes("completed");
+        if (!hasCompletionMessage) return;
+
+        pendingDiagnosisCompleteRef.current = payload;
+        applyCompletionEffects();
       };
 
       const VOICE_PREVIEW_ID_USER = "VOICE_TRANSCRIPT_PREVIEW";

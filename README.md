@@ -1,9 +1,22 @@
 # Empathetic Communication
 This project harnesses generative AI on AWS Cloud Infrastructure to help healthcare students practice and develop empathetic communication skills for patient care. The tool uses Retrieval Augmented Generation and Large Language Models to create realistic patient training scenarios, provide structured empathy feedback, and evaluate student performance across key empathy dimensions. Students and instructors can track progress and learn from detailed feedback, supporting stronger empathetic communication practice and interactive training within healthcare education.
 
+## Agent Quick Start
+
+This repository is optimized for AI coding agents and human contributors working together.
+
+- Start with [AGENTS.md](./AGENTS.md) for the repository operating model, safe workflows, ownership map, and verification checklist.
+- If you are running as a GitHub-hosted agent profile, use [GitHub Agent Profile](./.github/agents/empath-communication-agent.md).
+- Architecture and domain deep dives remain in [CLAUDE.md](./CLAUDE.md) and [docs/](./docs/).
+
+### Critical Safety Rule
+
+Do not run deployment commands from an autonomous agent session. Deployment is manual and explicitly user-driven.
+
 
 | Index                                               | Description                                             |
 | :-------------------------------------------------- | :------------------------------------------------------ |
+| [Agent Quick Start](#agent-quick-start)             | How agents should operate in this repository            |
 | [High Level Architecture](#high-level-architecture) | High level overview illustrating component interactions |
 | [Deployment](#deployment-guide)                     | How to deploy the project                               |
 | [User Guide](#user-guide)                           | The working solution                                    |

@@ -276,10 +276,10 @@ io.on("connection", (socket) => {
             }
             else if (parsed.type === "diagnosis_verdict") {
               console.log("🩺 DIAGNOSIS VERDICT:", parsed.verdict);
-              if (parsed.verdict && !diagnosisCompleted) {
-                diagnosisCompleted = true;
-                socket.emit("diagnosis-complete", { message: "Session completed successfully" });
-              }
+              // Do not auto-complete sessions from diagnosis_verdict alone.
+              // Voice completion should only occur when the assistant response
+              // explicitly signals completion (diagnosis_complete / SESSION COMPLETED),
+              // matching text-generation streaming behavior.
             }
             // ─ Voice user message (saved to DB, frontend triggers empathy eval) ─
             else if (parsed.type === "user_message") {

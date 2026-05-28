@@ -106,6 +106,34 @@ def strip_vocal_cues(text: str, carry: str = "") -> tuple[str, str]:
     return cleaned, new_carry
 
 
+def format_vocal_cues_for_display(text: str, carry: str = "") -> tuple[str, str]:
+    """
+    Keep vocal cues in visible assistant text, but render them in a more readable
+    parenthetical form: [hesitantly] -> (hesitantly).
+
+    Handles cues split across consecutive textOutput events via a carry buffer.
+    Returns (formatted_text, new_carry).
+    """
+    text = carry + text
+
+    new_carry = ""
+    open_pos = text.rfind("[")
+    if open_pos != -1 and "]" not in text[open_pos:]:
+        new_carry = text[open_pos:]
+        text = text[:open_pos]
+
+    def _cue_to_parenthetical(match):
+        cue = (match.group(1) or "").strip()
+        if not cue:
+            return ""
+        return f" ({cue}) "
+
+    formatted = re.sub(r"\[([^\[\]]*?)\]", _cue_to_parenthetical, text)
+    formatted = re.sub(r" {2,}", " ", formatted).strip()
+
+    return formatted, new_carry
+
+
 class NovaSonic:
 
     def refresh_env_credentials(self):
@@ -321,6 +349,20 @@ Use cues like:
 - [relieved] — when the {pro} says something reassuring
 - [concerned] — when describing a concern that worries you
 - [voice trailing off] — when you're not sure how to describe something
+- [frustrated] — when symptoms are persistent
+- [matter-of-fact] — when reporting practical details
+- [apologetic] — when feeling unsure or embarrassed
+
+Delivery rules:
+- Use 1 to 2 cues in most responses (not zero every time)
+- Place cues right before the emotionally important phrase they modify
+- Vary cues across turns; do not repeat the exact same cue in consecutive responses
+- Keep emotional intensity realistic (mild concern by default, stronger only when warranted)
+- Keep sentences natural and conversational after cues
+
+Examples:
+- [hesitantly] I have been feeling dizzy since yesterday, and [voice quieter] it is starting to worry me.
+- [matter-of-fact] It is usually worse in the evening, but [concerned] today it lasted much longer.
 
 Do NOT write theatrical stage directions like "looks down tearfully", "breaks down crying", or "sobs uncontrollably" — these are for written text, not voice. Keep cues short (one to three words) and focused on how you sound, not how you look.
 
@@ -381,7 +423,8 @@ Again, YOU ARE SUPPOSED TO ACT AS THE {role.upper()}.
 
 Keep your responses brief — one or two sentences. Share concerns gradually when asked. Use natural hesitations like "Well," "Um," or "I think" to sound like a real person.
 
-You may use short vocal cues in brackets to shape how you sound, such as [hesitantly], [sighs softly], [voice quieter], or [relieved].{extras}"""
+You may use short vocal cues in brackets to shape how you sound, such as [hesitantly], [sighs softly], [voice quieter], [matter-of-fact], [concerned], or [relieved].
+Use 1 to 2 cues in most responses, place cues before emotional phrases, and vary cues across turns so delivery does not sound flat.{extras}"""
 
     def get_system_prompt(self, patient_name=None, patient_prompt=None, llm_completion=None):
         """
@@ -457,6 +500,20 @@ Use cues like:
 - [relieved] — when the {pro} says something reassuring
 - [concerned] — when describing a concern that worries you
 - [voice trailing off] — when you're not sure how to describe something
+- [frustrated] — when symptoms are persistent
+- [matter-of-fact] — when reporting practical details
+- [apologetic] — when feeling unsure or embarrassed
+
+Delivery rules:
+- Use 1 to 2 cues in most responses (not zero every time)
+- Place cues right before the emotionally important phrase they modify
+- Vary cues across turns; do not repeat the exact same cue in consecutive responses
+- Keep emotional intensity realistic (mild concern by default, stronger only when warranted)
+- Keep sentences natural and conversational after cues
+
+Examples:
+- [hesitantly] I have been feeling dizzy since yesterday, and [voice quieter] it is starting to worry me.
+- [matter-of-fact] It is usually worse in the evening, but [concerned] today it lasted much longer.
 
 Do NOT write theatrical stage directions like "looks down tearfully", "breaks down crying", or "sobs uncontrollably" — these are for written text, not voice. Keep cues short (one to three words) and focused on how you sound, not how you look."""
             print(f"PROMPT: injected Voice Emotion Guidance", flush=True)
@@ -888,10 +945,11 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 if self._suppress_nova_audio:
                     return
 
-                # Strip bracketed vocal cues from the visible transcript.
-                # The audio renderer uses them; the text display should not show them.
-                # carry buffer handles cues split across consecutive events.
-                display_text, self._bracket_carry = strip_vocal_cues(text, self._bracket_carry)
+                # Keep expression cues in the visible transcript for readability,
+                # while still handling split brackets across streamed chunks.
+                display_text, self._bracket_carry = format_vocal_cues_for_display(
+                    text, self._bracket_carry
+                )
                 print(f"Assistant: {display_text}", flush=True)
                 print(json.dumps({"type": "text", "text": display_text}), flush=True)
 

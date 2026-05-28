@@ -1,5 +1,15 @@
 # Empathetic Communication — Claude Code Guide
 
+## Agent Operating Priority
+
+For autonomous coding sessions, use the following order of precedence:
+
+1. `AGENTS.md` (primary operational rules and task workflow)
+2. `CLAUDE.md` (architecture and domain context)
+3. `docs/*.md` deep dives for subsystem-specific details
+
+If guidance conflicts, follow `AGENTS.md` for execution behavior and safety constraints.
+
 ## Project Overview
 Generative AI tool on AWS that helps healthcare students practice empathetic communication skills. Uses RAG + LLMs (AWS Bedrock) to create realistic patient training scenarios, deliver structured empathy feedback, and track student/instructor progress.
 
