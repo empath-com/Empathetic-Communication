@@ -916,6 +916,135 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "Internal server error" });
         }
         break;
+      case "GET /admin/evaluation_tool_configs":
+        try {
+          const validToolNames = ['CARE', 'PRISM'];
+          const toolName = event.queryStringParameters?.tool_name || null;
+
+          if (toolName && !validToolNames.includes(toolName)) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "tool_name must be CARE or PRISM" });
+            break;
+          }
+
+          if (toolName) {
+            // Return the latest config for a specific tool, plus its history
+            const latestConfig = await sqlConnectionTableCreator`
+              SELECT config_id, tool_name, config_json, created_at
+              FROM "evaluation_tool_configs"
+              WHERE tool_name = ${toolName}
+              ORDER BY created_at DESC
+              LIMIT 1;
+            `;
+            const configHistory = await sqlConnectionTableCreator`
+              SELECT config_id, tool_name, config_json, created_at
+              FROM "evaluation_tool_configs"
+              WHERE tool_name = ${toolName}
+              ORDER BY created_at DESC
+              OFFSET 1;
+            `;
+            response.body = JSON.stringify({
+              tool_name: toolName,
+              current_config: latestConfig[0]?.config_json || null,
+              history: configHistory,
+            });
+          } else {
+            // Return the latest config for every known tool
+            const configs = [];
+            for (const name of validToolNames) {
+              const rows = await sqlConnectionTableCreator`
+                SELECT config_id, tool_name, config_json, created_at
+                FROM "evaluation_tool_configs"
+                WHERE tool_name = ${name}
+                ORDER BY created_at DESC
+                LIMIT 1;
+              `;
+              configs.push({
+                tool_name: name,
+                current_config: rows[0]?.config_json || null,
+              });
+            }
+            response.body = JSON.stringify({ configs });
+          }
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[evaluation_tool_configs GET] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "POST /admin/update_evaluation_tool_config":
+        if (event.body) {
+          try {
+            const { tool_name: bodyToolName, config_json: bodyConfigJson } = JSON.parse(event.body);
+            const validToolNames = ['CARE', 'PRISM'];
+
+            if (!bodyToolName || !validToolNames.includes(bodyToolName)) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({ error: "tool_name must be CARE or PRISM" });
+              break;
+            }
+            if (!bodyConfigJson || typeof bodyConfigJson !== 'object') {
+              response.statusCode = 400;
+              response.body = JSON.stringify({ error: "config_json must be a non-empty JSON object" });
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              INSERT INTO "evaluation_tool_configs" (tool_name, config_json)
+              VALUES (${bodyToolName}, ${sqlConnectionTableCreator.json(bodyConfigJson)});
+            `;
+
+            response.body = JSON.stringify({
+              message: `Evaluation tool config for ${bodyToolName} updated successfully`,
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.error('[update_evaluation_tool_config] Error:', err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = JSON.stringify({ error: "Request body with tool_name and config_json is required" });
+        }
+        break;
+      case "POST /admin/restore_evaluation_tool_config":
+        try {
+          const configId =
+            event.queryStringParameters?.config_id || null;
+
+          if (!configId) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "config_id query parameter is required" });
+            break;
+          }
+
+          const rows = await sqlConnectionTableCreator`
+            SELECT tool_name, config_json
+            FROM "evaluation_tool_configs"
+            WHERE config_id = ${configId}
+            LIMIT 1;
+          `;
+
+          if (!rows[0]) {
+            response.statusCode = 404;
+            response.body = JSON.stringify({ error: "Config history entry not found" });
+            break;
+          }
+
+          await sqlConnectionTableCreator`
+            INSERT INTO "evaluation_tool_configs" (tool_name, config_json)
+            VALUES (${rows[0].tool_name}, ${sqlConnectionTableCreator.json(rows[0].config_json)});
+          `;
+
+          response.body = JSON.stringify({
+            message: `Evaluation tool config for ${rows[0].tool_name} restored successfully`,
+          });
+        } catch (err) {
+          response.statusCode = 500;
+          console.error('[restore_evaluation_tool_config] Error:', err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
       default:
         console.error(`Unsupported route: "${pathData}"`);
         response.statusCode = 404;

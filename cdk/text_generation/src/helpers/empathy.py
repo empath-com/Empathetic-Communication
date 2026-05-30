@@ -12,6 +12,7 @@ from .evaluation_tool_specs import (
     CARE_CRITERIA_LABELS, PRISM_CRITERIA_LABELS,
     CARE_JUSTIFICATION_KEYS, PRISM_JUSTIFICATION_KEYS,
     get_care_tool_spec, get_prism_tool_spec,
+    get_care_tool_spec_effective, get_prism_tool_spec_effective,
 )
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
@@ -32,6 +33,11 @@ EMPATHY_MAX_OUTPUT_TOKENS = 2000
 MAX_SYSTEM_PROMPT_CHARS = 7000
 MAX_GROUNDING_RETRIES = 1
 DEBUG_LOG_FULL_PROMPTS = False
+
+# Minimum transcript length to attempt LLM evaluation.
+# Transcripts shorter than this cannot yield meaningful empathy scores and may
+# cause the model to produce an invalid tool-use sequence (ModelErrorException).
+MIN_TRANSCRIPT_CHARS_FOR_EVAL = 30
 
 STATIC_GROUNDING_INSTRUCTIONS = """Grounding rules (mandatory):
 - Evaluate ONLY using evidence in TRANSCRIPT.
@@ -170,11 +176,69 @@ def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
     evaluation["feedback"] = feedback
 
 
+def _build_too_short_care_evaluation(bedrock_client) -> dict:
+    """Return a minimum-score CARE evaluation for transcripts that are too brief to evaluate."""
+    brief_note = "The response was too brief to evaluate this criterion meaningfully."
+    evaluation = {k: 1 for k in CARE_CRITERIA}
+    evaluation["judge_reasoning"] = {
+        **{f"{k}_justification": brief_note for k in CARE_CRITERIA},
+        "overall_assessment": (
+            "Your response was too short to evaluate empathy meaningfully. "
+            "Please provide a more detailed reply so the coach can give you specific feedback."
+        ),
+    }
+    evaluation["feedback"] = {
+        "strengths": [],
+        "improvement_suggestions": [
+            "Provide a longer, more detailed response so that each CARE criterion can be properly assessed."
+        ],
+        "forward_target": "Making you feel at ease",
+    }
+    evaluation["evaluation_method"] = "LLM-as-a-Judge"
+    evaluation["evaluation_tool"] = "CARE"
+    evaluation["judge_model"] = bedrock_client["model_id"]
+    return evaluation
+
+
+def _build_too_short_prism_evaluation(bedrock_client) -> dict:
+    """Return a minimum-score PRISM evaluation for transcripts that are too brief to evaluate."""
+    brief_note = "The response was too brief to evaluate this dimension meaningfully."
+    evaluation = {k: 1 for k in PRISM_CRITERIA}
+    evaluation["judge_reasoning"] = {
+        **{f"{k}_justification": brief_note for k in PRISM_CRITERIA},
+        "overall_assessment": (
+            "Your response was too short to evaluate empathy meaningfully. "
+            "Please provide a more detailed reply so the coach can give you specific feedback."
+        ),
+    }
+    evaluation["feedback"] = {
+        "strengths": [],
+        "improvement_suggestions": [
+            "Provide a longer, more detailed response so that each PRISM dimension can be properly assessed."
+        ],
+        "forward_target": "Prepare",
+    }
+    evaluation["evaluation_method"] = "LLM-as-a-Judge"
+    evaluation["evaluation_tool"] = "PRISM"
+    evaluation["judge_model"] = bedrock_client["model_id"]
+    return evaluation
+
+
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
     LLM-as-a-Judge empathy evaluation using structured scoring methodology with prompt caching.
     """
     logger.info("🧠 EMPATHY EVALUATION STARTED")
+
+    # Guard: transcripts that are too short cannot yield meaningful empathy scores and
+    # may cause the model to produce an invalid tool-use sequence (ModelErrorException).
+    transcript_len = len(student_response.strip()) if student_response else 0
+    if transcript_len < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
+        logger.warning(
+            f"⚠️ Transcript too short ({transcript_len} chars "
+            f"< {MIN_TRANSCRIPT_CHARS_FOR_EVAL}); returning minimum-score evaluation without LLM call."
+        )
+        return _build_too_short_care_evaluation(bedrock_client)
 
     # Get the empathy prompt - static part for caching (from DB or default)
     try:
@@ -216,7 +280,7 @@ TRANSCRIPT_END"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    care_tool_spec = get_care_tool_spec()
+    care_tool_spec = get_care_tool_spec_effective()
 
     strict_retry_addendum = """
 
@@ -368,6 +432,16 @@ def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_
     """
     logger.info("🧠 PRISM EMPATHY EVALUATION STARTED")
 
+    # Guard: transcripts that are too short cannot yield meaningful empathy scores and
+    # may cause the model to produce an invalid tool-use sequence (ModelErrorException).
+    transcript_len = len(student_response.strip()) if student_response else 0
+    if transcript_len < MIN_TRANSCRIPT_CHARS_FOR_EVAL:
+        logger.warning(
+            f"⚠️ PRISM transcript too short ({transcript_len} chars "
+            f"< {MIN_TRANSCRIPT_CHARS_FOR_EVAL}); returning minimum-score evaluation without LLM call."
+        )
+        return _build_too_short_prism_evaluation(bedrock_client)
+
     try:
         static_system_prompt = get_empathy_prompt()
         if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
@@ -389,7 +463,7 @@ TRANSCRIPT_END"""
         logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
         return None
 
-    prism_tool_spec = get_prism_tool_spec()
+    prism_tool_spec = get_prism_tool_spec_effective()
 
     strict_retry_addendum = """
 
