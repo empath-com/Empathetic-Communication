@@ -15,6 +15,11 @@
         "/^Set-Location 'C:\\\\Users\\\\Peter\\\\source\\\\GitHub\\\\Empathetic-Communication\\\\cdk'; npm run build$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "/^Set-Location 'C:\\\\Users\\\\Peter\\\\source\\\\GitHub\\\\Empathetic-Communication'; node --check cdk/lambda/adminFunction/adminFunction\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "npm run build": true
     }
 }

@@ -235,6 +235,41 @@ export function createBusinessLambdas(
     .defaultChild as lambda.CfnFunction;
   cfnLambda_Admin.overrideLogicalId("adminFunction");
 
+  // Grant admin Lambda access to SSM Parameter Store for Bedrock LLM ID
+  lambdaAdminFunction.addToRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["ssm:GetParameter"],
+      resources: [bedrockLLMParameter.parameterArn],
+    })
+  );
+
+  // Custom policy statement for Bedrock access (shared by admin and text gen functions)
+  const bedrockPolicyStatement = new iam.PolicyStatement({
+    effect: iam.Effect.ALLOW,
+    actions: [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:InvokeEndpoint",
+      "bedrock:ApplyGuardrail",
+    ],
+    resources: [
+      "arn:aws:bedrock:" +
+      scope.region +
+      "::foundation-model/meta.llama3-70b-instruct-v1:0",
+      "arn:aws:bedrock:" +
+      scope.region +
+      "::foundation-model/amazon.titan-embed-text-v2:0",
+      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
+      "arn:aws:bedrock:" + scope.region + "::foundation-model/amazon.nova-lite-v1:0",
+      `arn:aws:bedrock:${scope.region}:${scope.account}:guardrail/*`,
+    ],
+  });
+
+  // Add Bedrock policy to admin function for AI analytics
+  lambdaAdminFunction.addToRolePolicy(bedrockPolicyStatement);
+
   // Text Generation Docker Lambda
   const textGenLambdaDockerFunc = new lambda.DockerImageFunction(
     scope,
@@ -286,28 +321,6 @@ export function createBusinessLambdas(
     })
   );
 
-  // Custom policy statement for Bedrock access
-  const bedrockPolicyStatement = new iam.PolicyStatement({
-    effect: iam.Effect.ALLOW,
-    actions: [
-      "bedrock:InvokeModel",
-      "bedrock:InvokeModelWithResponseStream",
-      "bedrock:InvokeEndpoint",
-      "bedrock:ApplyGuardrail",
-    ],
-    resources: [
-      "arn:aws:bedrock:" +
-      scope.region +
-      "::foundation-model/meta.llama3-70b-instruct-v1:0",
-      "arn:aws:bedrock:" +
-      scope.region +
-      "::foundation-model/amazon.titan-embed-text-v2:0",
-      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
-      "arn:aws:bedrock:" + scope.region + "::foundation-model/amazon.nova-lite-v1:0",
-      `arn:aws:bedrock:${scope.region}:${scope.account}:guardrail/*`,
-    ],
-  });
 
   textGenLambdaDockerFunc.addToRolePolicy(bedrockPolicyStatement);
 

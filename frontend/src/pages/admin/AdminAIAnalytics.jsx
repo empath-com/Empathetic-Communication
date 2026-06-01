@@ -19,7 +19,6 @@ import {
 } from "@mui/material";
 import { fetchAuthSession } from "aws-amplify/auth";
 import html2canvas from "html2canvas";
-import mermaid from "mermaid";
 import {
   ResponsiveContainer,
   BarChart,
@@ -38,8 +37,6 @@ import {
 
 const CHART_TYPE_STORAGE_KEY = "admin-ai-analytics-chart-type";
 
-mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
-
 const CHART_COLORS = [
   "#10b981",
   "#2563eb",
@@ -50,40 +47,6 @@ const CHART_COLORS = [
   "#84cc16",
   "#f97316",
 ];
-
-const MermaidBlock = ({ code }) => {
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const render = async () => {
-      if (!code || !containerRef.current) {
-        return;
-      }
-
-      const id = `mermaid-${Date.now()}`;
-      try {
-        const { svg } = await mermaid.render(id, code);
-        if (!isCancelled && containerRef.current) {
-          containerRef.current.innerHTML = svg;
-        }
-      } catch (err) {
-        if (!isCancelled && containerRef.current) {
-          containerRef.current.innerHTML = `<pre style="white-space: pre-wrap; color: #b91c1c;">${String(err?.message || err)}</pre>`;
-        }
-      }
-    };
-
-    render();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [code]);
-
-  return <Box ref={containerRef} sx={{ overflowX: "auto" }} />;
-};
 
 const ResultChart = ({ chart, rows }) => {
   const type = chart?.type || "table";
@@ -315,13 +278,21 @@ const AdminAIAnalytics = () => {
   }, [result, selectedChartType]);
 
   return (
-    <Box sx={{ ml: { xs: 0, md: 28 }, mt: 12, p: 3 }}>
+    <Box
+      sx={{
+        ml: { xs: 0, md: 28 },
+        mt: 12,
+        p: 3,
+        height: "calc(100vh - 96px)",
+        overflowY: "auto",
+      }}
+    >
       <Typography variant="h5" sx={{ mb: 1, color: "#111827" }}>
         AI Analytics Assistant
       </Typography>
       <Typography variant="body2" sx={{ mb: 2, color: "#4b5563" }}>
         Ask plain-language questions. The assistant generates a schema-aware read-only SQL query, runs it,
-        and returns plotted graphs, Mermaid output, and a result table.
+        and returns plotted graphs and a result table.
       </Typography>
 
       <Card sx={{ borderRadius: 3, border: "1px solid #e5e7eb", mb: 3 }}>
@@ -415,20 +386,6 @@ const AdminAIAnalytics = () => {
               </Box>
             </CardContent>
           </Card>
-
-          {result.chart?.mermaid && (
-            <Card sx={{ borderRadius: 3, border: "1px solid #e5e7eb" }}>
-              <CardContent>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
-                  Mermaid Diagram
-                </Typography>
-                <MermaidBlock code={result.chart.mermaid} />
-                <Box sx={{ mt: 2, backgroundColor: "#f9fafb", p: 2, borderRadius: 2 }}>
-                  <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{result.chart.mermaid}</pre>
-                </Box>
-              </CardContent>
-            </Card>
-          )}
 
           <Card sx={{ borderRadius: 3, border: "1px solid #e5e7eb" }}>
             <CardContent>
