@@ -28,6 +28,7 @@ from langchain_community.embeddings import BedrockEmbeddings
 from langchain_postgres import PGVector
 from amazon_polly_streaming import PollyStreamingClient
 from voice_db_manager import voice_db_manager, get_pg_connection, return_pg_connection
+from shared.completion import finalize_completion_response
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
 PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
@@ -933,12 +934,10 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 return
 
             # Check for diagnosis completion
-            diagnosis_achieved = "SESSION COMPLETED" in text
-            if diagnosis_achieved and self.llm_completion:
-                # Remove the marker from the text
-                text = text.replace("SESSION COMPLETED", "").strip()
-                # Add completion message
-                text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
+            completion_result = finalize_completion_response(text, self.llm_completion)
+            diagnosis_achieved = completion_result["llm_verdict"]
+            if diagnosis_achieved:
+                text = completion_result["llm_output"]
 
             if self.role == "ASSISTANT":
                 # Suppress while waiting for LLaMA to finish (Nova Sonic's own reasoning response)
@@ -2379,10 +2378,10 @@ class PollyTranscribeSession(NovaSonic):
 
             # Mirror NovaSonic._handle_event SESSION COMPLETED handling: strip the marker
             # from the spoken text and emit diagnosis_complete so the frontend reacts.
-            diagnosis_achieved = "SESSION COMPLETED" in response_text
-            if diagnosis_achieved and self.llm_completion:
-                response_text = response_text.replace("SESSION COMPLETED", "").strip()
-                response_text += " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
+            completion_result = finalize_completion_response(response_text, self.llm_completion)
+            diagnosis_achieved = completion_result["llm_verdict"]
+            if diagnosis_achieved:
+                response_text = completion_result["llm_output"]
                 print(f"🎯 POLLY: SESSION COMPLETED detected — diagnosis achieved", flush=True)
                 print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
 

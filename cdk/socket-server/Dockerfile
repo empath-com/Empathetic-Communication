@@ -12,21 +12,22 @@ RUN apt-get update && apt-get install -y curl wget && \
 ENV REBUILD_TIMESTAMP=2026-05-21-v1
 
 # Install Node.js dependencies
-COPY package.json ./
+COPY socket-server/package.json ./
 RUN npm install
 
 # Copy Python files and install requirements
-COPY *.py ./
-COPY helpers/ ./helpers/
-COPY requirements.txt ./
+COPY socket-server/*.py ./
+COPY socket-server/helpers/ ./helpers/
+COPY socket-server/requirements.txt ./
+COPY shared/ ./shared/
 
 RUN pip install --upgrade pip setuptools && \
     pip cache purge && \
     pip install -r requirements.txt
 
 # Copy server files
-COPY server.js ./
-COPY auth.js ./
+COPY socket-server/server.js ./
+COPY socket-server/auth.js ./
 
 ENV AWS_DEFAULT_REGION=us-east-1
 

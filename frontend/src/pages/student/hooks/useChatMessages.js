@@ -173,6 +173,9 @@ export default function useChatMessages({
   const allowAudioRef = useRef(false);
   const diagnosisCompletedRef = useRef(false);
   const pendingDiagnosisCompleteRef = useRef(null);
+  const lastVoiceAudioChunkAtRef = useRef(0);
+  const completionTimerRef = useRef(null);
+  const COMPLETION_AUDIO_DRAIN_MS = 7000;
 
   // Stable refs so socket listeners (set up once) always see fresh values
   const patientRef = useRef(patient);
@@ -212,11 +215,35 @@ export default function useChatMessages({
     alert("Session completed successfully!");
   }, [getAuth, hasAtLeastOneFullTurn]);
 
+  const scheduleCompletionCheck = useCallback(() => {
+    if (diagnosisCompletedRef.current || !pendingDiagnosisCompleteRef.current) return;
+
+    if (completionTimerRef.current) {
+      clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = null;
+    }
+
+    const lastAudioAt = lastVoiceAudioChunkAtRef.current;
+    const elapsed = lastAudioAt ? Date.now() - lastAudioAt : 0;
+    const waitMs = Math.max(COMPLETION_AUDIO_DRAIN_MS - elapsed, 250);
+
+    completionTimerRef.current = setTimeout(() => {
+      completionTimerRef.current = null;
+      applyCompletionEffects();
+    }, waitMs);
+  }, [applyCompletionEffects]);
+
   useEffect(() => {
     if (pendingDiagnosisCompleteRef.current) {
-      applyCompletionEffects();
+      scheduleCompletionCheck();
     }
-  }, [messages, applyCompletionEffects]);
+    return () => {
+      if (completionTimerRef.current) {
+        clearTimeout(completionTimerRef.current);
+        completionTimerRef.current = null;
+      }
+    };
+  }, [messages, scheduleCompletionCheck]);
 
   // Keep empathyEnabledRef in sync
   useEffect(() => {
@@ -761,7 +788,9 @@ export default function useChatMessages({
       const handleAudio = (data) => {
         console.log(`[${new Date().toLocaleTimeString()}] 📡 audio-chunk handler called`, { hasData: !!data?.data, allowAudio: allowAudioRef.current });
         if (!allowAudioRef.current || !data.data) return;
+        lastVoiceAudioChunkAtRef.current = Date.now();
         playAudio(data.data);
+        scheduleCompletionCheck();
       };
 
       const handleTextMessage = (data) => {
@@ -822,7 +851,7 @@ export default function useChatMessages({
         if (!hasCompletionMessage) return;
 
         pendingDiagnosisCompleteRef.current = payload;
-        applyCompletionEffects();
+        scheduleCompletionCheck();
       };
 
       const VOICE_PREVIEW_ID_USER = "VOICE_TRANSCRIPT_PREVIEW";

@@ -240,7 +240,8 @@ export function createBusinessLambdas(
     scope,
     `${id}-TextGenLambdaDockerFunction`,
     {
-      code: lambda.DockerImageCode.fromImageAsset("./text_generation", {
+      code: lambda.DockerImageCode.fromImageAsset(".", {
+        file: "text_generation/Dockerfile",
         platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
       }),
       memorySize: 1024,

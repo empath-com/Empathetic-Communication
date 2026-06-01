@@ -22,6 +22,7 @@ from langchain_community.chat_message_histories import DynamoDBChatMessageHistor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
+from shared.completion import build_completion_instruction
 from helpers.prompts import get_system_prompt
 from helpers.llm import get_bedrock_llm
 from helpers.vectorstore import get_vectorstore_retriever
@@ -101,18 +102,7 @@ def _build_chain(
     role = SIMULATED_ROLE
     pro = PRACTITIONER_ROLE
 
-    # Mirrors conversation.py: tell the patient when to end the session
-    if llm_completion:
-        completion_string = (
-            f"Continue this process until you determine that the {pro} has properly "
-            f"addressed your concerns. Once that happens, include SESSION COMPLETED in your "
-            f"response and politely end the conversation."
-        )
-    else:
-        completion_string = (
-            f"Once the {pro} has responded to your concern, politely end the conversation "
-            f"and say goodbye. Regardless of the outcome, do not continue the conversation further."
-        )
+    completion_string = build_completion_instruction(pro, llm_completion)
 
     final_system_prompt = f"""
 <|begin_of_text|>

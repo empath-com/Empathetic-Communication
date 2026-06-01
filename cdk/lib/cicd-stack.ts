@@ -257,7 +257,7 @@ export class CICDStack extends cdk.Stack {
                                     `
                                     if [ "$SHOULD_BUILD" = "true" ]; then
                                     echo "Building Docker image..."
-                                    docker build -t $REPOSITORY_URI:$IMAGE_TAG $CODEBUILD_SRC_DIR/$PATH_FILTER -f $CODEBUILD_SRC_DIR/$PATH_FILTER/Dockerfile
+                                    docker build -t $REPOSITORY_URI:$IMAGE_TAG $CODEBUILD_SRC_DIR/cdk -f $CODEBUILD_SRC_DIR/$PATH_FILTER/Dockerfile
                                     else
                                     echo "Skipping build phase"
                                     fi

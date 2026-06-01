@@ -175,7 +175,7 @@ export class EcsSocketStack extends Stack {
 
     // 4) Container listening on port 80
     taskDef.addContainer("SocketContainer", {
-      image: ecs.ContainerImage.fromAsset("./socket-server"),
+      image: ecs.ContainerImage.fromAsset(".", { file: "socket-server/Dockerfile" }),
       portMappings: [{ containerPort: 80 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "Socket",

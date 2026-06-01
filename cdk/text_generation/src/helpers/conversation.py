@@ -1,6 +1,5 @@
 import boto3
 import os
-import re
 import json
 import logging
 from .db_connection_manager import get_db_cursor
@@ -14,6 +13,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
+from shared.completion import build_completion_instruction, finalize_completion_response
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -168,45 +168,7 @@ def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = 
     """
     Processes the response from the LLM to determine if proper diagnosis has been achieved.
     """
-    completion_sentence = " I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
-
-    if not llm_completion:
-        return dict(
-            llm_output=response,
-            llm_verdict=False
-        )
-
-    elif "SESSION COMPLETED" not in response:
-        return dict(
-            llm_output=response,
-            llm_verdict=False
-        )
-
-    elif "SESSION COMPLETED" in response:
-        sentences = split_into_sentences(response)
-
-        for i in range(len(sentences)):
-            if "SESSION COMPLETED" in sentences[i]:
-                llm_response=' '.join(sentences[0:i-1])
-
-                if sentences[i-1][-1] == '?':
-                    return dict(
-                        llm_output=llm_response,
-                        llm_verdict=False
-                    )
-                else:
-                    return dict(
-                        llm_output=llm_response + completion_sentence,
-                        llm_verdict=True
-                    )
-
-def split_into_sentences(paragraph: str) -> list[str]:
-    """
-    Splits a given paragraph into individual sentences using a regular expression to detect sentence boundaries.
-    """
-    sentence_endings = r'(?<!\\w\\.\\w.)(?<![A-Z][a-z]\\.)(?<=\\.|\\?|\\!)\\s'
-    sentences = re.split(sentence_endings, paragraph)
-    return sentences
+    return finalize_completion_response(response, llm_completion)
 
 def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, patient_name: str = None, current_session_name: str = "New chat") -> str:
     """
@@ -276,15 +238,7 @@ def get_response(
 
     role = SIMULATED_ROLE
     pro = PRACTITIONER_ROLE
-    completion_string = f"""
-                Once the {pro} has responded to your concern, politely end the conversation and say goodbye.
-                Regardless of the outcome, do not continue the conversation further.
-                """
-    if llm_completion:
-        completion_string = f"""
-                Continue this process until you determine that me, the {pro}, has properly addressed your concerns.
-                Once that happens, include SESSION COMPLETED in your response and politely end the conversation.
-                """
+    completion_string = build_completion_instruction(pro, llm_completion)
 
     system_prompt = get_system_prompt(patient_name)
 
