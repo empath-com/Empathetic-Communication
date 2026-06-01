@@ -31,6 +31,31 @@ export function createCognitoAuth(
 ): CognitoAuthResult {
   const { id, db, vpcStack, apiRestApiId, postgres } = props;
 
+  const sesFromEmail = process.env.COGNITO_SES_FROM_EMAIL?.trim();
+  const sesFromName = process.env.COGNITO_SES_FROM_NAME?.trim();
+  const sesReplyTo = process.env.COGNITO_SES_REPLY_TO?.trim();
+  const sesConfigurationSetName =
+    process.env.COGNITO_SES_CONFIGURATION_SET?.trim();
+  const sesRegion = process.env.COGNITO_SES_REGION?.trim();
+  const sesVerifiedDomain = process.env.COGNITO_SES_VERIFIED_DOMAIN?.trim();
+
+  const userPoolEmail = sesFromEmail
+    ? cognito.UserPoolEmail.withSES({
+        fromEmail: sesFromEmail,
+        fromName: sesFromName || "Virtual Care Interactions",
+        replyTo: sesReplyTo,
+        configurationSetName: sesConfigurationSetName,
+        sesRegion,
+        sesVerifiedDomain,
+      })
+    : undefined;
+
+  cdk.Annotations.of(scope).addInfo(
+    userPoolEmail
+      ? "Cognito User Pool email sending configured to use Amazon SES (DEVELOPER mode)."
+      : "Cognito User Pool email sending uses Cognito default sender. Set COGNITO_SES_FROM_EMAIL to switch to Amazon SES."
+  );
+
   // Helper to create policy statements
   const createPolicyStatement = (actions: string[], resources: string[]) => {
     return new iam.PolicyStatement({
@@ -44,6 +69,7 @@ export function createCognitoAuth(
   const userPoolName = `${id}-UserPool`;
   const userPool = new cognito.UserPool(scope, `${id}-pool`, {
     userPoolName: userPoolName,
+    email: userPoolEmail,
     signInAliases: {
       email: true,
     },

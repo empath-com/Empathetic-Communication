@@ -1,9 +1,202 @@
 const { initializeConnection } = require("./libadmin.js");
+const AWS = require("aws-sdk");
 
 let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, CORS_ALLOWED_ORIGIN = "*" } = process.env;
+const ADMIN_ANALYTICS_MODEL_ID = process.env.ADMIN_ANALYTICS_MODEL_ID || "meta.llama3-70b-instruct-v1:0";
+const MAX_ANALYTICS_ROWS = 200;
+
+const bedrockRuntime = new AWS.BedrockRuntime({
+  region: process.env.AWS_REGION,
+});
 
 // SQL conneciton from global variable at libadmin.js
 let sqlConnectionTableCreator = global.sqlConnectionTableCreator;
+
+const sanitizeMermaidText = (value) => {
+  if (value === null || value === undefined) {
+    return "(null)";
+  }
+  return String(value).replace(/"/g, "'").replace(/\n/g, " ").trim();
+};
+
+const buildSchemaSnapshot = async () => {
+  const schemaRows = await sqlConnectionTableCreator`
+    SELECT table_name, column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+    ORDER BY table_name, ordinal_position;
+  `;
+
+  const grouped = {};
+  for (const row of schemaRows) {
+    if (!grouped[row.table_name]) {
+      grouped[row.table_name] = [];
+    }
+    grouped[row.table_name].push(`${row.column_name} (${row.data_type})`);
+  }
+
+  return Object.entries(grouped)
+    .map(([table, columns]) => `${table}: ${columns.join(", ")}`)
+    .join("\n");
+};
+
+const extractJson = (text) => {
+  if (!text) {
+    return null;
+  }
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch (e) {
+    return null;
+  }
+};
+
+const validateAndNormalizeSql = (sqlText) => {
+  if (!sqlText || typeof sqlText !== "string") {
+    throw new Error("Missing SQL from AI model");
+  }
+
+  let sql = sqlText.trim().replace(/;+\s*$/g, "");
+  const lowered = sql.toLowerCase();
+
+  if (!(lowered.startsWith("select") || lowered.startsWith("with"))) {
+    throw new Error("Only SELECT queries are allowed");
+  }
+
+  if (/;/.test(sql)) {
+    throw new Error("Multiple statements are not allowed");
+  }
+
+  if (/\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|call|copy|merge|vacuum|analyze)\b/i.test(sql)) {
+    throw new Error("Query contains forbidden SQL keywords");
+  }
+
+  if (!/\blimit\s+\d+/i.test(sql)) {
+    sql = `${sql} LIMIT ${MAX_ANALYTICS_ROWS}`;
+  }
+
+  return sql;
+};
+
+const pickChartColumns = (rows, suggestedX, suggestedY) => {
+  if (!rows.length) {
+    return { xColumn: null, yColumn: null };
+  }
+
+  const columns = Object.keys(rows[0]);
+  const isNumericColumn = (colName) => {
+    const values = rows.map((r) => r[colName]).filter((v) => v !== null && v !== undefined);
+    if (!values.length) {
+      return false;
+    }
+    return values.every((v) => typeof v === "number" || (!Number.isNaN(Number(v)) && v !== ""));
+  };
+
+  const validSuggestedX = suggestedX && columns.includes(suggestedX) ? suggestedX : null;
+  const validSuggestedY = suggestedY && columns.includes(suggestedY) && isNumericColumn(suggestedY) ? suggestedY : null;
+
+  if (validSuggestedX && validSuggestedY) {
+    return { xColumn: validSuggestedX, yColumn: validSuggestedY };
+  }
+
+  const numericColumns = columns.filter(isNumericColumn);
+  const nonNumericColumns = columns.filter((c) => !numericColumns.includes(c));
+
+  const yColumn = validSuggestedY || numericColumns[0] || null;
+  const xColumn = validSuggestedX || nonNumericColumns[0] || columns[0] || null;
+
+  return { xColumn, yColumn };
+};
+
+const buildMermaidFromRows = (rows, chartType, chartTitle, xColumn, yColumn) => {
+  if (!rows.length || !xColumn || !yColumn) {
+    return "";
+  }
+
+  const limited = rows.slice(0, 20);
+  const title = sanitizeMermaidText(chartTitle || "AI Analytics");
+
+  if (chartType === "pie") {
+    const lines = limited
+      .map((r) => `  \"${sanitizeMermaidText(r[xColumn])}\" : ${Number(r[yColumn]) || 0}`)
+      .join("\n");
+    return `pie title ${title}\n${lines}`;
+  }
+
+  const labels = limited.map((r) => `\"${sanitizeMermaidText(r[xColumn])}\"`).join(", ");
+  const values = limited.map((r) => Number(r[yColumn]) || 0).join(", ");
+  const seriesKeyword = chartType === "line" ? "line" : "bar";
+
+  return [
+    "xychart-beta",
+    `  title \"${title}\"`,
+    `  x-axis [${labels}]`,
+    `  y-axis \"${sanitizeMermaidText(yColumn)}\" 0 --> auto`,
+    `  ${seriesKeyword} [${values}]`,
+  ].join("\n");
+};
+
+const generateAnalyticsPlan = async (question, schemaSnapshot) => {
+  const prompt = `
+You are a senior data analyst. Convert the user's analytics question into safe PostgreSQL SQL.
+
+Rules:
+- Output STRICT JSON only.
+- Use only SELECT queries (or WITH + SELECT).
+- No DDL/DML.
+- Use table and column names exactly as they appear in schema.
+- Add reasonable aggregations/grouping for analytics questions.
+- Keep result sets compact (aggregated whenever possible).
+
+Schema:
+${schemaSnapshot}
+
+Return this JSON shape exactly:
+{
+  "sql": "SELECT ...",
+  "chartType": "bar|line|pie|table",
+  "title": "short chart title",
+  "xColumn": "column_for_x_axis",
+  "yColumn": "numeric_column_for_y_axis",
+  "insight": "one sentence summary"
+}
+
+User question:
+${question}
+`;
+
+  const payload = {
+    prompt,
+    temperature: 0.1,
+    top_p: 0.9,
+    max_gen_len: 700,
+  };
+
+  const modelResponse = await bedrockRuntime
+    .invokeModel({
+      modelId: ADMIN_ANALYTICS_MODEL_ID,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(payload),
+    })
+    .promise();
+
+  const parsedBody = JSON.parse(modelResponse.body.toString("utf-8"));
+  const generation = parsedBody.generation || parsedBody.output_text || "";
+  const plan = extractJson(generation);
+  if (!plan) {
+    throw new Error("Failed to parse AI response into analytics plan");
+  }
+
+  return plan;
+};
 
 exports.handler = async (event) => {
   const response = {
@@ -914,6 +1107,65 @@ exports.handler = async (event) => {
           response.statusCode = 500;
           console.log(err);
           response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "POST /admin/ai_analytics_query":
+        try {
+          if (!event.body) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "Request body is required" });
+            break;
+          }
+
+          const requestBody = JSON.parse(event.body);
+          const question = (requestBody.question || "").trim();
+          if (!question) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({ error: "question is required" });
+            break;
+          }
+
+          const schemaSnapshot = await buildSchemaSnapshot();
+          const analyticsPlan = await generateAnalyticsPlan(question, schemaSnapshot);
+          const sql = validateAndNormalizeSql(analyticsPlan.sql);
+
+          const queryRows = await sqlConnectionTableCreator.unsafe(sql);
+          const rows = Array.isArray(queryRows) ? queryRows : [];
+          const columns = rows.length ? Object.keys(rows[0]) : [];
+
+          const requestedChartType = String(analyticsPlan.chartType || "bar").toLowerCase();
+          const chartType = ["bar", "line", "pie", "table"].includes(requestedChartType)
+            ? requestedChartType
+            : "bar";
+
+          const { xColumn, yColumn } = pickChartColumns(
+            rows,
+            analyticsPlan.xColumn,
+            analyticsPlan.yColumn
+          );
+
+          const mermaid = chartType === "table"
+            ? ""
+            : buildMermaidFromRows(rows, chartType, analyticsPlan.title, xColumn, yColumn);
+
+          response.body = JSON.stringify({
+            question,
+            sql,
+            summary: analyticsPlan.insight || "",
+            columns,
+            rows,
+            chart: {
+              type: chartType,
+              title: analyticsPlan.title || "AI Analytics",
+              xColumn,
+              yColumn,
+              mermaid,
+            },
+          });
+        } catch (err) {
+          response.statusCode = 500;
+          console.error("[ai_analytics_query] Error:", err);
+          response.body = JSON.stringify({ error: "Failed to process analytics question", details: err.message });
         }
         break;
       default:

@@ -7,6 +7,14 @@
         "/^Set-Location cdk; npm run build$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^cd cdk; npm run build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location 'C:\\\\Users\\\\Peter\\\\source\\\\GitHub\\\\Empathetic-Communication\\\\cdk'; npm run build$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

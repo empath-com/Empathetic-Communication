@@ -6,6 +6,7 @@ import AdminSimulationGroups from "./AdminSimulationGroups";
 import AdminStatistics from "./AdminStatistics";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
 import AISettings from "./AISettings";
+import AdminAIAnalytics from "./AdminAIAnalytics";
 import PageContainer from "../Container";
 import InstructorDetails from "./InstructorDetails";
 import GroupDetails from "./GroupDetails";
@@ -54,6 +55,8 @@ export const AdminHomepage = () => {
         );
       case "AISettings":
         return <AISettings />;
+      case "AdminAIAnalytics":
+        return <AdminAIAnalytics />;
       default:
         return (
           <AdminInstructors setSelectedInstructor={setSelectedInstructor} />
