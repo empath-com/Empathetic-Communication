@@ -175,46 +175,47 @@ export class DatabaseStack extends Stack {
             ],
         }));
 
-        /**
-         * Create single RDS Proxy with multiple secrets for optimal connection management
-         * This consolidates 3 separate proxies into 1 for 68% cost reduction and better pooling
-         */
-        const secretPathAdmin = secretmanager.Secret.fromSecretNameV2(this, 'AdminSecret', this.secretPathAdminName);
-        
-        const rdsProxy = this.dbInstance.addProxy(id + '-proxy', {
-            secrets: [
-                this.secretPathUser!,
-                this.secretPathTableCreator!,
-                secretPathAdmin
-            ],
-            vpc: vpcStack.vpc,
-            role: rdsProxyRole,
-            securityGroups: this.dbInstance.connections.securityGroups,
-            requireTLS: false, // Keep as false to match previous working version
-            maxConnectionsPercent: 80, // Reserve 20% for direct connections
-            maxIdleConnectionsPercent: 50, // Aggressive idle cleanup
-            borrowTimeout: Duration.seconds(120), // Reasonable timeout
-            sessionPinningFilters: [
-                rds.SessionPinningFilter.EXCLUDE_VARIABLE_SETS
-            ]
-        });
-        
-        /**
-         * Workaround for TargetGroupName not being set automatically
-         */
-        let targetGroup = rdsProxy.node.children.find((child: any) => {
-            return child instanceof rds.CfnDBProxyTargetGroup;
-        }) as rds.CfnDBProxyTargetGroup;
+        if (!idleMode) {
+            /**
+             * Create single RDS Proxy with multiple secrets for optimal connection management
+             * This consolidates 3 separate proxies into 1 for 68% cost reduction and better pooling
+             * Skipped in idle mode — proxy cannot be stopped, only deleted, to avoid hourly charges.
+             */
+            const secretPathAdmin = secretmanager.Secret.fromSecretNameV2(this, 'AdminSecret', this.secretPathAdminName);
 
-        targetGroup.addPropertyOverride('TargetGroupName', 'default');
+            const rdsProxy = this.dbInstance.addProxy(id + '-proxy', {
+                secrets: [
+                    this.secretPathUser!,
+                    this.secretPathTableCreator!,
+                    secretPathAdmin
+                ],
+                vpc: vpcStack.vpc,
+                role: rdsProxyRole,
+                securityGroups: this.dbInstance.connections.securityGroups,
+                requireTLS: false, // Keep as false to match previous working version
+                maxConnectionsPercent: 80, // Reserve 20% for direct connections
+                maxIdleConnectionsPercent: 50, // Aggressive idle cleanup
+                borrowTimeout: Duration.seconds(120), // Reasonable timeout
+                sessionPinningFilters: [
+                    rds.SessionPinningFilter.EXCLUDE_VARIABLE_SETS
+                ]
+            });
 
-        /**
-         * Grant the role permission to connect to the database
-         */
-        this.dbInstance.grantConnect(rdsProxyRole);
+            // Workaround for TargetGroupName not being set automatically
+            let targetGroup = rdsProxy.node.children.find((child: any) => {
+                return child instanceof rds.CfnDBProxyTargetGroup;
+            }) as rds.CfnDBProxyTargetGroup;
 
-        this.rdsProxyEndpoint = rdsProxy.endpoint;
-        console.log(`🏗️ RDS_PROXY_ENDPOINT: ${this.rdsProxyEndpoint}`);
+            targetGroup.addPropertyOverride('TargetGroupName', 'default');
+
+            this.dbInstance.grantConnect(rdsProxyRole);
+
+            this.rdsProxyEndpoint = rdsProxy.endpoint;
+            console.log(`🏗️ RDS_PROXY_ENDPOINT: ${this.rdsProxyEndpoint}`);
+        } else {
+            // No proxy in idle mode. RDS is also stopped nightly; no Lambda traffic runs.
+            this.rdsProxyEndpoint = '';
+        }
 
         /**
          * Idle mode: nightly Lambda that stops the RDS instance.
