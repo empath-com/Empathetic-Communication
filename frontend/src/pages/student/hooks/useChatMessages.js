@@ -146,7 +146,7 @@ export default function useChatMessages({
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newMessage, setNewMessage] = useState(null);
-  const [novaTextInput, setNovaTextInput] = useState("");
+  const [messageInput, setMessageInput] = useState("");
 
   // Refs to always read fresh cross-hook values in handlers (avoids stale closures)
   const creatingSessionRef = useRef(creatingSession);
@@ -192,14 +192,9 @@ export default function useChatMessages({
     return hasStudentMessage && hasAssistantMessage;
   }, []);
 
-  const applyCompletionEffects = useCallback(async () => {
-    if (diagnosisCompletedRef.current) return;
-    if (!hasAtLeastOneFullTurn()) return;
-
-    diagnosisCompletedRef.current = true;
-    pendingDiagnosisCompleteRef.current = null;
-
-    if (patientRef.current && groupRef.current) {
+  const updatePatientScore = useCallback(
+    async (llmVerdict) => {
+      if (!patientRef.current || !groupRef.current) return;
       try {
         const { token, email } = await getAuth();
         const scoreUrl =
@@ -207,15 +202,26 @@ export default function useChatMessages({
           `?patient_id=${encodeURIComponent(patientRef.current.patient_id)}` +
           `&student_email=${encodeURIComponent(email)}` +
           `&simulation_group_id=${encodeURIComponent(groupRef.current.simulation_group_id)}` +
-          `&llm_verdict=true`;
+          `&llm_verdict=${encodeURIComponent(Boolean(llmVerdict))}`;
         fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
       } catch (e) {
-        console.error("Failed to update patient score after voice completion:", e);
+        console.error("Failed to update patient score:", e);
       }
-    }
+    },
+    [getAuth]
+  );
+
+  const applyCompletionEffects = useCallback(async () => {
+    if (diagnosisCompletedRef.current) return;
+    if (!hasAtLeastOneFullTurn()) return;
+
+    diagnosisCompletedRef.current = true;
+    pendingDiagnosisCompleteRef.current = null;
+
+    await updatePatientScore(true);
 
     alert("Session completed successfully!");
-  }, [getAuth, hasAtLeastOneFullTurn]);
+  }, [hasAtLeastOneFullTurn, updatePatientScore]);
 
   const scheduleCompletionCheck = useCallback(() => {
     if (diagnosisCompletedRef.current || !pendingDiagnosisCompleteRef.current) return;
@@ -474,16 +480,9 @@ export default function useChatMessages({
                 );
               }
 
-              if (streamData.llm_verdict !== undefined && patient && group) {
+              if (streamData.llm_verdict !== undefined) {
                 try {
-                  const { token, email } = await getAuth();
-                  const scoreUrl =
-                    `${import.meta.env.VITE_API_ENDPOINT}student/update_patient_score` +
-                    `?patient_id=${encodeURIComponent(patient.patient_id)}` +
-                    `&student_email=${encodeURIComponent(email)}` +
-                    `&simulation_group_id=${encodeURIComponent(group.simulation_group_id)}` +
-                    `&llm_verdict=${encodeURIComponent(streamData.llm_verdict)}`;
-                  fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
+                  await updatePatientScore(streamData.llm_verdict);
                 } catch (e) {
                   console.error("Failed to update patient score:", e);
                 }
@@ -569,7 +568,7 @@ export default function useChatMessages({
     let newSessionObj;
     let authToken;
     let userEmail;
-    let messageContent = novaTextInput.trim();
+    let messageContent = messageInput.trim();
 
     console.log("Submitting message:", messageContent);
 
@@ -624,7 +623,7 @@ export default function useChatMessages({
       .then((messageData) => {
         setNewMessage(messageData[0]);
         setIsAItyping(true);
-        setNovaTextInput("");
+        setMessageInput("");
 
         const message = messageData[0].message_content;
         const messageId = messageData[0].message_id;
@@ -855,10 +854,11 @@ export default function useChatMessages({
       const handleDiagnosisComplete = (payload) => {
         if (diagnosisCompletedRef.current) return;
 
+        const isCompletedPayload = payload?.completed === true;
         const hasCompletionMessage =
           typeof payload?.message === "string" &&
           payload.message.toLowerCase().includes("completed");
-        if (!hasCompletionMessage) return;
+        if (!isCompletedPayload && !hasCompletionMessage) return;
 
         pendingDiagnosisCompleteRef.current = payload;
         scheduleCompletionCheck();
@@ -942,6 +942,7 @@ export default function useChatMessages({
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
       socket.off("nova-debug");
+      socket.off("voice-started");
       socket.off("voice-user-message");
       socket.off("voice-transcript-partial");
       socket.off("voice-transcript-final");
@@ -958,17 +959,20 @@ export default function useChatMessages({
     setupSocketListeners();
   }, []);
 
-  // Nova-started event
-  const [novaStarted, setNovaStarted] = useState(false);
+  // Voice-started event
+  const [voiceStarted, setVoiceStarted] = useState(false);
   useEffect(() => {
     const setupSocket = async () => {
       const socket = await getSocket();
+      socket.off("voice-started");
       socket.off("nova-started");
-      socket.on("nova-started", () => {
-        console.log("Nova backend ready in StudentChat!");
+      const handleVoiceStarted = () => {
+        console.log("Voice backend ready in StudentChat!");
         diagnosisCompletedRef.current = false;
-        setNovaStarted(true);
-      });
+        setVoiceStarted(true);
+      };
+      socket.on("voice-started", handleVoiceStarted);
+      socket.on("nova-started", handleVoiceStarted);
     };
     setupSocket();
   }, []);
@@ -981,7 +985,7 @@ export default function useChatMessages({
         handleSubmit();
       }
     },
-    [isSubmitting, isAItyping, creatingSession, novaTextInput, session]
+    [isSubmitting, isAItyping, creatingSession, messageInput, session]
   );
 
   useEffect(() => {
@@ -1031,9 +1035,9 @@ export default function useChatMessages({
   return {
     isSubmitting,
     setIsSubmitting,
-    novaTextInput,
-    setNovaTextInput,
-    novaStarted,
+    messageInput,
+    setMessageInput,
+    voiceStarted,
     messagesEndRef,
     textareaRef,
     allowAudioRef,

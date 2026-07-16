@@ -1001,7 +1001,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
 
                 # If diagnosis achieved, signal completion
                 if diagnosis_achieved and self.llm_completion:
-                    print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
+                    print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully", "completed": True}), flush=True)
 
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
@@ -2408,7 +2408,7 @@ class PollyTranscribeSession(NovaSonic):
             if diagnosis_achieved:
                 response_text = completion_result["llm_output"]
                 print(f"🎯 POLLY: SESSION COMPLETED detected — diagnosis achieved", flush=True)
-                print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully"}), flush=True)
+                print(json.dumps({"type": "diagnosis_complete", "text": "Session completed successfully", "completed": True}), flush=True)
 
             chunks = self._semantic_chunks(response_text)
             print(f"🔊 POLLY: Synthesizing {len(chunks)} semantic chunk(s) via Polly (voice={self.voice_id})", flush=True)
@@ -2802,7 +2802,6 @@ if __name__ == "__main__":
     import traceback
     
     nova = None
-    voice_runtime = (os.getenv("VOICE_RUNTIME", "polly").strip().lower())
     stdin_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
     def read_stdin_line():
@@ -2828,16 +2827,10 @@ if __name__ == "__main__":
                 session_id = command.get("session_id", "default")
                 voice_id = command.get("voice_id")
 
-                if voice_runtime == "polly":
-                    nova = PollyTranscribeSession(
-                        session_id=session_id,
-                        voice_id=voice_id,
-                    )
-                else:
-                    nova = NovaSonic(
-                        session_id=session_id,
-                        voice_id=voice_id,
-                    )
+                nova = PollyTranscribeSession(
+                    session_id=session_id,
+                    voice_id=voice_id,
+                )
 
                 await nova.start_session()
 
@@ -2929,7 +2922,7 @@ if __name__ == "__main__":
 
             # Only restart the Bedrock response task for NovaSonic sessions.
             # PollyTranscribeSession has no stream and must not run _process_responses.
-            if nova and nova.is_active and isinstance(nova, NovaSonic):
+            if nova and nova.is_active and type(nova) is NovaSonic:
                 if nova.response is None or nova.response.done():
                     if nova.response and nova.response.done():
                         # checking for failure
@@ -2951,7 +2944,7 @@ if __name__ == "__main__":
         
         try:
             print(f"🚀 Nova Sonic Python process started", flush=True)
-            print(f"VOICE_RUNTIME: {voice_runtime}", flush=True)
+            print("VOICE_RUNTIME: polly (fixed)", flush=True)
             print(f"Python version: {sys.version}", flush=True)
             logger.info("Nova Sonic process initialized")
             
@@ -2964,10 +2957,7 @@ if __name__ == "__main__":
 
             if session_id and session_id != "default":
                 print(f"🚀 Auto-starting Nova Sonic session: {session_id}", flush=True)
-                if voice_runtime == "polly":
-                    nova = PollyTranscribeSession(session_id=session_id, voice_id=voice_id)
-                else:
-                    nova = NovaSonic(session_id=session_id, voice_id=voice_id)
+                nova = PollyTranscribeSession(session_id=session_id, voice_id=voice_id)
                 await nova.start_session()
                 print(f"NOVA SONIC SESSION STARTED SUCCESSFULLY!!!", flush=True)
             else:

@@ -87,8 +87,8 @@ io.on("connection", (socket) => {
     console.error("🔌 SOCKET ERROR:", err);
   });
 
-  // ─── Start Nova Sonic ──────────────────────────────────────────────────────
-  socket.on("start-nova-sonic", async (config = {}) => {
+  // ─── Start voice session (Polly runtime) ───────────────────────────────────
+  const startVoiceSession = async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
 
     audioStarted = false;
@@ -201,7 +201,8 @@ io.on("connection", (socket) => {
               if (parsed.text && parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
                 console.log("✅ NOVA SONIC READY (via debug event) — novaReady=true");
-                socket.emit("nova-started", { status: "Nova Sonic session started" });
+                socket.emit("voice-started", { status: "Voice session started" });
+                socket.emit("nova-started", { status: "Voice session started" });
               }
             }
             // ─ Voice empathy evaluation results ──────────────────────────
@@ -221,7 +222,8 @@ io.on("connection", (socket) => {
               if (parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
                 console.log("✅ NOVA SONIC READY - Voice empathy evaluation enabled");
-                socket.emit("nova-started", { status: "Nova Sonic session started" });
+                socket.emit("voice-started", { status: "Voice session started" });
+                socket.emit("nova-started", { status: "Voice session started" });
               }
             }
             // ─ Empathy feedback ──────────────────────────────────────────
@@ -279,7 +281,7 @@ io.on("connection", (socket) => {
               console.log("🎯 DIAGNOSIS COMPLETE:", parsed.text);
               if (!diagnosisCompleted) {
                 diagnosisCompleted = true;
-                socket.emit("diagnosis-complete", { message: parsed.text });
+                socket.emit("diagnosis-complete", { message: parsed.text, completed: true });
               }
             }
             else if (parsed.type === "diagnosis_verdict") {
@@ -317,8 +319,11 @@ io.on("connection", (socket) => {
             console.log("[python]", line);
             if (line.includes("Nova Sonic ready")) {
               novaReady = true;
+              socket.emit("voice-started", {
+                status: "Voice session started",
+              });
               socket.emit("nova-started", {
-                status: "Nova Sonic session started",
+                status: "Voice session started",
               });
             }
             // Handle empathy feedback in plain text fallback
@@ -339,7 +344,7 @@ io.on("connection", (socket) => {
             // Handle diagnosis completion in plain text fallback
             if (line.includes("SESSION COMPLETED") && !diagnosisCompleted) {
               diagnosisCompleted = true;
-              socket.emit("diagnosis-complete", { message: "Session completed successfully" });
+              socket.emit("diagnosis-complete", { message: "Session completed successfully", completed: true });
             }
           }
         });
@@ -410,7 +415,9 @@ io.on("connection", (socket) => {
       novaProcess = null;
       novaReady = false;
     });
-  });
+  };
+  socket.on("start-voice-session", startVoiceSession);
+  socket.on("start-nova-sonic", startVoiceSession);
 
   // ─── Audio‑input from client ──────────────────────────────────────────────
   let audioStarted = false;

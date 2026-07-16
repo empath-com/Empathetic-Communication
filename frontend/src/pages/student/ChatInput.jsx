@@ -5,8 +5,8 @@ import MicIcon from "@mui/icons-material/Mic";
  */
 const ChatInput = ({
   textareaRef,
-  novaTextInput,
-  setNovaTextInput,
+  messageInput,
+  setMessageInput,
   handleKeyDown,
   handleSubmit,
   isSubmitting,
@@ -36,8 +36,8 @@ const ChatInput = ({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          value={novaTextInput}
-          onChange={(e) => setNovaTextInput(e.target.value)}
+          value={messageInput}
+          onChange={(e) => setMessageInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type your message..."
           className="flex-1 bg-transparent text-gray-900 placeholder-gray-500 resize-none outline-none max-h-32 py-1"

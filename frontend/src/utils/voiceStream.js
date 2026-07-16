@@ -8,7 +8,7 @@ let audioContext;  // mic capture context (16 kHz)
 let processor;
 let input;
 let globalStream;
-let novaStarted = false;
+let voiceStarted = false;
 let analyser;
 let dataArray;
 let animationId;
@@ -91,20 +91,21 @@ export async function startSpokenLLM(
   session_id,
   options = {}
 ) {
-  if (novaStarted) {
-    console.warn("🔁 Nova Sonic is already started.");
+  if (voiceStarted) {
+    console.warn("🔁 Voice session is already started.");
     return;
   }
 
   const socket = await getSocket();
 
   // Clean up any existing listeners to prevent duplicates
+  socket.off("voice-started");
   socket.off("nova-started");
 
-  socket.once("nova-started", () => {
-    if (novaStarted) return;
-    console.log(`[${ts()}] ✅ Nova backend ready!`);
-    novaStarted = true;
+  const onVoiceStarted = () => {
+    if (voiceStarted) return;
+    console.log(`[${ts()}] ✅ Voice backend ready!`);
+    voiceStarted = true;
 
     setTimeout(async () => {
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
@@ -148,7 +149,10 @@ export async function startSpokenLLM(
           console.error("🎤 Microphone access denied:", err);
         });
     }, 200);
-  });
+  };
+  socket.once("voice-started", onVoiceStarted);
+  // Backward-compatible fallback while older server/client pairs may still emit this event.
+  socket.once("nova-started", onVoiceStarted);
 
   if (!socket.connected) {
     socket.connect();
@@ -162,8 +166,8 @@ export async function startSpokenLLM(
     system_prompt = "",
   } = options || {};
 
-  console.log("🚀 Requesting Nova Sonic startup with patient context");
-  socket.emit("start-nova-sonic", {
+  console.log("🚀 Requesting voice startup with patient context");
+  socket.emit("start-voice-session", {
     voice_id,
     session_id: session_id || "default",
     patient_name,
@@ -175,11 +179,11 @@ export async function startSpokenLLM(
 }
 
 export async function stopSpokenLLM(waitForResponse = true) {
-  console.log(`[${ts()}] 🛑 Stopping Nova Sonic voice stream...`);
+  console.log(`[${ts()}] 🛑 Stopping voice stream...`);
 
   // Reset immediately so a re-enable attempt doesn't hit the guard in startSpokenLLM
   // and get stuck with a forever-spinning loader. Context cleanup is guarded below.
-  novaStarted = false;
+  voiceStarted = false;
 
   const socket = await getSocket();
 
@@ -249,9 +253,9 @@ export async function stopSpokenLLM(waitForResponse = true) {
   }
 
   // Only tear down the playback context if the user hasn't already re-enabled voice.
-  // If novaStarted is true here, a new session started while we were waiting —
+  // If voiceStarted is true here, a new session started while we were waiting —
   // leave its worklet/playbackCtx alone.
-  if (!novaStarted) {
+  if (!voiceStarted) {
     if (playbackCtx && playbackCtx.state !== "closed") {
       try { playbackCtx.close(); } catch (e) { /* noop */ }
       playbackCtx = null;
@@ -259,6 +263,7 @@ export async function stopSpokenLLM(waitForResponse = true) {
     workletNode = null;
     workletInitPromise = null;
 
+    socket.off("voice-started");
     socket.off("nova-started");
   }
 

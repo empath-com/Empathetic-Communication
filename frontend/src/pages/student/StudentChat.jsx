@@ -397,8 +397,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         <ChatInput
           textareaRef={chatMessages.textareaRef}
-          novaTextInput={chatMessages.novaTextInput}
-          setNovaTextInput={chatMessages.setNovaTextInput}
+          messageInput={chatMessages.messageInput}
+          setMessageInput={chatMessages.setMessageInput}
           handleKeyDown={chatMessages.handleKeyDown}
           handleSubmit={chatMessages.handleSubmit}
           isSubmitting={chatMessages.isSubmitting}
