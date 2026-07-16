@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useContext } from "react";
+import { useEffect, useState, useContext } from "react";
 import {
   Typography,
   TextField,
   Button,
   Box,
-  Paper,
   Toolbar,
   Card,
   CardContent,
@@ -19,10 +18,9 @@ import KeyboardArrowRight from "@mui/icons-material/KeyboardArrowRight";
 import SaveIcon from "@mui/icons-material/Save";
 import HistoryIcon from "@mui/icons-material/History";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import { useTheme } from "@mui/material/styles";
 import "react-toastify/dist/ReactToastify.css";
 import { useNavigate } from "react-router-dom";
-import { UserContext } from "../../App";
+import { UserContext } from "../../UserContext";
 import { SIMULATED_ROLE, PRACTITIONER_ROLE } from "../../utils/conversationBuilder";
 
 const CHARACTER_LIMIT = 4000;
@@ -39,7 +37,6 @@ function groupTitleCase(str) {
 }
 
 const PromptSettings = ({ groupName, simulation_group_id }) => {
-  const theme = useTheme();
   const [userPrompt, setUserPrompt] = useState("");
   const [previousPrompts, setPreviousPrompts] = useState([]);
   const [activeStep, setActiveStep] = useState(0);
@@ -158,6 +155,8 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
     };
     fetchPrompt();
     fetchPreviousPrompts();
+    // Load prompt history once for the selected group.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simulation_group_id]);
 
   const handleSave = async () => {

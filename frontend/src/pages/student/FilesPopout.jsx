@@ -5,19 +5,13 @@ import {
   DialogTitle,
   Button,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   IconButton,
 } from "@mui/material";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import RotateRightIcon from "@mui/icons-material/RotateRight";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { hourglass } from "ldrs";
 
 hourglass.register();

@@ -147,6 +147,8 @@ const AdminStatistics = () => {
 
   useEffect(() => {
     fetchStats();
+    // fetchStats closes over the selected report filters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, days]);
 
   return (

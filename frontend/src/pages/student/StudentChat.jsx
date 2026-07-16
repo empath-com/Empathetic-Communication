@@ -33,7 +33,7 @@ import useSidebarResize from "./hooks/useSidebarResize";
 import useChatSessions from "./hooks/useChatSessions";
 import useChatMessages from "./hooks/useChatMessages";
 import useEmpathyCoach from "./hooks/useEmpathyCoach";
-import { filterUnwantedMessages } from "./hooks/useChatMessages";
+import { filterUnwantedMessages } from "./hooks/chatMessageUtils";
 
 // Sub-components
 import ChatSidebar from "./ChatSidebar";
@@ -147,9 +147,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // Keep the sessions hook's submitting/typing refs in sync
   useEffect(() => {
     chatSessions.updateSubmittingRef(chatMessages.isSubmitting);
+    // The sessions hook exposes a stable ref updater.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages.isSubmitting]);
   useEffect(() => {
     chatSessions.updateAItypingRef(isAItyping);
+    // The sessions hook exposes a stable ref updater.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAItyping]);
 
   // =====================================================================
@@ -240,6 +244,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     if (patient && group) {
       fetchFiles();
     }
+    // fetchFiles reads the current patient/group and auth context.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patient, group]);
 
   // =====================================================================

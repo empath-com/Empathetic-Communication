@@ -19,7 +19,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Grid,
 } from "@mui/material";
 import AddCircleIcon from "@mui/icons-material/AddCircle";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";

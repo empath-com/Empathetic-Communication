@@ -1,8 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession } from "aws-amplify/auth";
-import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 
 function DraggableNotes({ onClose, sessionId, zIndex = 50 }) {
   const [noteContent, setNoteContent] = useState("");

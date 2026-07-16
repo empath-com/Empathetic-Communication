@@ -19,7 +19,6 @@ export async function retrieveJwtToken(setJwtToken) {
     var session = await fetchAuthSession();
     var idToken = await session.tokens.idToken
     console.log(idToken);
-    var token = await session.tokens.accessToken.toString();
     setJwtToken(idToken);
     // console.log("jwt token", token);
     // console.log("session", session);
@@ -33,7 +32,6 @@ export async function retrieveJwtToken(setJwtToken) {
         // 45 minutes
         await fetchAuthSession();
         idToken = await session.tokens.idToken
-        token = await session.tokens.accessToken.toString();
         setJwtToken(idToken);
       }
     }

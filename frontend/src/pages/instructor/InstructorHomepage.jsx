@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import { useState, useEffect, useContext } from "react";
 import { Routes, Route, useNavigate, useParams } from "react-router-dom";
 import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
 import {
@@ -16,7 +16,6 @@ import {
   TextField,
   TableFooter,
   TablePagination,
-  Button,
 } from "@mui/material";
 import PageContainer from "../Container";
 import InstructorHeader from "../../components/InstructorHeader";
@@ -28,7 +27,7 @@ import ViewStudents from "./ViewStudents";
 import InstructorPatients from "./InstructorPatients";
 import InstructorNewPatient from "./InstructorNewPatient";
 import StudentDetails from "./StudentDetails";
-import { UserContext } from "../../App";
+import { UserContext } from "../../UserContext";
 function titleCase(str) {
   if (typeof str !== "string") {
     return str;
@@ -169,7 +168,6 @@ const InstructorHomepage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [groupData, setGroupData] = useState([]);
   const { isInstructorAsStudent } = useContext(UserContext);
   const navigate = useNavigate();
 
@@ -198,7 +196,6 @@ const InstructorHomepage = () => {
         );
         if (response.ok) {
           const data = await response.json();
-          setGroupData(data);
           const formattedData = data.map((group) => ({
             group: group.group_name,
             description: group.group_description || "No description available",

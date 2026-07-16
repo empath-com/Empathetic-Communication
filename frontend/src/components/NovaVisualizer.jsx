@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import p5 from "p5";
 
 /**
@@ -58,7 +58,7 @@ export default function NovaVisualizer({
     return () => {
       p5Instance.remove();
     };
-  }, [analyser]);
+  }, [analyser, width, height]);
 
   return <div ref={containerRef} />;
 }

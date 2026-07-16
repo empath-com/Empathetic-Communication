@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from "react";
-import PropTypes from "prop-types";
 import { fetchAuthSession } from "aws-amplify/auth";
 
 const Session = ({
@@ -10,7 +9,6 @@ const Session = ({
   selectedSession,
   setMessages,
   setSessions,
-  sessions,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [newSessionName, setNewSessionName] = useState(text);
@@ -40,6 +38,8 @@ const Session = ({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
+  // The handler intentionally tracks the latest edited name for outside-click saves.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newSessionName]);
 
   const isSelected =

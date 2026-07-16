@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { fetchUserAttributes } from "aws-amplify/auth";
 
 import { signOut } from "aws-amplify/auth";
 
-import { BiCheck } from "react-icons/bi";
-import { FaInfoCircle } from "react-icons/fa";
 
 import {
   Button,
@@ -17,46 +15,9 @@ import {
   TableRow,
   Paper,
   Avatar,
-  Tooltip,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-// Function to calculate the color based on the average score
-const calculateColor = (score) => {
-  if (score === null) {
-    return "bg-red-500"; // Red for null scores
-  }
-
-  const redStart = 255; // Starting red component for red
-  const redMiddle = 255; // Red component for less vibrant yellow
-  const redEnd = 0; // Ending red component for green
-
-  const greenStart = 0; // Starting green component for red
-  const greenMiddle = 200; // Less vibrant yellow (lower green component)
-  const greenEnd = 150; // Ending green component for green
-
-  const blueStart = 0; // Starting blue component for red
-  const blueMiddle = 0; // Blue component for less vibrant yellow
-  const blueEnd = 0; // Ending blue component for green
-
-  let r, g, b;
-
-  if (score <= 50) {
-    // Transition from red to less vibrant yellow
-    const ratio = score / 50; // Ratio from 0 to 1
-    r = redStart;
-    g = greenStart + ratio * (greenMiddle - greenStart);
-    b = blueStart + ratio * (blueMiddle - blueStart);
-  } else {
-    // Transition from less vibrant yellow to green
-    const ratio = (score - 50) / 50; // Ratio from 0 to 1
-    r = redMiddle + ratio * (redEnd - redMiddle);
-    g = greenMiddle + ratio * (greenEnd - greenMiddle);
-    b = blueMiddle + ratio * (blueEnd - blueMiddle);
-  }
-
-  return `rgb(${r}, ${g}, ${b})`;
-};
 
 function titleCase(str) {
   if (typeof str !== "string") {

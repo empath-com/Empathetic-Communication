@@ -23,7 +23,7 @@ import {
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { useNavigate } from "react-router-dom";
-import { UserContext } from "../../App";
+import { UserContext } from "../../UserContext";
 // MUI theming
 const { palette } = createTheme();
 const { augmentColor } = palette;
@@ -54,7 +54,7 @@ export const StudentHomepage = ({ setGroup }) => {
   const [groups, setGroups] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { isInstructorAsStudent, setIsInstructorAsStudent } =
+  const { isInstructorAsStudent } =
     useContext(UserContext);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export const StudentHomepage = ({ setGroup }) => {
         }
       );
       if (response.ok) {
-        const data = await response.json();
+        await response.json();
         toast.success("Successfully Joined Group!", {
           position: "top-center",
           autoClose: 1000,
@@ -210,6 +210,8 @@ export const StudentHomepage = ({ setGroup }) => {
     sessionStorage.removeItem("patient");
 
     fetchGroups();
+    // Fetch the initial group list once when the page mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

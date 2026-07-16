@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession } from "aws-amplify/auth";
@@ -267,7 +266,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
 
   const fetchFiles = async () => {
     try {
-      const { token, email } = await getAuthSessionAndEmail();
+      const { token } = await getAuthSessionAndEmail();
       const response = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT}instructor/get_all_files?simulation_group_id=${encodeURIComponent(
           simulation_group_id
@@ -314,6 +313,8 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
         : "";
       setSelectedVoice(normalizedVoice);
     }
+  // Voice lists are fixed for the lifetime of this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientData]);
 
   useEffect(() => {
@@ -329,12 +330,16 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       setAvailableVoices(all);
       setSelectedVoice(prev => all.includes(prev) ? prev : all[0]);
     }
+  // Voice lists are fixed for the lifetime of this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientGender]);
 
   useEffect(() => {
     if (patient) {
       fetchFiles();
     }
+  // fetchFiles uses the current patient and auth context by design.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patient]);
 
   const handleDelete = async () => {
@@ -393,10 +398,6 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
         theme: "colored",
       });
     }
-  };
-
-  const handleInputChange = (e) => {
-    setPatientName(e.target.value);
   };
 
   const getFileType = (filename) => {

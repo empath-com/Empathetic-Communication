@@ -1,19 +1,16 @@
-import React, { useState, useEffect, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useContext } from "react";
 // MUI
-import SettingsIcon from "@mui/icons-material/Settings";
 // amplify
 import { signOut } from "aws-amplify/auth";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { fetchUserAttributes } from "aws-amplify/auth";
-import { UserContext } from "../App";
+import { UserContext } from "../UserContext";
 
 const StudentHeader = () => {
   const [name, setName] = useState("");
   const [showDashboard, setShowDashboard] = useState(false);
   const { isInstructorAsStudent, setIsInstructorAsStudent } =
     useContext(UserContext);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchName = () => {

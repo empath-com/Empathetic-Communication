@@ -1091,6 +1091,8 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         simulation_group_id = None
         empathy_tool = "CARE"
         target_session_id = session_id or self.session_id
+        conn = None
+        cursor = None
         try:
             conn = get_pg_connection()
             cursor = conn.cursor()
@@ -1124,14 +1126,22 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 tool_row = cursor.fetchone()
                 empathy_tool = self._normalize_empathy_tool(tool_row[0] if tool_row else "CARE")
 
-            cursor.close()
-            return_pg_connection(conn)
+            return simulation_group_id, empathy_tool
         except Exception as e:
             logger.error(f"VOICE: Error resolving empathy settings: {e}")
+        finally:
+            try:
+                if cursor is not None:
+                    cursor.close()
+            finally:
+                if conn is not None:
+                    return_pg_connection(conn)
         return simulation_group_id, empathy_tool
 
     def _get_empathy_prompt(self, simulation_group_id=None):
         """Retrieve effective empathy prompt with group override fallback to latest global prompt."""
+        conn = None
+        cursor = None
         try:
             logger.info("🔍 VOICE: RETRIEVING EMPATHY PROMPT FROM DATABASE")
             logger.info("🔗 VOICE_EMPATHY_PROMPT: Using centralized voice connection manager")
@@ -1168,8 +1178,6 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 # Check if prompt has required placeholders
                 if '{patient_context}' not in prompt_content or '{user_text}' not in prompt_content:
                     logger.error("❌ VOICE: ADMIN PROMPT MISSING REQUIRED PLACEHOLDERS")
-                    cursor.close()
-                    return_pg_connection(conn)
                     return self._get_default_empathy_prompt()
                 
                 # Fix JSON formatting issues - replace single braces with double braces in JSON template
@@ -1193,19 +1201,22 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                         prompt_content = re.sub('\\{(\\s*"empathy_score"[^}]*?)\\}', '{{\\1}}', prompt_content, flags=re.DOTALL)
                         logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED") """
                 
-                cursor.close()
-                return_pg_connection(conn)
                 return prompt_content
             else:
                 logger.info("🔧 VOICE: No admin prompt found, using default empathy prompt")
-                cursor.close()
-                return_pg_connection(conn)
                 return self._get_default_empathy_prompt()
 
         except Exception as e:
             logger.error(f"VOICE: Error retrieving empathy prompt from DB: {e}")
             logger.info("🔧 VOICE: Falling back to default empathy prompt")
             return self._get_default_empathy_prompt()
+        finally:
+            try:
+                if cursor is not None:
+                    cursor.close()
+            finally:
+                if conn is not None:
+                    return_pg_connection(conn)
     
     def _get_default_empathy_prompt(self):
         """Default empathy evaluation prompt."""
@@ -1533,7 +1544,21 @@ TRANSCRIPT_END"""
 
             try:
                 response = await _invoke(bedrock_client)
-            except (asyncio.TimeoutError, Exception) as primary_error:
+            except (
+                asyncio.TimeoutError,
+                botocore.exceptions.ConnectTimeoutError,
+                botocore.exceptions.ReadTimeoutError,
+                botocore.exceptions.EndpointConnectionError,
+                botocore.exceptions.ClientError,
+            ) as primary_error:
+                if isinstance(primary_error, botocore.exceptions.ClientError):
+                    error_code = primary_error.response.get("Error", {}).get("Code")
+                    if error_code not in {
+                        "AccessDeniedException",
+                        "ModelNotReadyException",
+                        "ResourceNotFoundException",
+                    }:
+                        raise
                 logger.warning(f"⏱️ VOICE: Primary Bedrock call failed ({primary_error}), trying us-east-1 fallback")
                 fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
                 response = await _invoke(fallback_client)

@@ -1,11 +1,9 @@
-import React, { useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { useContext } from "react";
 // amplify
 import { signOut } from "aws-amplify/auth";
-import { UserContext } from "../App";
+import { UserContext } from "../UserContext";
 
 const InstructorHeader = () => {
-  const navigate = useNavigate();
   const { setIsInstructorAsStudent } = useContext(UserContext);
 
   const handleSignOut = (event) => {

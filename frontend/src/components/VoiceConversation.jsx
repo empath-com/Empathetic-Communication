@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, VolumeUp, VolumeOff, Close, Phone, PhoneDisabled } from '@mui/icons-material';
+import { useState, useRef, useEffect } from 'react';
+import { Mic, MicOff, VolumeUp, Close, PhoneDisabled } from '@mui/icons-material';
 import { IconButton, Paper, Typography, Box, Dialog, CircularProgress, Chip } from '@mui/material';
 import { SIMULATED_ROLE } from '../utils/conversationBuilder';
 
@@ -12,7 +12,6 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
   
   const websocketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-  const audioContextRef = useRef(null);
   const audioChunksRef = useRef([]);
 
   useEffect(() => {
@@ -25,6 +24,9 @@ const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }
     return () => {
       disconnectFromVoiceService();
     };
+  // The connection handlers are recreated with the component and this effect
+  // intentionally follows only the dialog's open state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const connectToVoiceService = async () => {

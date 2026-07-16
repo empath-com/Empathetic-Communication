@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Drawer,
@@ -12,7 +12,6 @@ import {
   IconButton,
   Button,
 } from "@mui/material";
-import ViewTimelineIcon from "@mui/icons-material/ViewTimeline";
 import EditIcon from "@mui/icons-material/Edit";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 import GroupIcon from "@mui/icons-material/Group";
@@ -177,7 +176,7 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
             ].map((item, index) => {
               const active = activeRoute === item.route;
               return (
-                <React.Fragment key={index}>
+                <Fragment key={index}>
                   <ListItem
                     button
                     onClick={() => handleNavigation(item.route)}
@@ -242,7 +241,7 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
                   {index < 4 && (
                     <Divider sx={{ mx: 1, my: 1, borderColor: "#f3f4f6" }} />
                   )}
-                </React.Fragment>
+                </Fragment>
               );
             })}
           </List>

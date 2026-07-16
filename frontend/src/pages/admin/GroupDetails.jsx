@@ -180,7 +180,7 @@ const GroupDetails = ({ group, onBack }) => {
 
     fetchEmpathyStatus();
     setLoading(false);
-  }, []);
+  }, [group.id]);
 
   const handleConfirmDeleteOpen = () => {
     setConfirmDeleteOpen(true);
@@ -225,7 +225,7 @@ const GroupDetails = ({ group, onBack }) => {
     );
 
     if (deleteResponse.ok) {
-      const enrollData = await deleteResponse.json();
+      await deleteResponse.json();
       toast.success("Simulation Group Successfully Deleted", {
         position: "top-center",
         autoClose: 1000,

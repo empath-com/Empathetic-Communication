@@ -200,7 +200,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
             }
           ).then((enrollResponse) => {
             if (enrollResponse.ok) {
-              return enrollResponse.json().then((enrollData) => {
+              return enrollResponse.json().then(() => {
                 return { success: true };
               });
             } else {

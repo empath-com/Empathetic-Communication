@@ -6,6 +6,39 @@ let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, CORS_ALLOWED_ORIGIN = "*" } = proce
 // SQL conneciton from global variable at libadmin.js
 let sqlConnectionTableCreator = global.sqlConnectionTableCreator;
 const VALID_EMPATHY_TOOLS = ["CARE", "PRISM"];
+const REQUIRED_EMPATHY_PROMPT_PLACEHOLDERS = [
+  "{patient_context}",
+  "{user_text}",
+];
+
+const normalizeEmpathyPromptOverride = (value, useGlobalDefaults) => {
+  if (
+    useGlobalDefaults ||
+    value == null ||
+    (typeof value === "string" && !value.trim())
+  ) {
+    return { value: null };
+  }
+
+  if (typeof value !== "string") {
+    return {
+      error: "empathy_prompt_override must be a string when provided",
+    };
+  }
+
+  const prompt = value.trim();
+  const missingPlaceholders = REQUIRED_EMPATHY_PROMPT_PLACEHOLDERS.filter(
+    (placeholder) => !prompt.includes(placeholder)
+  );
+
+  if (missingPlaceholders.length > 0) {
+    return {
+      error: `empathy_prompt_override must include: ${missingPlaceholders.join(", ")}`,
+    };
+  }
+
+  return { value: prompt };
+};
 
 exports.handler = async (event) => {
   const response = {
@@ -312,16 +345,23 @@ exports.handler = async (event) => {
             } = JSON.parse(event.body);
 
             const useGlobalEmpathyDefaults = use_global_empathy_defaults !== false;
-            const normalizedEmpathyPromptOverride = useGlobalEmpathyDefaults
-              ? null
-              : (typeof empathy_prompt_override === "string" && empathy_prompt_override.trim())
-                ? empathy_prompt_override
-                : null;
+            const promptOverrideValidation = normalizeEmpathyPromptOverride(
+              empathy_prompt_override,
+              useGlobalEmpathyDefaults
+            );
             const normalizedEmpathyToolOverride = useGlobalEmpathyDefaults
               ? null
               : (typeof empathy_tool_override === "string" && empathy_tool_override.trim())
                 ? empathy_tool_override.toUpperCase()
                 : null;
+
+            if (promptOverrideValidation.error) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({
+                error: promptOverrideValidation.error,
+              });
+              break;
+            }
 
             if (
               normalizedEmpathyToolOverride &&
@@ -359,7 +399,7 @@ exports.handler = async (event) => {
                       ${empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true},
                       ${admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true},
                       ${instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true},
-                      ${normalizedEmpathyPromptOverride},
+                      ${promptOverrideValidation.value},
                       ${normalizedEmpathyToolOverride}
                   )
                   RETURNING *;
@@ -444,18 +484,25 @@ exports.handler = async (event) => {
 
           let hasEmpathyOverridePayload = false;
           let useGlobalEmpathyDefaults = true;
-          let normalizedEmpathyPromptOverride = null;
+          let empathyPromptOverride = null;
           let normalizedEmpathyToolOverride = null;
 
           if (event.body) {
             hasEmpathyOverridePayload = true;
             const parsedBody = JSON.parse(event.body);
             useGlobalEmpathyDefaults = parsedBody.use_global_empathy_defaults !== false;
-            normalizedEmpathyPromptOverride = useGlobalEmpathyDefaults
-              ? null
-              : (typeof parsedBody.empathy_prompt_override === "string" && parsedBody.empathy_prompt_override.trim())
-                ? parsedBody.empathy_prompt_override
-                : null;
+            const promptOverrideValidation = normalizeEmpathyPromptOverride(
+              parsedBody.empathy_prompt_override,
+              useGlobalEmpathyDefaults
+            );
+            if (promptOverrideValidation.error) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({
+                error: promptOverrideValidation.error,
+              });
+              break;
+            }
+            empathyPromptOverride = promptOverrideValidation.value;
             normalizedEmpathyToolOverride = useGlobalEmpathyDefaults
               ? null
               : (typeof parsedBody.empathy_tool_override === "string" && parsedBody.empathy_tool_override.trim())
@@ -483,7 +530,7 @@ exports.handler = async (event) => {
                     empathy_enabled = ${empathyBool},
                     admin_voice_enabled = ${adminVoiceBool},
                     instructor_voice_enabled = ${instructorVoiceBool},
-                    empathy_prompt_override = ${normalizedEmpathyPromptOverride},
+                    empathy_prompt_override = ${empathyPromptOverride},
                     empathy_tool_override = ${normalizedEmpathyToolOverride}
                 WHERE simulation_group_id = ${simulation_group_id};
               `;
@@ -506,7 +553,7 @@ exports.handler = async (event) => {
                     empathy_enabled = ${empathyBool},
                     admin_voice_enabled = ${adminVoiceBool},
                     instructor_voice_enabled = ${instructorVoiceBool},
-                    empathy_prompt_override = ${normalizedEmpathyPromptOverride},
+                    empathy_prompt_override = ${empathyPromptOverride},
                     empathy_tool_override = ${normalizedEmpathyToolOverride}
                 WHERE simulation_group_id = ${simulation_group_id};
               `;

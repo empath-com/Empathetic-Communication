@@ -83,7 +83,7 @@ export default function useChatSessions({
     };
 
     fetchPatient();
-  }, [group, patient]);
+  }, [group, patient, setCurrentSessionId, setSession, setSessions]);
 
   // --- Refs to read fresh submitting/typing state without dep-array issues ---
   const isSubmittingRef = useRef(false);
@@ -108,6 +108,8 @@ export default function useChatSessions({
       setCreatingSession(true);
       handleNewChat();
     }
+    // handleNewChat is intentionally invoked only when the session list is empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, creatingSession]);
 
   // --- Create new chat session ---

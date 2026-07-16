@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchAuthSession } from "aws-amplify/auth";
 import { generateClient } from "aws-amplify/api";
 import { getSocket } from "../../../utils/socket";
 import { playAudio } from "../../../utils/voiceStream";
 import { titleCase } from "../../../utils/textFormatting";
+import {
+  filterUnwantedMessages,
+  normalizeEmpathyData,
+  normalizeVoiceLine,
+} from "./chatMessageUtils";
 
 const gqlClient = generateClient();
 
@@ -17,28 +22,6 @@ const ON_TEXT_STREAM = /* GraphQL */ `
 `;
 
 const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
-
-/**
- * Normalise a raw voice-mode line, stripping prefixes and returning role info.
- */
-export function normalizeVoiceLine(rawText) {
-  const text = (rawText ?? "").trim();
-  if (!text) return null;
-
-  if (text.startsWith("[VOICE_TRANSCRIPT]")) {
-    const content = text.replace(/^\[VOICE_TRANSCRIPT\]/, "").trim();
-    if (!content) return null;
-    return { student_sent: true, message_content: content };
-  }
-
-  if (text.startsWith("User:")) {
-    return { student_sent: true, message_content: text.replace(/^User:\s*/, "").trim() };
-  }
-  if (text.startsWith("Assistant:")) {
-    return { student_sent: false, message_content: text.replace(/^Assistant:\s*/, "").trim() };
-  }
-  return { message_content: text };
-}
 
 /**
  * Merge streaming/cumulative voice chunks without duplicating previously seen text.
@@ -63,39 +46,6 @@ function mergeVoiceText(existing = "", incoming = "") {
   }
 
   return `${a} ${b}`;
-}
-
-/**
- * Filter out unwanted messages (voice transcript blocks, initial prompts, etc.).
- */
-export function filterUnwantedMessages(messagesArray) {
-  if (!Array.isArray(messagesArray)) {
-    return messagesArray;
-  }
-
-  const out = [];
-  for (const m of messagesArray) {
-    const n = normalizeVoiceLine(m?.message_content);
-    if (!n) continue;
-
-    if ((m.message_content || "").includes("Begin the conversation as the")) continue;
-
-    // The backend saves a [VOICE_TRANSCRIPT] message that concatenates all user
-    // speech for the whole session into one blob (used for empathy evaluation).
-    // The individual per-turn user messages are already stored separately, so
-    // skip this combined record to avoid a duplicate wall-of-text at the end.
-    if ((m.message_content || "").startsWith("[VOICE_TRANSCRIPT]")) continue;
-
-    out.push({
-      ...m,
-      student_sent: Object.prototype.hasOwnProperty.call(n, "student_sent")
-        ? n.student_sent
-        : m.student_sent,
-      message_content: n.message_content,
-    });
-  }
-
-  return out;
 }
 
 /**
@@ -304,7 +254,7 @@ export default function useChatMessages({
       }
       setNewMessage(null);
     }
-  }, [session, newMessage, currentSessionId, messages]);
+  }, [session, newMessage, currentSessionId, messages, setMessages]);
 
   // --- Streaming bubble helpers ---
   const startStreamingBubble = () => {
@@ -370,33 +320,7 @@ export default function useChatMessages({
       const empathyData = data.empathy_evaluation;
       if (!empathyData) return;
 
-      const feedback = empathyData.feedback || {};
-      const criteriaHits = [
-        'making_feel_at_ease', 'letting_tell_story', 'really_listening',
-        'interested_in_whole_person', 'understanding_concerns', 'showing_care_compassion',
-        'being_positive', 'explaining_clearly', 'helping_take_control', 'making_plan_of_action',
-      ].reduce((sum, k) => sum + (empathyData[k] === 1 ? 1 : 0), 0);
-
-      const transformedData = {
-        overall_score: criteriaHits,
-        total_messages_evaluated: 1,
-        total_criteria_hits: criteriaHits,
-        making_feel_at_ease: empathyData.making_feel_at_ease || 0,
-        letting_tell_story: empathyData.letting_tell_story || 0,
-        really_listening: empathyData.really_listening || 0,
-        interested_in_whole_person: empathyData.interested_in_whole_person || 0,
-        understanding_concerns: empathyData.understanding_concerns || 0,
-        showing_care_compassion: empathyData.showing_care_compassion || 0,
-        being_positive: empathyData.being_positive || 0,
-        explaining_clearly: empathyData.explaining_clearly || 0,
-        helping_take_control: empathyData.helping_take_control || 0,
-        making_plan_of_action: empathyData.making_plan_of_action || 0,
-        summary: empathyData.judge_reasoning?.overall_assessment || "",
-        strengths: feedback.strengths || [],
-        recommendations: feedback.improvement_suggestions || [],
-        forward_target: feedback.forward_target || "",
-        timestamp: Date.now(),
-      };
+      const transformedData = normalizeEmpathyData(empathyData);
       setRealtimeEmpathy((prev) => [...prev, transformedData]);
     } catch (e) {
       console.error("Empathy evaluation failed:", e);
@@ -436,26 +360,7 @@ export default function useChatMessages({
             } else if (t === "empathy") {
               try {
                 const empathyData = JSON.parse(content);
-                const transformedData = {
-                  overall_score: empathyData.empathy_score || 3,
-                  avg_perspective_taking: empathyData.perspective_taking || 3,
-                  avg_emotional_resonance: empathyData.emotional_resonance || 3,
-                  avg_acknowledgment: empathyData.acknowledgment || 3,
-                  avg_language_communication: empathyData.language_communication || 3,
-                  avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-                  avg_affective_empathy: empathyData.affective_empathy || 3,
-                  realism_assessment:
-                    empathyData.realism_flag === "realistic"
-                      ? "Your responses are generally realistic.."
-                      : "Your response is unrealistic...",
-                  realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-                  coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
-                  strengths: empathyData.feedback?.strengths || [],
-                  areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
-                  recommendations: empathyData.feedback?.improvement_suggestions || [],
-                  recommended_approach: empathyData.feedback?.alternative_phrasing || "",
-                  timestamp: Date.now(),
-                };
+                const transformedData = normalizeEmpathyData(empathyData);
                 setRealtimeEmpathy((prev) => [...prev, transformedData]);
               } catch (e) {
                 console.error("Failed to parse empathy JSON:", e);
@@ -521,6 +426,8 @@ export default function useChatMessages({
       streamSubRef.current = null;
       streamSessionIdRef.current = null;
     };
+    // Keep one AppSync subscription per session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.session_id]);
 
   // --- handleStreamingResponse: POST to text_generation, relies on AppSync subscription ---
@@ -776,7 +683,10 @@ export default function useChatMessages({
       lastLoadedSessionIdRef.current = session.session_id;
       getMessages();
     }
-  }, [session?.session_id]);
+    // getMessages is intentionally kept out of the dependency list because it
+    // is a request helper recreated by this hook.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.session_id, setCurrentSessionId]);
 
   // --- Socket listeners for voice mode ---
   useEffect(() => {
@@ -849,6 +759,10 @@ export default function useChatMessages({
         if (data.content) {
           setRealtimeEmpathy((prev) => [...prev, { content: data.content, timestamp: Date.now() }]);
         }
+      };
+
+      const handleEmpathyData = (data) => {
+        setRealtimeEmpathy((prev) => [...prev, normalizeEmpathyData(data)]);
       };
 
       const handleDiagnosisComplete = (payload) => {
@@ -937,44 +851,72 @@ export default function useChatMessages({
         );
       };
 
-      socket.off("audio-chunk");
-      socket.off("text-message");
-      socket.off("empathy-feedback");
-      socket.off("diagnosis-complete");
-      socket.off("nova-debug");
-      socket.off("voice-started");
-      socket.off("voice-user-message");
-      socket.off("voice-transcript-partial");
-      socket.off("voice-transcript-final");
-
       socket.on("audio-chunk", handleAudio);
       socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
+      socket.on("empathy-data", handleEmpathyData);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
-      socket.on("nova-debug", (data) => console.log(`[${new Date().toLocaleTimeString()}] 🐞 NOVA:`, data.message));
+      const handleNovaDebug = (data) =>
+        console.log(`[${new Date().toLocaleTimeString()}] 🐞 NOVA:`, data.message);
+      socket.on("nova-debug", handleNovaDebug);
       socket.on("voice-user-message", handleVoiceUserMessage);
       socket.on("voice-transcript-partial", handleTranscriptPartial);
       socket.on("voice-transcript-final", handleTranscriptFinal);
+
+      return () => {
+        socket.off("audio-chunk", handleAudio);
+        socket.off("text-message", handleTextMessage);
+        socket.off("empathy-feedback", handleEmpathyFeedback);
+        socket.off("empathy-data", handleEmpathyData);
+        socket.off("diagnosis-complete", handleDiagnosisComplete);
+        socket.off("nova-debug", handleNovaDebug);
+        socket.off("voice-user-message", handleVoiceUserMessage);
+        socket.off("voice-transcript-partial", handleTranscriptPartial);
+        socket.off("voice-transcript-final", handleTranscriptFinal);
+      };
     };
-    setupSocketListeners();
+    let disposed = false;
+    let cleanup;
+    setupSocketListeners().then((listenerCleanup) => {
+      if (disposed) {
+        listenerCleanup?.();
+      } else {
+        cleanup = listenerCleanup;
+      }
+    });
+    // Socket handlers use refs so they can be registered once.
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Voice-started event
   const [voiceStarted, setVoiceStarted] = useState(false);
   useEffect(() => {
+    let socket;
+    let disposed = false;
+    const handleVoiceStarted = () => {
+      console.log("Voice backend ready in StudentChat!");
+      diagnosisCompletedRef.current = false;
+      setVoiceStarted(true);
+    };
+
     const setupSocket = async () => {
-      const socket = await getSocket();
-      socket.off("voice-started");
-      socket.off("nova-started");
-      const handleVoiceStarted = () => {
-        console.log("Voice backend ready in StudentChat!");
-        diagnosisCompletedRef.current = false;
-        setVoiceStarted(true);
-      };
+      socket = await getSocket();
+      if (disposed) return;
       socket.on("voice-started", handleVoiceStarted);
       socket.on("nova-started", handleVoiceStarted);
     };
     setupSocket();
+    return () => {
+      disposed = true;
+      if (socket) {
+        socket.off("voice-started", handleVoiceStarted);
+        socket.off("nova-started", handleVoiceStarted);
+      }
+    };
   }, []);
 
   // --- Textarea auto-resize ---
@@ -985,6 +927,9 @@ export default function useChatMessages({
         handleSubmit();
       }
     },
+    // handleSubmit closes over these state values and is intentionally omitted
+    // to avoid recreating this DOM listener for the function identity alone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isSubmitting, isAItyping, creatingSession, messageInput, session]
   );
 
@@ -1016,7 +961,7 @@ export default function useChatMessages({
         textarea.removeEventListener("keydown", handleKeyDown);
       }
     };
-  }, [textareaRef.current, handleKeyDown]);
+  }, [handleKeyDown]);
 
   // --- Message helper functions ---
   const getMostRecentStudentMessageIndex = () => {

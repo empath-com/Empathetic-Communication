@@ -2,8 +2,6 @@ import "./App.css";
 // amplify
 import { Amplify } from "aws-amplify";
 import { fetchAuthSession } from "aws-amplify/auth";
-import { cognitoUserPoolsTokenProvider } from "aws-amplify/auth/cognito";
-import { CookieStorage } from "aws-amplify/utils";
 import "@aws-amplify/ui-react/styles.css";
 // react-router
 import {
@@ -12,7 +10,7 @@ import {
   Routes,
   Navigate,
 } from "react-router-dom";
-import { useEffect, useState, createContext } from "react";
+import { useEffect, useState } from "react";
 // pages
 import Login from "./pages/Login";
 import StudentHomepage from "./pages/student/StudentHomepage";
@@ -20,8 +18,7 @@ import StudentChat from "./pages/student/StudentChat";
 import AdminHomepage from "./pages/admin/AdminHomepage";
 import InstructorHomepage from "./pages/instructor/InstructorHomepage";
 import GroupView from "./pages/student/GroupView";
-
-export const UserContext = createContext();
+import { UserContext } from "./UserContext";
 
 Amplify.configure({
   API: {

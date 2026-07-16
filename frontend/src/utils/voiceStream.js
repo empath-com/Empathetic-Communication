@@ -12,13 +12,14 @@ let voiceStarted = false;
 let analyser;
 let dataArray;
 let animationId;
+let voiceStartedListener = null;
+let novaStartedListener = null;
 
 // Shared playback AudioContext — created once during a user gesture so Chrome's
 // autoplay policy never suspends it when we later call source.start() in a timer.
 let playbackCtx = null;
 let workletNode = null;        // AudioWorkletNode running pcm-playback-processor
 let workletInitPromise = null; // single-flight init guard
-let isPlaying = false;         // true while worklet has samples buffered
 
 // ─── Called from StudentChat during the voice-toggle click (user gesture) ─────
 export function initPlaybackContext() {
@@ -70,7 +71,6 @@ async function _ensureWorkletReady() {
 
     workletNode.port.onmessage = ({ data }) => {
       if (data.type === "ended") {
-        isPlaying = false;
         console.log(`[${ts()}] ⏹️  Worklet: audio buffer drained`);
         if (animationId) {
           cancelAnimationFrame(animationId);
@@ -98,9 +98,15 @@ export async function startSpokenLLM(
 
   const socket = await getSocket();
 
-  // Clean up any existing listeners to prevent duplicates
-  socket.off("voice-started");
-  socket.off("nova-started");
+  // Remove only listeners registered by this module.
+  if (voiceStartedListener) {
+    socket.off("voice-started", voiceStartedListener);
+    voiceStartedListener = null;
+  }
+  if (novaStartedListener) {
+    socket.off("nova-started", novaStartedListener);
+    novaStartedListener = null;
+  }
 
   const onVoiceStarted = () => {
     if (voiceStarted) return;
@@ -150,9 +156,11 @@ export async function startSpokenLLM(
         });
     }, 200);
   };
-  socket.once("voice-started", onVoiceStarted);
+  voiceStartedListener = onVoiceStarted;
+  novaStartedListener = onVoiceStarted;
+  socket.once("voice-started", voiceStartedListener);
   // Backward-compatible fallback while older server/client pairs may still emit this event.
-  socket.once("nova-started", onVoiceStarted);
+  socket.once("nova-started", novaStartedListener);
 
   if (!socket.connected) {
     socket.connect();
@@ -263,8 +271,14 @@ export async function stopSpokenLLM(waitForResponse = true) {
     workletNode = null;
     workletInitPromise = null;
 
-    socket.off("voice-started");
-    socket.off("nova-started");
+    if (voiceStartedListener) {
+      socket.off("voice-started", voiceStartedListener);
+      voiceStartedListener = null;
+    }
+    if (novaStartedListener) {
+      socket.off("nova-started", novaStartedListener);
+      novaStartedListener = null;
+    }
   }
 
   console.log(`[${ts()}] 🛑 Stopped PCM voice stream`);
@@ -281,7 +295,6 @@ export function stopAudioPlayback() {
       workletNode.port.postMessage({ type: "stop" });
     }
 
-    isPlaying = false;
     console.log(`[${ts()}] 🔇 Audio playback stopped`);
   } catch (e) {
     console.error("❌ Failed to stop audio playback:", e);
@@ -311,7 +324,6 @@ export async function playAudio(audioBytes) {
 
     await _ensureWorkletReady();
 
-    isPlaying = true;
     // Transfer ownership of the ArrayBuffer to the worklet thread (zero-copy).
     workletNode.port.postMessage({ type: "chunk", samples }, [samples.buffer]);
 

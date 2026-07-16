@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Box,
   Typography,
@@ -7,7 +6,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   LinearProgress,
 } from "@mui/material";

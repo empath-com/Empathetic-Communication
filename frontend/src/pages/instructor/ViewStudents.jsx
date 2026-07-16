@@ -10,12 +10,9 @@ import {
   TableRow,
   Paper,
   TextField,
-  Button,
   TableFooter,
   TablePagination,
-  IconButton,
 } from "@mui/material";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchAuthSession } from "aws-amplify/auth";
@@ -43,7 +40,6 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {

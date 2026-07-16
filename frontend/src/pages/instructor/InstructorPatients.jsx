@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Button,
   Box,
@@ -9,12 +8,10 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  DialogActions,
   Switch,
   Tooltip,
   Avatar,
   FormControlLabel,
-  Collapse,
   Table,
   TableBody,
   TableCell,
@@ -61,7 +58,6 @@ function titleCase(str) {
 }
 
 const InstructorPatients = ({ groupName, simulation_group_id }) => {
-  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [openNewPatientDialog, setOpenNewPatientDialog] = useState(false);
   const [openEditPatientDialog, setOpenEditPatientDialog] = useState(false);
@@ -341,6 +337,9 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
         },
       },
     ],
+    // Row expansion intentionally uses the latest handler without rebuilding
+    // all table columns on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [profilePictures, expandedPatient, ingestionStatus]
   );
 
@@ -421,6 +420,8 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
   useEffect(() => {
     fetchPatientsAndProfilePictures();
     fetchVoiceSettings();
+    // These loaders intentionally run only when the group changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simulation_group_id]);
 
   const fetchVoiceSettings = async () => {

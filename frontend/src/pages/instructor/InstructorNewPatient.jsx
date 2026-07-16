@@ -1,10 +1,8 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { fetchUserAttributes } from "aws-amplify/auth";
-import DeleteIcon from '@mui/icons-material/Delete';
 import PhotoCamera from '@mui/icons-material/PhotoCamera'; // Icon for profile picture upload
 
 import Cropper from 'react-easy-crop';
@@ -31,15 +29,6 @@ import {
 import PageContainer from "../Container";
 import FileManagement from "../../components/FileManagement";
 
-function titleCase(str) {
-  if (typeof str !== "string") return str;
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
 export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPatientCreated, showSuccessToast }) => {
   const [files, setFiles] = useState([]); // For LLM Upload
   const [newFiles, setNewFiles] = useState([]); // For LLM Upload
@@ -64,7 +53,7 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const [profilePicturePreview, setProfilePicturePreview] = useState(null); // For profile picture preview
   const [profilePictureForCrop, setProfilePictureForCrop] = useState(null); // For profile picture cropping
   const [isSaving, setIsSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [patientName, setPatientName] = useState("");
   const [patientAge, setPatientAge] = useState("");
   const [patientGender, setPatientGender] = useState("");
@@ -202,21 +191,6 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
     const parts = filename.split(".");
     return parts.length > 1 ? parts.pop() : "";
   };
-
-  function convertDocumentFilesToArray(files) {
-    const resultArray = Object.entries(files).map(([fileName, url]) => ({
-      fileName,
-      url,
-    }));
-
-    const fileMetadata = resultArray.reduce((acc, { fileName, url }) => {
-      acc[fileName] = url.metadata || ""; // Store metadata
-      return acc;
-    }, {});
-
-    setMetadata(fileMetadata);
-    return resultArray;
-  }
 
   const uploadFiles = async (newFiles, token, patientId) => {
     const newFilePromises = newFiles.map((file) => {
@@ -535,6 +509,8 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
       setAvailableVoices([...feminineVoices, ...masculineVoices]);
       setSelectedVoice("");
     }
+  // Voice lists are fixed for the lifetime of this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientGender]);
 
   return (

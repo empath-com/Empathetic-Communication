@@ -1,8 +1,7 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import PropTypes from "prop-types";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { Avatar } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 
 // Custom renderer for markdown response
@@ -10,7 +9,7 @@ const MarkdownRender = ({ content }) => {
   return (
     <ReactMarkdown
       components={{
-        code({ node, inline, className, children, ...props }) {
+        code({ inline, className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");
           return !inline && match ? (
             <SyntaxHighlighter
@@ -29,7 +28,9 @@ const MarkdownRender = ({ content }) => {
           );
         },
       }}
-    />
+    >
+      {content}
+    </ReactMarkdown>
   );
 };
 
@@ -37,7 +38,6 @@ const AIMessage = ({
   message,
   profilePicture,
   name = "AI",
-  isStreaming = false,
 }) => {
   // Process the message to remove duplicated content
   const processedMessage = useMemo(() => {

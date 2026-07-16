@@ -1,12 +1,9 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
 // MUI
 import SettingsIcon from "@mui/icons-material/Settings";
 // amplify
 import { signOut } from "aws-amplify/auth";
 
 const AdminHeader = () => {
-  const navigate = useNavigate();
   const handleSignOut = (event) => {
     event.preventDefault();
     signOut()
