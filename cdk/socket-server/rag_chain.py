@@ -12,6 +12,8 @@ import asyncio
 import json
 import logging
 import os
+import queue as stdlib_queue
+from typing import AsyncIterator
 
 import boto3
 from langchain.chains import create_retrieval_chain
@@ -32,9 +34,11 @@ logger = logging.getLogger(__name__)
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
 PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
 
-# Chain cache keyed by (patient_id, group_prompt) — one chain per patient/group combination.
+# Chain cache keyed by (patient_id, group_prompt, llm_completion, streaming).
 # Built once at session start (prewarm) and reused for all turns within that session.
 _chain_cache: dict = {}
+# Separate cache for streaming-enabled chains (streaming=True LLM)
+_streaming_chain_cache: dict = {}
 _db_credentials_cache = None
 
 
@@ -58,6 +62,7 @@ def _build_chain(
     llm_model_id: str,
     table_name: str,
     llm_completion: bool = False,
+    streaming: bool = False,
 ) -> RunnableWithMessageHistory:
     """
     Build a conversational RAG chain for the given patient.
@@ -75,7 +80,7 @@ def _build_chain(
     if not rds_endpoint:
         raise RuntimeError("RDS_PROXY_ENDPOINT env var not set")
 
-    llm = get_bedrock_llm(bedrock_llm_id=llm_model_id, streaming=False)
+    llm = get_bedrock_llm(bedrock_llm_id=llm_model_id, streaming=streaming)
 
     bedrock_client = boto3.client("bedrock-runtime", region_name=region)
     embeddings = BedrockEmbeddings(model_id=embedding_model_id, client=bedrock_client)
@@ -210,3 +215,119 @@ async def call_llama_rag(
     logger.info(f"🤖 RAG_CHAIN: Response received: {result[:80]}...")
     print(f"🤖 RAG_CHAIN: LLaMA response ({len(result)} chars): {result[:120]!r}", flush=True)
     return result
+
+
+def ensure_streaming_chain(
+    patient_id: str,
+    patient_name: str,
+    patient_prompt: str,
+    group_prompt: str,
+    table_name: str,
+    llm_completion: bool = False,
+) -> None:
+    """
+    Build and cache the streaming LLaMA chain (streaming=True).
+    Shares the same prompt, retrieval, and history config as ensure_chain —
+    only the LLM client uses Bedrock response streaming.
+    """
+    llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
+    cache_key = (patient_id or "default", group_prompt or "", llm_completion)
+    if cache_key not in _streaming_chain_cache:
+        logger.info(f"🤖 RAG_CHAIN_STREAM: Building streaming chain for patient_id={patient_id!r}")
+        print(f"🤖 RAG_CHAIN_STREAM: Building streaming chain for patient_id={patient_id!r}", flush=True)
+        _streaming_chain_cache[cache_key] = _build_chain(
+            patient_name=patient_name,
+            patient_prompt=patient_prompt,
+            group_prompt=group_prompt,
+            patient_id=patient_id,
+            llm_model_id=llm_model_id,
+            table_name=table_name,
+            llm_completion=llm_completion,
+            streaming=True,
+        )
+        print(f"🤖 RAG_CHAIN_STREAM: Streaming chain built for patient_id={patient_id!r}", flush=True)
+    else:
+        print(f"🤖 RAG_CHAIN_STREAM: Cache hit for patient_id={patient_id!r}", flush=True)
+
+
+async def stream_llama_rag(
+    user_text: str,
+    session_id: str,
+    patient_name: str,
+    patient_prompt: str,
+    group_prompt: str,
+    patient_id: str,
+    table_name: str,
+    llm_completion: bool = False,
+) -> AsyncIterator[str]:
+    """
+    Stream LLaMA 3 70B + pgvector RAG response as text deltas.
+
+    Uses the exact same chain configuration as call_llama_rag (identical prompt,
+    retrieval, and DynamoDB history) — only the LLM is run with streaming=True.
+    Yields str deltas as the model generates them; the caller should accumulate
+    them for persistence and display.
+
+    Implemented with a thread-isolated event loop + asyncio.Queue so that
+    synchronous DB operations in the retrieval step do not block the caller's
+    event loop.
+    """
+    ensure_streaming_chain(patient_id, patient_name, patient_prompt, group_prompt, table_name, llm_completion)
+    cache_key = (patient_id or "default", group_prompt or "", llm_completion)
+    chain = _streaming_chain_cache[cache_key]
+
+    logger.info(f"🤖 RAG_CHAIN_STREAM: Streaming — session={session_id}, input={user_text[:60]}...")
+    print(f"🤖 RAG_CHAIN_STREAM: Starting stream — session={session_id}, input={user_text[:80]!r}", flush=True)
+
+    main_loop = asyncio.get_running_loop()
+    result_queue: asyncio.Queue = asyncio.Queue()
+    _SENTINEL = object()
+
+    def _run_stream_in_thread():
+        """Run chain.astream() in a dedicated event loop; push deltas to main loop's queue."""
+        thread_loop = asyncio.new_event_loop()
+
+        async def _inner():
+            try:
+                async for chunk in chain.astream(
+                    {"input": user_text},
+                    config={"configurable": {"session_id": session_id}},
+                ):
+                    if isinstance(chunk, dict):
+                        answer_part = chunk.get("answer", "")
+                        if isinstance(answer_part, str) and answer_part:
+                            asyncio.run_coroutine_threadsafe(
+                                result_queue.put(answer_part), main_loop
+                            ).result(timeout=10.0)
+                    elif hasattr(chunk, "content") and chunk.content:
+                        asyncio.run_coroutine_threadsafe(
+                            result_queue.put(chunk.content), main_loop
+                        ).result(timeout=10.0)
+            except Exception as exc:
+                logger.error(f"🤖 RAG_CHAIN_STREAM: Inner stream failed: {exc}")
+                asyncio.run_coroutine_threadsafe(
+                    result_queue.put(exc), main_loop
+                ).result(timeout=5.0)
+            finally:
+                asyncio.run_coroutine_threadsafe(
+                    result_queue.put(_SENTINEL), main_loop
+                ).result(timeout=5.0)
+
+        try:
+            thread_loop.run_until_complete(_inner())
+        finally:
+            thread_loop.close()
+
+    thread_future = main_loop.run_in_executor(None, _run_stream_in_thread)
+
+    try:
+        while True:
+            item = await result_queue.get()
+            if item is _SENTINEL:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+    finally:
+        await thread_future
+        print(f"🤖 RAG_CHAIN_STREAM: Stream complete — session={session_id}", flush=True)

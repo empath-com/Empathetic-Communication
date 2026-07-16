@@ -218,6 +218,8 @@ export async function stopSpokenLLM(waitForResponse = true) {
   }
 
   console.log(`[${ts()}] Sending end-audio to trigger AI response...`);
+  // Mark the start of this voice turn for TTFA measurement.
+  markVoiceTurnStart();
   socket.emit("end-audio");
 
   if (waitForResponse) {
@@ -301,11 +303,27 @@ export function stopAudioPlayback() {
   }
 }
 
+// Module-level TTFA tracking — reset each turn.
+let _turnStartMs = 0;  // set when the user stops speaking
+let _ttfaLogged = false;
+
+export function markVoiceTurnStart() {
+  _turnStartMs = Date.now();
+  _ttfaLogged = false;
+}
+
 export async function playAudio(audioBytes) {
   try {
     if (!audioBytes || audioBytes.length === 0) {
       console.error("🔊 Empty audio data received");
       return;
+    }
+
+    // Log time-to-first-audio (TTFA) on the first chunk of each turn.
+    if (_turnStartMs && !_ttfaLogged) {
+      _ttfaLogged = true;
+      const ttfaMs = Date.now() - _turnStartMs;
+      console.log(`[${ts()}] ⏱️  TTFA: ${ttfaMs} ms (spoken-input to first audio chunk)`);
     }
 
     // Decode base64 → raw bytes → Int16Array (little-endian 16-bit PCM).
