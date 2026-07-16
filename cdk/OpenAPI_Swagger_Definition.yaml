@@ -2031,6 +2031,13 @@ paths:
                   empathy_enabled:
                     type: boolean
                     description: Whether empathy coach is enabled for this simulation group
+                  empathy_tool:
+                    type: string
+                    enum: [CARE, PRISM]
+                    description: Effective empathy evaluation tool for this simulation group
+                  use_global_empathy_defaults:
+                    type: boolean
+                    description: True when the group is inheriting global empathy defaults
         "400":
           description: Bad Request
         "401":
@@ -4752,6 +4759,19 @@ paths:
                 system_prompt:
                   type: string
                   description: System prompt for the simulation group
+                use_global_empathy_defaults:
+                  type: boolean
+                  default: true
+                  description: Whether the group should inherit global empathy prompt/tool defaults
+                empathy_tool_override:
+                  type: string
+                  enum: [CARE, PRISM]
+                  nullable: true
+                  description: Group-level empathy tool override when not inheriting global defaults
+                empathy_prompt_override:
+                  type: string
+                  nullable: true
+                  description: Group-level empathy prompt override when not inheriting global defaults
               # group_description:
               #   type: string
               #   description: A brief description of the simulation group
@@ -4957,6 +4977,26 @@ paths:
             type: boolean
             default: true
           description: Whether empathy coach is enabled for this simulation group
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                use_global_empathy_defaults:
+                  type: boolean
+                  default: true
+                  description: Whether the group should inherit global empathy prompt/tool defaults
+                empathy_tool_override:
+                  type: string
+                  enum: [CARE, PRISM]
+                  nullable: true
+                  description: Group-level empathy tool override when not inheriting global defaults
+                empathy_prompt_override:
+                  type: string
+                  nullable: true
+                  description: Group-level empathy prompt override when not inheriting global defaults
       responses:
         "200":
           description: Instructor re-enrolled successfully
@@ -5507,7 +5547,6 @@ components:
           schema:
             type: string
       content: {}
-
 
 
 

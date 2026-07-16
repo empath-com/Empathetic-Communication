@@ -196,12 +196,12 @@ export async function stopSpokenLLM(waitForResponse = true) {
   // Stop mic tracks immediately so the browser mic indicator turns off now,
   // not after the 60-second waitForResponse timeout.
   if (globalStream) {
-    try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    try { globalStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* noop */ }
     globalStream = null;
   }
 
   if (audioContext) {
-    try { audioContext.close(); } catch (e) {}
+    try { audioContext.close(); } catch (e) { /* noop */ }
     audioContext = null;
   }
 
@@ -253,7 +253,7 @@ export async function stopSpokenLLM(waitForResponse = true) {
   // leave its worklet/playbackCtx alone.
   if (!novaStarted) {
     if (playbackCtx && playbackCtx.state !== "closed") {
-      try { playbackCtx.close(); } catch (e) {}
+      try { playbackCtx.close(); } catch (e) { /* noop */ }
       playbackCtx = null;
     }
     workletNode = null;

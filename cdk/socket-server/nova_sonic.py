@@ -29,6 +29,17 @@ from langchain_postgres import PGVector
 from amazon_polly_streaming import PollyStreamingClient
 from voice_db_manager import voice_db_manager, get_pg_connection, return_pg_connection
 from shared.completion import finalize_completion_response
+from shared.evaluation_tool_specs import (
+    CARE_CRITERIA,
+    CARE_CRITERIA_LABELS,
+    PRISM_CRITERIA,
+    PRISM_CRITERIA_LABELS,
+    get_care_tool_name,
+    get_care_tool_spec,
+    get_prism_tool_name,
+    get_prism_tool_spec,
+    resolve_schema_variant,
+)
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
 PRACTITIONER_ROLE = os.getenv("PRACTITIONER_ROLE", "pharmacist")
@@ -43,6 +54,16 @@ INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
 CHANNELS = 1
 CHUNK_SIZE = 1024
+EMPATHY_MAX_OUTPUT_TOKENS = 2000
+MAX_SYSTEM_PROMPT_CHARS = 7000
+EMPATHY_TOOL_SCHEMA_VARIANT = resolve_schema_variant()
+
+STATIC_GROUNDING_INSTRUCTIONS = """Grounding rules (mandatory):
+- Evaluate ONLY using evidence in TRANSCRIPT.
+- Do not invent quotes, symptoms, medications, events, names, or non-verbal cues.
+- If evidence is missing for a criterion, state that explicitly in justification.
+- Keep output concise: one short paragraph for overall assessment and 1-2 sentences per item.
+"""
 
 # ─── Empathy Evaluation Queue (Prevent Resource Exhaustion) ──────────────────
 # Global queue to limit concurrent empathy evaluations to 2
@@ -825,7 +846,7 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         })
         await self.stream.input_stream.close()
     
-    async def handle_manual_empathy_evaluation(self, text, session_id=None):
+    async def handle_manual_empathy_evaluation(self, text, session_id=None, empathy_tool=None, simulation_group_id=None):
         """Handle manual empathy evaluation requests from server.js"""
         try:
             print(f"🧠 MANUAL EMPATHY: Received request for text: {text[:50]}...", flush=True)
@@ -833,6 +854,9 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             
             # Use provided session_id or fall back to instance session_id
             eval_session_id = session_id or self.session_id
+            resolved_group_id, resolved_tool = self._get_empathy_settings(eval_session_id)
+            effective_tool = self._normalize_empathy_tool(empathy_tool or resolved_tool)
+            effective_group_id = simulation_group_id or resolved_group_id
             
             # Save the user message first
             print(f"💾 MANUAL EMPATHY: Saving user message to DB", flush=True)
@@ -841,7 +865,12 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             # Run empathy evaluation
             print(f"🧠 MANUAL EMPATHY: Starting empathy evaluation", flush=True)
             patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            empathy_result = await self._evaluate_empathy(text, patient_context)
+            empathy_result = await self._evaluate_empathy(
+                text,
+                patient_context,
+                empathy_tool=effective_tool,
+                simulation_group_id=effective_group_id,
+            )
             
             if empathy_result:
                 print(f"🧠 MANUAL EMPATHY: Evaluation successful", flush=True)
@@ -1049,8 +1078,60 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
         )
         return self._diagnosis_vectorstore
     
-    def _get_empathy_prompt(self):
-        """Retrieve the latest empathy prompt from the empathy_prompt_history table using centralized connection manager."""
+    def _normalize_empathy_tool(self, tool_value):
+        if isinstance(tool_value, str) and tool_value.strip().upper() == "PRISM":
+            return "PRISM"
+        return "CARE"
+
+    def _get_empathy_settings(self, session_id=None):
+        """
+        Resolve effective empathy settings for the active session:
+        group override -> latest global setting -> CARE fallback.
+        """
+        simulation_group_id = None
+        empathy_tool = "CARE"
+        target_session_id = session_id or self.session_id
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT sg.simulation_group_id, sg.empathy_tool_override
+                FROM sessions s
+                JOIN student_interactions si ON s.student_interaction_id = si.student_interaction_id
+                JOIN enrolments e ON si.enrolment_id = e.enrolment_id
+                JOIN simulation_groups sg ON e.simulation_group_id = sg.simulation_group_id
+                WHERE s.session_id = %s
+                LIMIT 1
+                """,
+                (target_session_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                simulation_group_id, group_tool_override = row[0], row[1]
+                if group_tool_override in ("CARE", "PRISM"):
+                    empathy_tool = group_tool_override
+                else:
+                    cursor.execute(
+                        'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
+                    )
+                    tool_row = cursor.fetchone()
+                    empathy_tool = self._normalize_empathy_tool(tool_row[0] if tool_row else "CARE")
+            else:
+                cursor.execute(
+                    'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
+                )
+                tool_row = cursor.fetchone()
+                empathy_tool = self._normalize_empathy_tool(tool_row[0] if tool_row else "CARE")
+
+            cursor.close()
+            return_pg_connection(conn)
+        except Exception as e:
+            logger.error(f"VOICE: Error resolving empathy settings: {e}")
+        return simulation_group_id, empathy_tool
+
+    def _get_empathy_prompt(self, simulation_group_id=None):
+        """Retrieve effective empathy prompt with group override fallback to latest global prompt."""
         try:
             logger.info("🔍 VOICE: RETRIEVING EMPATHY PROMPT FROM DATABASE")
             logger.info("🔗 VOICE_EMPATHY_PROMPT: Using centralized voice connection manager")
@@ -1062,13 +1143,21 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
             conn = get_pg_connection()
             cursor = conn.cursor()
 
-            cursor.execute(
-                'SELECT prompt_content, created_at FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
-            )
-            
-            result = cursor.fetchone()
-            cursor.close()
-            return_pg_connection(conn)
+            result = None
+            if simulation_group_id:
+                cursor.execute(
+                    'SELECT empathy_prompt_override FROM "simulation_groups" WHERE simulation_group_id = %s LIMIT 1',
+                    (simulation_group_id,),
+                )
+                group_result = cursor.fetchone()
+                if group_result and group_result[0]:
+                    result = (group_result[0], "group_override")
+
+            if not result:
+                cursor.execute(
+                    'SELECT prompt_content, created_at FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
+                )
+                result = cursor.fetchone()
 
             if result and result[0]:
                 prompt_content = result[0]
@@ -1079,6 +1168,8 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                 # Check if prompt has required placeholders
                 if '{patient_context}' not in prompt_content or '{user_text}' not in prompt_content:
                     logger.error("❌ VOICE: ADMIN PROMPT MISSING REQUIRED PLACEHOLDERS")
+                    cursor.close()
+                    return_pg_connection(conn)
                     return self._get_default_empathy_prompt()
                 
                 # Fix JSON formatting issues - replace single braces with double braces in JSON template
@@ -1102,9 +1193,13 @@ Do NOT write theatrical stage directions like "looks down tearfully", "breaks do
                         prompt_content = re.sub('\\{(\\s*"empathy_score"[^}]*?)\\}', '{{\\1}}', prompt_content, flags=re.DOTALL)
                         logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED") """
                 
+                cursor.close()
+                return_pg_connection(conn)
                 return prompt_content
             else:
                 logger.info("🔧 VOICE: No admin prompt found, using default empathy prompt")
+                cursor.close()
+                return_pg_connection(conn)
                 return self._get_default_empathy_prompt()
 
         except Exception as e:
@@ -1350,93 +1445,76 @@ Provide structured evaluation with detailed justifications for each score.
         self._suppress_nova_audio = False
         print(f"🔊 HYBRID: Injection sent, audio suppression released", flush=True)
 
-    async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
-        """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
-
-        # First, checking if this evaluation is still relevant
+    async def _evaluate_empathy(self, student_response, patient_context, sequence=None, empathy_tool="CARE", simulation_group_id=None):
+        """LLM-as-a-Judge empathy evaluation aligned with text-generation tool use."""
         if sequence is not None and sequence < self._empathy_eval_sequence:
-            print(f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...", flush=True)
+            print(
+                f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...",
+                flush=True,
+            )
             return None
-        
-        print(f"🧠 VOICE: _evaluate_empathy CALLED with response: {student_response[:50]}...", flush=True)
-        logger.info(f"🧠 VOICE: Starting empathy evaluation for: {student_response[:30]}...")
-        
-        # Basic validation and sanitization
+
         if not student_response:
-            logger.error(f"❌ VOICE: STUDENT RESPONSE IS NONE")
+            logger.error("❌ VOICE: STUDENT RESPONSE IS NONE")
             return None
-            
-        # Clean the student response
+
         student_response = str(student_response).strip()
-        
         if not student_response:
-            logger.error(f"❌ VOICE: STUDENT RESPONSE IS EMPTY AFTER STRIP")
+            logger.error("❌ VOICE: STUDENT RESPONSE IS EMPTY AFTER STRIP")
             return None
-            
-        if len(student_response) > 1000:  # Reasonable limit
+
+        if len(student_response) > 1000:
             student_response = student_response[:1000]
-            logger.warning(f"⚠️ VOICE: Truncated long student response to 1000 characters")
-            
-        # Ensure patient context is valid
+            logger.warning("⚠️ VOICE: Truncated long student response to 1000 characters")
+
         if not patient_context:
             patient_context = "General patient interaction"
-            logger.warning(f"⚠️ VOICE: Using default patient context")
-            
+
         try:
-            print(f"🧠 VOICE: Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
-            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
-            
-            # Get the empathy prompt - static part for caching (from DB or default)
+            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or "us-east-1")
             try:
-                static_system_prompt = self._get_empathy_prompt()
-                logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+                static_system_prompt = self._get_empathy_prompt(simulation_group_id=simulation_group_id)
+                if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+                    logger.warning(
+                        f"⚠️ VOICE: Empathy prompt too long ({len(static_system_prompt)} chars), using default"
+                    )
+                    static_system_prompt = self._get_default_empathy_prompt()
             except Exception as prompt_error:
                 logger.error(f"VOICE: EMPATHY PROMPT ERROR: {prompt_error}, using default")
                 static_system_prompt = self._get_default_empathy_prompt()
 
-            # Build dynamic user prompt with the specific case data
-            dynamic_user_prompt = f"""patient_context: {patient_context}
-    user_text: {student_response}"""
-            
-            logger.info(f"✅ VOICE: Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
-            
-            # CRITICAL VALIDATION: Ensure the user text is included
+            cached_system_prompt = f"{static_system_prompt}\n\n{STATIC_GROUNDING_INSTRUCTIONS}"
+            dynamic_user_prompt = f"""PATIENT_CONTEXT:
+{patient_context}
+
+TRANSCRIPT_START
+{student_response}
+TRANSCRIPT_END"""
             if student_response not in dynamic_user_prompt:
-                logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
+                logger.error("❌ VOICE: USER TEXT NOT FOUND IN DYNAMIC PROMPT")
                 return None
-            
-            print(f"🧠 VOICE: Sending evaluation prompt to Nova Pro", flush=True)
-            
-            # Build request body with prompt caching
+
+            effective_tool = self._normalize_empathy_tool(empathy_tool)
+            if effective_tool == "PRISM":
+                selected_criteria = PRISM_CRITERIA
+                selected_tool_spec = get_prism_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
+                selected_tool_name = get_prism_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
+            else:
+                selected_criteria = CARE_CRITERIA
+                selected_tool_spec = get_care_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
+                selected_tool_name = get_care_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
+
             body = {
-                "system": [
-                    {
-                        "text": static_system_prompt,
-                        "cachePoint": {
-                            "type": "default"
-                        }
-                    }
-                ],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": dynamic_user_prompt
-                            }
-                        ]
-                    }
-                ],
-                "inferenceConfig": {
-                    "temperature": 0.1,
-                    "maxTokens": 1200
-                }
+                "system": [{"text": cached_system_prompt, "cachePoint": {"type": "default"}}],
+                "messages": [{"role": "user", "content": [{"text": dynamic_user_prompt}]}],
+                "toolConfig": {
+                    "tools": [selected_tool_spec],
+                    "toolChoice": {"tool": {"name": selected_tool_name}},
+                },
+                "inferenceConfig": {"temperature": 0.1, "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS},
             }
-            
-            # Empathy evaluation runs as a background async task so a generous
-            # timeout is fine — it won't block voice generation.
-            # 45 s primary + 45 s fallback; cold prompt-cache misses can be slow.
-            EMPATHY_TIMEOUT = 45.0
+
+            timeout_seconds = 45.0
             loop = asyncio.get_running_loop()
 
             async def _invoke(client):
@@ -1444,114 +1522,69 @@ Provide structured evaluation with detailed justifications for each score.
                     loop.run_in_executor(
                         None,
                         lambda: client.invoke_model(
-                            modelId="amazon.nova-pro-v1:0",
+                            modelId="amazon.nova-lite-v1:0",
                             contentType="application/json",
                             accept="application/json",
-                            body=json.dumps(body)
-                        )
+                            body=json.dumps(body),
+                        ),
                     ),
-                    timeout=EMPATHY_TIMEOUT
+                    timeout=timeout_seconds,
                 )
 
             try:
                 response = await _invoke(bedrock_client)
-                logger.info("✅ VOICE: BEDROCK MODEL CALL SUCCESSFUL")
             except (asyncio.TimeoutError, Exception) as primary_error:
                 logger.warning(f"⏱️ VOICE: Primary Bedrock call failed ({primary_error}), trying us-east-1 fallback")
-                try:
-                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                    response = await _invoke(fallback_client)
-                    logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
-                except asyncio.TimeoutError:
-                    logger.error("⏱️ VOICE: Bedrock fallback also timed out - aborting empathy evaluation")
-                    return None
-                except Exception as fallback_error:
-                    logger.error(f"VOICE: Bedrock fallback failed: {fallback_error}")
-                    return None
-            
+                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                response = await _invoke(fallback_client)
+
             result = json.loads(response["body"].read())
-
-            # Log cache usage
             usage = result.get("usage", {})
+            logger.info(
+                f"VOICE EMPATHY CACHE STATS: Read={usage.get('cacheReadInputTokenCount', 0)}, Write={usage.get('cacheWriteInputTokenCount', 0)}"
+            )
 
-            # logging all the token stats
-            logger.info(f"FULL USAGE OBJECT: {usage}")
+            content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+            empathy_result = None
+            for block in content_blocks:
+                tool_use = block.get("toolUse", {})
+                if tool_use.get("name") == selected_tool_name:
+                    empathy_result = tool_use.get("input", {})
+                    break
 
-            cache_read = usage.get('cacheReadInputTokenCount', 0)
-            cache_write = usage.get('cacheWriteInputTokenCount', 0)
-            if cache_read > 0:
-                print(f"✅ CACHE HIT! Read {cache_read} tokens from cache", flush=True)
-            elif cache_write > 0:
-                print(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache", flush=True)
+            if not empathy_result:
+                logger.error(f"❌ VOICE: NO TOOL USE BLOCK FOUND: {json.dumps(result)[:400]}")
+                return None
 
-            logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+            for score_key in selected_criteria:
+                score_value = empathy_result.get(score_key)
+                if isinstance(score_value, str):
+                    try:
+                        score_value = int(score_value)
+                    except (TypeError, ValueError):
+                        score_value = 3
+                elif not isinstance(score_value, int):
+                    score_value = 3
+                empathy_result[score_key] = max(1, min(5, score_value))
 
-            response_text = result["output"]["message"]["content"][0]["text"]
-            logger.info(f"📝 VOICE: BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
-            
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}') + 1
-            
-            if json_start != -1 and json_end > json_start:
-                json_text = response_text[json_start:json_end]
-                logger.info(f"📝 VOICE: EXTRACTED JSON LENGTH: {len(json_text)} characters")
-                
-                empathy_result = json.loads(json_text)
-                logger.info(f"✅ VOICE: JSON PARSING SUCCESSFUL - Keys: {list(empathy_result.keys())}")
-                
-                # Convert string scores to integers and validate
-                required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
-                for score_key in required_scores:
-                    score_value = empathy_result.get(score_key)
-                    if isinstance(score_value, str):
-                        try:
-                            empathy_result[score_key] = int(score_value)
-                        except (ValueError, TypeError):
-                            empathy_result[score_key] = 3
-                    elif score_value is None or score_value == 0:
-                        empathy_result[score_key] = 3
-                
-                if 'empathy_score' in empathy_result:
-                    empathy_score = empathy_result.get('empathy_score')
-                    if isinstance(empathy_score, str):
-                        try:
-                            empathy_result['empathy_score'] = int(empathy_score)
-                        except (ValueError, TypeError):
-                            empathy_result['empathy_score'] = 3
-                
-                empathy_result["evaluation_method"] = "LLM-as-a-Judge"
-                empathy_result["judge_model"] = "amazon.nova-pro-v1:0"
-                
-                # Save to database
-                self._save_message_to_db(self.session_id, True, student_response, empathy_result)
-                
-                # Before sending feedback, check if still latest
-                if sequence is not None and sequence < self._empathy_eval_sequence:
-                    print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
-                    return empathy_result  # Return but don't send to frontend
-                
-                # Send empathy feedback
-                empathy_feedback = self._build_empathy_feedback(empathy_result)
-                if empathy_feedback:
-                    print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
-                    print(json.dumps({"type": "empathy_data", "content": json.dumps(empathy_result)}), flush=True)
-                    logger.info(f"🧠 VOICE: Empathy feedback sent to frontend")
-                
-                logger.info(f"✅ VOICE: EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
+            empathy_result["evaluation_method"] = "LLM-as-a-Judge"
+            empathy_result["evaluation_tool"] = effective_tool
+            empathy_result["judge_model"] = "amazon.nova-lite-v1:0"
+            self._save_message_to_db(self.session_id, True, student_response, empathy_result)
+
+            if sequence is not None and sequence < self._empathy_eval_sequence:
+                print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
                 return empathy_result
-            else:
-                logger.error(f"❌ VOICE: NO JSON FOUND IN RESPONSE: {response_text}")
-                raise json.JSONDecodeError("No JSON found", response_text, 0)
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ VOICE: JSON DECODE ERROR: {e}")
-            return None
+
+            empathy_feedback = self._build_empathy_feedback(empathy_result)
+            if empathy_feedback:
+                print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
+                print(json.dumps({"type": "empathy_data", "content": json.dumps(empathy_result)}), flush=True)
+            return empathy_result
         except Exception as e:
             logger.error(f"❌ VOICE: EMPATHY EVALUATION ERROR: {e}")
-            # Fallback: Save message without empathy data
             try:
                 self._save_message_to_db(self.session_id, True, student_response, None)
-                logger.info(f"🧠 VOICE: Message saved without empathy data as fallback")
             except Exception as save_error:
                 logger.error(f"🧠 VOICE: Failed to save message as fallback: {save_error}")
             return None
@@ -1716,50 +1749,42 @@ Provide structured evaluation with detailed justifications for each score.
         try:
             if not empathy_result:
                 return None
-                
-            feedback = f"**🎤 Voice Empathy Coach:**\n\n"
-            feedback += f"**Overall Empathy Score:** {empathy_result.get('empathy_score', 'N/A')}/5\n\n"
-            
-            # Add detailed scores
-            scores = [
-                ("Perspective-Taking", empathy_result.get('perspective_taking', 'N/A')),
-                ("Emotional Resonance", empathy_result.get('emotional_resonance', 'N/A')),
-                ("Acknowledgment", empathy_result.get('acknowledgment', 'N/A')),
-                ("Language & Communication", empathy_result.get('language_communication', 'N/A')),
-                ("Cognitive Empathy", empathy_result.get('cognitive_empathy', 'N/A')),
-                ("Affective Empathy", empathy_result.get('affective_empathy', 'N/A'))
-            ]
-            
-            for score_name, score_value in scores:
-                feedback += f"**{score_name}:** {score_value}/5\n"
-            
-            # Add assessment
-            if empathy_result.get('judge_reasoning', {}).get('overall_assessment'):
-                feedback += f"\n**Assessment:** {empathy_result['judge_reasoning']['overall_assessment']}\n"
-            
-            # Add strengths
-            strengths = empathy_result.get('feedback', {}).get('strengths', [])
+
+            tool = self._normalize_empathy_tool(empathy_result.get("evaluation_tool"))
+            if tool == "PRISM":
+                criteria = PRISM_CRITERIA
+                labels = PRISM_CRITERIA_LABELS
+                title = "PRISM"
+            else:
+                criteria = CARE_CRITERIA
+                labels = CARE_CRITERIA_LABELS
+                title = "CARE"
+
+            scores = {key: empathy_result.get(key, 3) for key in criteria}
+            avg_score = sum(scores.values()) / len(criteria)
+            feedback = f"**🎤 Voice Empathy Coach ({title} 1-5):**\n\n"
+            feedback += f"**Overall Score:** {avg_score:.1f}/5\n\n"
+
+            for key in criteria:
+                feedback += f"**{labels[key]}:** {scores.get(key, 'N/A')}/5\n"
+
+            overall = empathy_result.get("judge_reasoning", {}).get("overall_assessment")
+            if overall:
+                feedback += f"\n**Assessment:** {overall}\n"
+
+            strengths = empathy_result.get("feedback", {}).get("strengths", [])
             if strengths:
-                feedback += f"\n**Strengths:**\n"
-                for strength in strengths[:3]:  # Limit to 3 strengths
+                feedback += "\n**Strengths:**\n"
+                for strength in strengths[:3]:
                     feedback += f"• {strength}\n"
-            
-            # Add improvement areas
-            improvements = empathy_result.get('feedback', {}).get('areas_for_improvement', [])
-            if improvements:
-                feedback += f"\n**Areas for Improvement:**\n"
-                for improvement in improvements[:3]:  # Limit to 3 improvements
-                    feedback += f"• {improvement}\n"
-            
-            # Add suggestions
-            suggestions = empathy_result.get('feedback', {}).get('improvement_suggestions', [])
+
+            suggestions = empathy_result.get("feedback", {}).get("improvement_suggestions", [])
             if suggestions:
-                feedback += f"\n**Suggestions:**\n"
-                for suggestion in suggestions[:2]:  # Limit to 2 suggestions
+                feedback += "\n**Suggestions:**\n"
+                for suggestion in suggestions[:2]:
                     feedback += f"• {suggestion}\n"
-            
+
             return feedback
-            
         except Exception as e:
             logger.error(f"Error building empathy feedback: {e}")
             return None
@@ -2842,7 +2867,9 @@ if __name__ == "__main__":
                     print(f"processing empathy evaluation request!!", flush=True)
                     asyncio.create_task(nova.handle_manual_empathy_evaluation(
                         command["text"],
-                        command.get("session_id")
+                        command.get("session_id"),
+                        command.get("empathy_tool"),
+                        command.get("simulation_group_id"),
                     ))
 
             elif cmd_type == "text":

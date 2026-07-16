@@ -53,7 +53,7 @@ class PCMPlaybackProcessor extends AudioWorkletProcessor {
 
     // How many 16 kHz input samples to advance per output sample.
     // e.g. 16000/48000 = 0.333 for a typical 48 kHz browser context.
-    const step = 16000 / sampleRate;
+    const step = 16000 / globalThis.sampleRate;
     const hadSamples = this._count > 0;
 
     for (let i = 0; i < out.length; i++) {

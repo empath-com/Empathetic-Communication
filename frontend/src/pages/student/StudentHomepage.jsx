@@ -311,8 +311,8 @@ export const StudentHomepage = ({ setGroup }) => {
                   variant="body1"
                   className="text-gray-600 mb-6 leading-relaxed"
                 >
-                  You haven't joined any simulation groups yet. Click "Join
-                  Group" above to get started with your medical training
+                  You haven&apos;t joined any simulation groups yet. Click &quot;Join
+                  Group&quot; above to get started with your medical training
                   simulations.
                 </Typography>
               </div>

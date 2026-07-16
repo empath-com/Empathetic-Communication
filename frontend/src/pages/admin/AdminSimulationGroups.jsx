@@ -25,8 +25,8 @@ import AddCircleIcon from "@mui/icons-material/AddCircle";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
 import GroupDetails from "./GroupDetails";
 
-const createData = (groupName, accessCode, status, id) => {
-  return { groupName, accessCode, status, id };
+const createData = (groupName, accessCode, status, id, empathyMode) => {
+  return { groupName, accessCode, status, id, empathyMode };
 };
 
 function getSimulationGroupInfo(groupsArray) {
@@ -35,7 +35,10 @@ function getSimulationGroupInfo(groupsArray) {
       `${group.group_name}`,
       `${group.group_access_code}`,
       `${group.group_student_access}`,
-      `${group.simulation_group_id}`
+      `${group.simulation_group_id}`,
+      group.empathy_prompt_override || group.empathy_tool_override
+        ? "Override"
+        : "Default"
     )
   );
 }
@@ -266,6 +269,18 @@ export const AdminSimulationGroups = () => {
                     >
                       Status
                     </TableCell>
+                    <TableCell
+                      sx={{
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        letterSpacing: ".05em",
+                        textTransform: "uppercase",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                      }}
+                    >
+                      Empathy Config
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -320,6 +335,15 @@ export const AdminSimulationGroups = () => {
                             {row.status === "true" ? "Active" : "Inactive"}
                           </span>
                         </TableCell>
+                        <TableCell
+                          sx={{
+                            fontSize: "0.85rem",
+                            color: "#374151",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {row.empathyMode}
+                        </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>
@@ -328,7 +352,7 @@ export const AdminSimulationGroups = () => {
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={3}
+                    colSpan={4}
                     sx={{
                       py: 8,
                       textAlign: "center",

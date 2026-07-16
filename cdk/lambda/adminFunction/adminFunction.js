@@ -5,6 +5,7 @@ let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, CORS_ALLOWED_ORIGIN = "*" } = proce
 
 // SQL conneciton from global variable at libadmin.js
 let sqlConnectionTableCreator = global.sqlConnectionTableCreator;
+const VALID_EMPATHY_TOOLS = ["CARE", "PRISM"];
 
 exports.handler = async (event) => {
   const response = {
@@ -303,7 +304,35 @@ exports.handler = async (event) => {
               instructor_voice_enabled,
             } = event.queryStringParameters;
 
-            const { system_prompt } = JSON.parse(event.body);
+            const {
+              system_prompt,
+              empathy_prompt_override,
+              empathy_tool_override,
+              use_global_empathy_defaults,
+            } = JSON.parse(event.body);
+
+            const useGlobalEmpathyDefaults = use_global_empathy_defaults !== false;
+            const normalizedEmpathyPromptOverride = useGlobalEmpathyDefaults
+              ? null
+              : (typeof empathy_prompt_override === "string" && empathy_prompt_override.trim())
+                ? empathy_prompt_override
+                : null;
+            const normalizedEmpathyToolOverride = useGlobalEmpathyDefaults
+              ? null
+              : (typeof empathy_tool_override === "string" && empathy_tool_override.trim())
+                ? empathy_tool_override.toUpperCase()
+                : null;
+
+            if (
+              normalizedEmpathyToolOverride &&
+              !VALID_EMPATHY_TOOLS.includes(normalizedEmpathyToolOverride)
+            ) {
+              response.statusCode = 400;
+              response.body = JSON.stringify({
+                error: `Invalid empathy_tool_override. Allowed values: ${VALID_EMPATHY_TOOLS.join(", ")}`,
+              });
+              break;
+            }
 
             // Insert new simulation group into simulation_groups table
             const newSimulationGroup = await sqlConnectionTableCreator`
@@ -316,7 +345,9 @@ exports.handler = async (event) => {
                       system_prompt,
                       empathy_enabled,
                       admin_voice_enabled,
-                      instructor_voice_enabled
+                      instructor_voice_enabled,
+                      empathy_prompt_override,
+                      empathy_tool_override
                   )
                   VALUES (
                       uuid_generate_v4(),
@@ -327,7 +358,9 @@ exports.handler = async (event) => {
                       ${system_prompt},
                       ${empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true},
                       ${admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true},
-                      ${instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true}
+                      ${instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true},
+                      ${normalizedEmpathyPromptOverride},
+                      ${normalizedEmpathyToolOverride}
                   )
                   RETURNING *;
               `;
@@ -396,32 +429,97 @@ exports.handler = async (event) => {
           event.queryStringParameters.simulation_group_id &&
           event.queryStringParameters.access
         ) {
-          const { simulation_group_id, group_name, access, empathy_enabled, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
+          const {
+            simulation_group_id,
+            group_name,
+            access,
+            empathy_enabled,
+            admin_voice_enabled,
+            instructor_voice_enabled,
+          } = event.queryStringParameters;
           const accessBool = access.toLowerCase() === "true";
           const empathyBool = empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true;
           const adminVoiceBool = admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true;
           const instructorVoiceBool = instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true;
 
-          if (group_name) { // update WITH group name
-            await sqlConnectionTableCreator`
-              UPDATE "simulation_groups"
-              SET group_name = ${group_name},
-                  group_student_access = ${accessBool},
-                  empathy_enabled = ${empathyBool},
-                  admin_voice_enabled = ${adminVoiceBool},
-                  instructor_voice_enabled = ${instructorVoiceBool}
-              WHERE simulation_group_id = ${simulation_group_id};
-            `;
-          } else { // SQL query to update group access, empathy_enabled, and voice settings
-            await sqlConnectionTableCreator`
-                    UPDATE "simulation_groups"
-                    SET group_student_access = ${accessBool},
-                        empathy_enabled = ${empathyBool},
-                        admin_voice_enabled = ${adminVoiceBool},
-                        instructor_voice_enabled = ${instructorVoiceBool}
-                    WHERE simulation_group_id = ${simulation_group_id};
-                  `;
+          let hasEmpathyOverridePayload = false;
+          let useGlobalEmpathyDefaults = true;
+          let normalizedEmpathyPromptOverride = null;
+          let normalizedEmpathyToolOverride = null;
 
+          if (event.body) {
+            hasEmpathyOverridePayload = true;
+            const parsedBody = JSON.parse(event.body);
+            useGlobalEmpathyDefaults = parsedBody.use_global_empathy_defaults !== false;
+            normalizedEmpathyPromptOverride = useGlobalEmpathyDefaults
+              ? null
+              : (typeof parsedBody.empathy_prompt_override === "string" && parsedBody.empathy_prompt_override.trim())
+                ? parsedBody.empathy_prompt_override
+                : null;
+            normalizedEmpathyToolOverride = useGlobalEmpathyDefaults
+              ? null
+              : (typeof parsedBody.empathy_tool_override === "string" && parsedBody.empathy_tool_override.trim())
+                ? parsedBody.empathy_tool_override.toUpperCase()
+                : null;
+          }
+
+          if (
+            normalizedEmpathyToolOverride &&
+            !VALID_EMPATHY_TOOLS.includes(normalizedEmpathyToolOverride)
+          ) {
+            response.statusCode = 400;
+            response.body = JSON.stringify({
+              error: `Invalid empathy_tool_override. Allowed values: ${VALID_EMPATHY_TOOLS.join(", ")}`,
+            });
+            break;
+          }
+
+          if (group_name) { // update WITH group name
+            if (hasEmpathyOverridePayload) {
+              await sqlConnectionTableCreator`
+                UPDATE "simulation_groups"
+                SET group_name = ${group_name},
+                    group_student_access = ${accessBool},
+                    empathy_enabled = ${empathyBool},
+                    admin_voice_enabled = ${adminVoiceBool},
+                    instructor_voice_enabled = ${instructorVoiceBool},
+                    empathy_prompt_override = ${normalizedEmpathyPromptOverride},
+                    empathy_tool_override = ${normalizedEmpathyToolOverride}
+                WHERE simulation_group_id = ${simulation_group_id};
+              `;
+            } else {
+              await sqlConnectionTableCreator`
+                UPDATE "simulation_groups"
+                SET group_name = ${group_name},
+                    group_student_access = ${accessBool},
+                    empathy_enabled = ${empathyBool},
+                    admin_voice_enabled = ${adminVoiceBool},
+                    instructor_voice_enabled = ${instructorVoiceBool}
+                WHERE simulation_group_id = ${simulation_group_id};
+              `;
+            }
+          } else { // SQL query to update group access, empathy_enabled, and voice settings
+            if (hasEmpathyOverridePayload) {
+              await sqlConnectionTableCreator`
+                UPDATE "simulation_groups"
+                SET group_student_access = ${accessBool},
+                    empathy_enabled = ${empathyBool},
+                    admin_voice_enabled = ${adminVoiceBool},
+                    instructor_voice_enabled = ${instructorVoiceBool},
+                    empathy_prompt_override = ${normalizedEmpathyPromptOverride},
+                    empathy_tool_override = ${normalizedEmpathyToolOverride}
+                WHERE simulation_group_id = ${simulation_group_id};
+              `;
+            } else {
+              await sqlConnectionTableCreator`
+                UPDATE "simulation_groups"
+                SET group_student_access = ${accessBool},
+                    empathy_enabled = ${empathyBool},
+                    admin_voice_enabled = ${adminVoiceBool},
+                    instructor_voice_enabled = ${instructorVoiceBool}
+                WHERE simulation_group_id = ${simulation_group_id};
+              `;
+            }
           }
 
 
@@ -960,5 +1058,3 @@ exports.handler = async (event) => {
   console.log('[Response]', response);
   return response;
 };
-
-

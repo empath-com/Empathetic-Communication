@@ -9,12 +9,12 @@ import {
   Box,
   Chip,
   Typography,
-  OutlinedInput,
   FormControlLabel,
   Switch,
   Paper,
   Toolbar,
   Autocomplete,
+  Divider,
 } from "@mui/material";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -58,17 +58,15 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
   const [selectedInstructors, setSelectedInstructors] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [useGlobalEmpathyDefaults, setUseGlobalEmpathyDefaults] = useState(true);
+  const [globalEmpathyPrompt, setGlobalEmpathyPrompt] = useState("");
+  const [globalEmpathyTool, setGlobalEmpathyTool] = useState("CARE");
+  const [empathyPromptOverride, setEmpathyPromptOverride] = useState("");
+  const [empathyToolOverride, setEmpathyToolOverride] = useState("CARE");
   const handleStatusChange = (event) => {
     setIsActive(event.target.checked);
   };
 
-  const handleSimulationGroupCodeChange = (e) => {
-    const value = e.target.value;
-    if (/^\d*$/.test(value)) {
-      // This regex ensures only digits
-      setSimulationGroupCode(value);
-    }
-  };
   useEffect(() => {
     const fetchInstructors = async () => {
       try {
@@ -97,7 +95,36 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
       }
     };
 
+    const fetchGlobalEmpathyDefaults = async () => {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const response = await fetch(
+          `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const fetchedTool = data.current_empathy_tool || "CARE";
+          const fetchedPrompt = data.current_prompt || "";
+          setGlobalEmpathyTool(fetchedTool);
+          setGlobalEmpathyPrompt(fetchedPrompt);
+          setEmpathyToolOverride(fetchedTool);
+          setEmpathyPromptOverride(fetchedPrompt);
+        }
+      } catch (error) {
+        console.error("Error fetching global empathy defaults:", error);
+      }
+    };
+
     fetchInstructors();
+    fetchGlobalEmpathyDefaults();
   }, []);
   const handleCreate = async () => {
     // Validation
@@ -143,6 +170,13 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           },
           body: JSON.stringify({
             system_prompt: simulationGroupPrompt,
+            use_global_empathy_defaults: useGlobalEmpathyDefaults,
+            empathy_tool_override: useGlobalEmpathyDefaults
+              ? null
+              : empathyToolOverride,
+            empathy_prompt_override: useGlobalEmpathyDefaults
+              ? null
+              : empathyPromptOverride,
           }),
         }
       );
@@ -383,10 +417,66 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
               justifyContent: "flex-start",
             }}
           />
+          <Divider sx={{ my: 2 }} />
+          <Typography sx={{ fontWeight: 600, mb: 1 }}>
+          Empathy Evaluation Defaults
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
+          By default, groups inherit the global empathy prompt and evaluation tool from Admin AI Settings.
+          </Typography>
           <FormControlLabel
-            control={
-              <Switch
-                checked={adminVoiceEnabled}
+          control={
+            <Switch
+              checked={useGlobalEmpathyDefaults}
+              onChange={(e) => {
+                const useGlobal = e.target.checked;
+                setUseGlobalEmpathyDefaults(useGlobal);
+                if (useGlobal) {
+                  setEmpathyToolOverride(globalEmpathyTool || "CARE");
+                  setEmpathyPromptOverride(globalEmpathyPrompt || "");
+                }
+              }}
+            />
+          }
+          label="Use global empathy defaults"
+          sx={{
+            color: "black",
+            textAlign: "left",
+            justifyContent: "flex-start",
+            mb: 1,
+          }}
+          />
+          {!useGlobalEmpathyDefaults && (
+          <>
+            <FormControl fullWidth sx={{ mb: 1.5 }}>
+              <InputLabel id="group-empathy-tool-label">Group Evaluation Tool</InputLabel>
+              <Select
+                labelId="group-empathy-tool-label"
+                value={empathyToolOverride}
+                label="Group Evaluation Tool"
+                onChange={(e) => setEmpathyToolOverride(e.target.value)}
+              >
+                <MenuItem value="CARE">CARE Measure</MenuItem>
+                <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Group Empathy Prompt Override"
+              value={empathyPromptOverride}
+              onChange={(e) => setEmpathyPromptOverride(e.target.value)}
+              margin="normal"
+              multiline
+              rows={4}
+              inputProps={{ maxLength: 4000 }}
+              helperText="This prompt overrides the global empathy prompt for this group only."
+            />
+          </>
+          )}
+          <FormControlLabel
+          control={
+            <Switch
+              checked={adminVoiceEnabled}
                 onChange={(e) => setAdminVoiceEnabled(e.target.checked)}
               />
             }

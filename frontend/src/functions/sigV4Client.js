@@ -16,7 +16,7 @@ sigV4Client.newClient = function (config) {
   const AUTHORIZATION = "Authorization";
 
   function hash(value) {
-    return SHA256(value); // eslint-disable-line
+    return SHA256(value);
   }
 
   function hexEncode(value) {
@@ -24,7 +24,7 @@ sigV4Client.newClient = function (config) {
   }
 
   function hmac(secret, value) {
-    return HmacSHA256(value, secret, { asBytes: true }); // eslint-disable-line
+    return HmacSHA256(value, secret, { asBytes: true });
   }
 
   function buildCanonicalRequest(method, path, queryParams, headers, payload) {
@@ -58,7 +58,7 @@ sigV4Client.newClient = function (config) {
 
     let sortedQueryParams = [];
     for (let property in queryParams) {
-      if (queryParams.hasOwnProperty(property)) {
+      if (Object.prototype.hasOwnProperty.call(queryParams, property)) {
         sortedQueryParams.push(property);
       }
     }
@@ -79,7 +79,7 @@ sigV4Client.newClient = function (config) {
     let canonicalHeaders = "";
     let sortedKeys = [];
     for (let property in headers) {
-      if (headers.hasOwnProperty(property)) {
+      if (Object.prototype.hasOwnProperty.call(headers, property)) {
         sortedKeys.push(property);
       }
     }
@@ -95,7 +95,7 @@ sigV4Client.newClient = function (config) {
   function buildCanonicalSignedHeaders(headers) {
     let sortedKeys = [];
     for (let property in headers) {
-      if (headers.hasOwnProperty(property)) {
+      if (Object.prototype.hasOwnProperty.call(headers, property)) {
         sortedKeys.push(property.toLowerCase());
       }
     }

@@ -199,6 +199,7 @@ def update_session_name(table_name: str, session_id: str, bedrock_llm_id: str, p
 
 def get_response(
     query: str,
+    simulation_group_id: str,
     patient_name: str,
     llm: ChatBedrock,
     history_aware_retriever,
@@ -301,6 +302,7 @@ def get_response(
                 patient_name,
                 patient_age,
                 patient_prompt,
+                simulation_group_id=simulation_group_id,
                 bedrock_client=bedrock_client,
                 empathy_enabled=empathy_enabled,
                 empathy_tool=empathy_tool,

@@ -236,24 +236,32 @@ def get_group_prompt(simulation_group_id):
 
 
 def get_empathy_settings(simulation_group_id: str) -> tuple:
-    """Return (empathy_enabled, empathy_tool).
-    empathy_enabled is per-group; empathy_tool is the global instance setting from empathy_prompt_history.
+    """Return effective (empathy_enabled, empathy_tool) for a group.
+    Uses group override tool when set, otherwise falls back to latest global tool.
     """
     try:
         from helpers.db_connection_manager import get_db_cursor
         with get_db_cursor() as cursor:
             cursor.execute(
-                'SELECT empathy_enabled FROM "simulation_groups" WHERE simulation_group_id = %s',
+                '''
+                SELECT empathy_enabled, empathy_tool_override
+                FROM "simulation_groups"
+                WHERE simulation_group_id = %s
+                ''',
                 (simulation_group_id,)
             )
             row = cursor.fetchone()
             empathy_enabled = bool(row[0]) if row else False
+            group_tool_override = row[1] if row else None
 
-            cursor.execute(
-                'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
-            )
-            tool_row = cursor.fetchone()
-            empathy_tool = (tool_row[0] or "CARE") if tool_row else "CARE"
+            if group_tool_override in ("CARE", "PRISM"):
+                empathy_tool = group_tool_override
+            else:
+                cursor.execute(
+                    'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
+                )
+                tool_row = cursor.fetchone()
+                empathy_tool = (tool_row[0] or "CARE") if tool_row else "CARE"
 
         return empathy_enabled, empathy_tool
     except Exception as e:
@@ -393,6 +401,7 @@ def handler_empathy_evaluation(event, context):
             patient_prompt=patient_prompt or "",
             message_id=message_id,
             empathy_tool=empathy_tool,
+            simulation_group_id=simulation_group_id,
         )
         
         if result.get("statusCode") != 200:
@@ -676,6 +685,7 @@ def handler_text_generation(event, context):
             empathy_enabled, empathy_tool = get_empathy_settings(simulation_group_id)
             response = get_response(
                 query=student_query,
+                simulation_group_id=simulation_group_id,
                 patient_name=patient_name,
                 llm=llm,
                 history_aware_retriever=history_aware_retriever,

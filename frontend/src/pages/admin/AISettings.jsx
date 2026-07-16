@@ -672,7 +672,7 @@ Provide structured evaluation with detailed justifications for each score.
               </Typography>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              This prompt controls how the AI evaluates student empathy. Changes affect ALL users.
+              This prompt controls the global default empathy evaluation behavior. Groups inherit these settings unless they define a group-level override.
             </Typography>
             <FormControl size="small" sx={{ mb: 3, minWidth: 240 }}>
               <InputLabel id="empathy-tool-label">Evaluation Tool</InputLabel>

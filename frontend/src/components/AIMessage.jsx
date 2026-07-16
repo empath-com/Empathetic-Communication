@@ -9,7 +9,6 @@ import ReactMarkdown from "react-markdown";
 const MarkdownRender = ({ content }) => {
   return (
     <ReactMarkdown
-      children={content}
       components={{
         code({ node, inline, className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");

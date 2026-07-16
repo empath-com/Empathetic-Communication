@@ -234,30 +234,38 @@ io.on("connection", (socket) => {
               console.log("🧠 RAW VOICE EMPATHY DATA RECEIVED:", parsed.content?.substring(0, 100));
               try {
                 const empathyData = JSON.parse(parsed.content);
-                console.log("🧠 PARSED EMPATHY DATA:", {
-                  empathy_score: empathyData.empathy_score,
-                  perspective_taking: empathyData.perspective_taking,
-                  emotional_resonance: empathyData.emotional_resonance
-                });
-                
-                // Transform to match StudentChat format with voice indicator
+                const tool = empathyData.evaluation_tool === "PRISM" ? "PRISM" : "CARE";
+                const careCriteria = [
+                  "making_feel_at_ease",
+                  "letting_tell_story",
+                  "really_listening",
+                  "interested_in_whole_person",
+                  "understanding_concerns",
+                  "showing_care_compassion",
+                  "being_positive",
+                  "explaining_clearly",
+                  "helping_take_control",
+                  "making_plan_of_action",
+                ];
+                const prismCriteria = ["prepare", "recognise", "interact", "self_assess", "master"];
+                const criteria = tool === "PRISM" ? prismCriteria : careCriteria;
+                const scoreValues = criteria
+                  .map((key) => Number(empathyData[key]))
+                  .filter((value) => Number.isFinite(value));
+                const overallScore = scoreValues.length
+                  ? Number((scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length).toFixed(1))
+                  : 3;
+
                 const transformedData = {
-                  overall_score: empathyData.empathy_score || 3,
-                  avg_perspective_taking: empathyData.perspective_taking || 3,
-                  avg_emotional_resonance: empathyData.emotional_resonance || 3,
-                  avg_acknowledgment: empathyData.acknowledgment || 3,
-                  avg_language_communication: empathyData.language_communication || 3,
-                  avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
-                  avg_affective_empathy: empathyData.affective_empathy || 3,
-                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your voice responses are generally realistic" : "Your voice response is unrealistic",
-                  realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
-                  coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
+                  empathy_tool: tool,
+                  overall_score: overallScore,
+                  summary: empathyData.judge_reasoning?.overall_assessment || "",
                   strengths: empathyData.feedback?.strengths || [],
-                  areas_for_improvement: empathyData.feedback?.areas_for_improvement || [],
                   recommendations: empathyData.feedback?.improvement_suggestions || [],
-                  recommended_approach: empathyData.feedback?.alternative_phrasing || "",
+                  forward_target: empathyData.feedback?.forward_target || "",
                   timestamp: Date.now(),
-                  source: "voice", // Mark as voice-generated empathy data
+                  source: "voice",
+                  ...Object.fromEntries(criteria.map((key) => [key, Number(empathyData[key]) || 0])),
                 };
                 console.log("🧠 SENDING VOICE EMPATHY DATA TO FRONTEND - Score:", transformedData.overall_score);
                 socket.emit("empathy-data", transformedData);
@@ -531,7 +539,9 @@ io.on("connection", (socket) => {
         const message = {
           type: "evaluate_empathy",
           text: data.text,
-          session_id: data.session_id || "default"
+          session_id: data.session_id || "default",
+          empathy_tool: data.empathy_tool || undefined,
+          simulation_group_id: data.simulation_group_id || undefined,
         };
         
         console.log("🎤 VOICE TRANSCRIPTION: Sending message to Nova:", JSON.stringify(message).substring(0, 100));

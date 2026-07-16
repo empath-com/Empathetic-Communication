@@ -88,7 +88,9 @@ export function filterUnwantedMessages(messagesArray) {
 
     out.push({
       ...m,
-      student_sent: n.hasOwnProperty("student_sent") ? n.student_sent : m.student_sent,
+      student_sent: Object.prototype.hasOwnProperty.call(n, "student_sent")
+        ? n.student_sent
+        : m.student_sent,
       message_content: n.message_content,
     });
   }
@@ -737,7 +739,12 @@ export default function useChatMessages({
           if (!n) return;
 
           normalizedMsg.message_content = n.message_content;
-          normalizedMsg.student_sent = n.hasOwnProperty("student_sent") ? n.student_sent : message.student_sent;
+          normalizedMsg.student_sent = Object.prototype.hasOwnProperty.call(
+            n,
+            "student_sent"
+          )
+            ? n.student_sent
+            : message.student_sent;
 
           const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"}-${normalizedMsg.message_content.trim()}`;
 
@@ -798,7 +805,10 @@ export default function useChatMessages({
         const normalized = normalizeVoiceLine(data.text);
         if (!normalized) return;
 
-        const isStudent = normalized.hasOwnProperty("student_sent")
+        const isStudent = Object.prototype.hasOwnProperty.call(
+          normalized,
+          "student_sent"
+        )
           ? normalized.student_sent
           : false;
 

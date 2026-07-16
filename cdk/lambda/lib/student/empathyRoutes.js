@@ -17,9 +17,9 @@ const routes = {
       const { simulation_group_id } = event.queryStringParameters;
 
       try {
-        // Get empathy_enabled (per-group) and empathy_tool (global instance setting)
+        // Get empathy_enabled and optional per-group empathy tool override.
         const empathyResult = await sqlConnection`
-          SELECT empathy_enabled
+          SELECT empathy_enabled, empathy_tool_override, empathy_prompt_override
           FROM "simulation_groups"
           WHERE simulation_group_id = ${simulation_group_id}
         `;
@@ -30,15 +30,22 @@ const routes = {
           return response;
         }
 
-        const toolResult = await sqlConnection`
-          SELECT empathy_tool FROM "empathy_prompt_history"
-          ORDER BY created_at DESC LIMIT 1
-        `;
+        const toolOverride = empathyResult[0]?.empathy_tool_override;
+        const promptOverride = empathyResult[0]?.empathy_prompt_override;
+        let resolvedTool = toolOverride;
+        if (!resolvedTool) {
+          const toolResult = await sqlConnection`
+            SELECT empathy_tool FROM "empathy_prompt_history"
+            ORDER BY created_at DESC LIMIT 1
+          `;
+          resolvedTool = toolResult[0]?.empathy_tool || "CARE";
+        }
 
         response.statusCode = 200;
         response.body = JSON.stringify({
           empathy_enabled: empathyResult[0].empathy_enabled !== false,
-          empathy_tool: toolResult[0]?.empathy_tool || 'CARE',
+          empathy_tool: resolvedTool,
+          use_global_empathy_defaults: !(toolOverride || promptOverride),
         });
       } catch (err) {
         response.statusCode = 500;

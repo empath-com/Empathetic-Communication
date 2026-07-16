@@ -512,7 +512,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <DialogContentText sx={{ color: "#6b7280", lineHeight: 1.6 }}>
-            Are you sure you want to reveal the Patient's Diagnosis? This action
+            Are you sure you want to reveal the Patient&apos;s Diagnosis? This action
             will show the entire answer.
           </DialogContentText>
         </DialogContent>

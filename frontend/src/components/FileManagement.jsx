@@ -198,7 +198,7 @@ const FileManagement = ({
         <DialogTitle>File Exists</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            A file with the name "{duplicateFile?.name}" already exists. Do you
+            A file with the name &quot;{duplicateFile?.name}&quot; already exists. Do you
             want to replace it?
           </DialogContentText>
         </DialogContent>

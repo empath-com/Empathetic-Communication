@@ -11,7 +11,9 @@ from .evaluation_tool_specs import (
     CARE_CRITERIA, PRISM_CRITERIA,
     CARE_CRITERIA_LABELS, PRISM_CRITERIA_LABELS,
     CARE_JUSTIFICATION_KEYS, PRISM_JUSTIFICATION_KEYS,
+    get_care_tool_name, get_prism_tool_name,
     get_care_tool_spec, get_prism_tool_spec,
+    resolve_schema_variant,
 )
 
 SIMULATED_ROLE = os.getenv("SIMULATED_ROLE", "patient")
@@ -32,6 +34,7 @@ EMPATHY_MAX_OUTPUT_TOKENS = 2000
 MAX_SYSTEM_PROMPT_CHARS = 7000
 MAX_GROUNDING_RETRIES = 1
 DEBUG_LOG_FULL_PROMPTS = False
+EMPATHY_TOOL_SCHEMA_VARIANT = resolve_schema_variant()
 
 STATIC_GROUNDING_INSTRUCTIONS = """Grounding rules (mandatory):
 - Evaluate ONLY using evidence in TRANSCRIPT.
@@ -170,7 +173,7 @@ def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
     evaluation["feedback"] = feedback
 
 
-def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
+def evaluate_empathy(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None) -> dict:
     """
     LLM-as-a-Judge empathy evaluation using structured scoring methodology with prompt caching.
     """
@@ -178,7 +181,7 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
 
     # Get the empathy prompt - static part for caching (from DB or default)
     try:
-        static_system_prompt = get_empathy_prompt()
+        static_system_prompt = get_empathy_prompt(simulation_group_id=simulation_group_id)
         logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
         # Oversized admin prompts can increase latency significantly; fall back to default prompt.
         if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
@@ -216,7 +219,8 @@ TRANSCRIPT_END"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    care_tool_spec = get_care_tool_spec()
+    care_tool_spec = get_care_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
+    care_tool_name = get_care_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
 
     strict_retry_addendum = """
 
@@ -250,7 +254,7 @@ STRICT RETRY MODE:
                 ],
                 "toolConfig": {
                     "tools": [care_tool_spec],
-                    "toolChoice": {"tool": {"name": "submit_empathy_evaluation"}},
+                    "toolChoice": {"tool": {"name": care_tool_name}},
                 },
                 "inferenceConfig": {
                     "temperature": 0.1,
@@ -310,7 +314,7 @@ STRICT RETRY MODE:
             evaluation = None
             for block in content_blocks:
                 tool_use = block.get("toolUse", {})
-                if tool_use.get("name") == "submit_empathy_evaluation":
+                if tool_use.get("name") == care_tool_name:
                     evaluation = tool_use.get("input", {})
                     break
 
@@ -361,7 +365,7 @@ STRICT RETRY MODE:
         logger.exception("Full traceback:")
         return None
 
-def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_client) -> dict:
+def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None) -> dict:
     """
     LLM-as-a-Judge empathy evaluation using the PRISM framework (SDT-informed).
     Five dimensions: Prepare, Recognise, Interact, Self-Assess, Master — each 1-5.
@@ -369,7 +373,7 @@ def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_
     logger.info("🧠 PRISM EMPATHY EVALUATION STARTED")
 
     try:
-        static_system_prompt = get_empathy_prompt()
+        static_system_prompt = get_empathy_prompt(simulation_group_id=simulation_group_id)
         if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
             logger.warning(f"⚠️ Empathy prompt too long ({len(static_system_prompt)} chars), using default")
             static_system_prompt = get_default_empathy_prompt()
@@ -389,7 +393,8 @@ TRANSCRIPT_END"""
         logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
         return None
 
-    prism_tool_spec = get_prism_tool_spec()
+    prism_tool_spec = get_prism_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
+    prism_tool_name = get_prism_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
 
     strict_retry_addendum = """
 
@@ -407,7 +412,7 @@ STRICT RETRY MODE:
                 "messages": [{"role": "user", "content": [{"text": prompt_for_attempt}]}],
                 "toolConfig": {
                     "tools": [prism_tool_spec],
-                    "toolChoice": {"tool": {"name": "submit_prism_evaluation"}},
+                    "toolChoice": {"tool": {"name": prism_tool_name}},
                 },
                 "inferenceConfig": {"temperature": 0.1, "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS}
             }
@@ -450,7 +455,7 @@ STRICT RETRY MODE:
             evaluation = None
             for block in content_blocks:
                 tool_use = block.get("toolUse", {})
-                if tool_use.get("name") == "submit_prism_evaluation":
+                if tool_use.get("name") == prism_tool_name:
                     evaluation = tool_use.get("input", {})
                     break
 
@@ -611,6 +616,7 @@ def handle_empathy_evaluation(
     patient_prompt: str = "",
     message_id: str = None,
     empathy_tool: str = "CARE",
+    simulation_group_id: str = None,
 ) -> dict:
     """
     Handle the empathy evaluation endpoint.
@@ -730,9 +736,19 @@ def handle_empathy_evaluation(
         # Evaluate empathy for the message using the selected tool
         logger.info(f"🎯 Evaluating empathy ({empathy_tool}) for: {evaluation_input[:100]}...")
         if empathy_tool == "PRISM":
-            empathy_evaluation = evaluate_empathy_prism(evaluation_input, patient_context, bedrock_client)
+            empathy_evaluation = evaluate_empathy_prism(
+                evaluation_input,
+                patient_context,
+                bedrock_client,
+                simulation_group_id=simulation_group_id,
+            )
         else:
-            empathy_evaluation = evaluate_empathy(evaluation_input, patient_context, bedrock_client)
+            empathy_evaluation = evaluate_empathy(
+                evaluation_input,
+                patient_context,
+                bedrock_client,
+                simulation_group_id=simulation_group_id,
+            )
 
         if not empathy_evaluation:
             logger.error("❌ Empathy evaluation failed")

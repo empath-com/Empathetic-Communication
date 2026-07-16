@@ -9,7 +9,6 @@ import {
   Grid,
   InputLabel,
   MenuItem,
-  OutlinedInput,
   Select,
   Switch,
   Typography,
@@ -52,6 +51,11 @@ const GroupDetails = ({ group, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [allInstructors, setAllInstructors] = useState([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [useGlobalEmpathyDefaults, setUseGlobalEmpathyDefaults] = useState(true);
+  const [globalEmpathyPrompt, setGlobalEmpathyPrompt] = useState("");
+  const [globalEmpathyTool, setGlobalEmpathyTool] = useState("CARE");
+  const [empathyPromptOverride, setEmpathyPromptOverride] = useState("");
+  const [empathyToolOverride, setEmpathyToolOverride] = useState("CARE");
 
   // new declaration for being able to change group name
   const [groupName, setGroupName] = useState(group.group_name || "");
@@ -110,8 +114,33 @@ const GroupDetails = ({ group, onBack }) => {
         console.error("Error fetching groups:", error);
       }
     };
+
+    const fetchGlobalEmpathyDefaults = async () => {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const response = await fetch(
+          `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setGlobalEmpathyPrompt(data.current_prompt || "");
+          setGlobalEmpathyTool(data.current_empathy_tool || "CARE");
+        }
+      } catch (error) {
+        console.error("Error fetching global empathy defaults:", error);
+      }
+    };
     fetchActiveInstructors();
     fetchInstructors();
+    fetchGlobalEmpathyDefaults();
 
     // Fetch empathy_enabled status
     const fetchEmpathyStatus = async () => {
@@ -133,9 +162,15 @@ const GroupDetails = ({ group, onBack }) => {
           const data = await response.json();
           const currentGroup = data.find(g => g.simulation_group_id === group.id);
           if (currentGroup) {
+            const hasToolOverride = !!currentGroup.empathy_tool_override;
+            const hasPromptOverride = !!currentGroup.empathy_prompt_override;
+            setGroupName(currentGroup.group_name || "");
             setEmpathyEnabled(currentGroup.empathy_enabled !== false);
             setAdminVoiceEnabled(currentGroup.admin_voice_enabled !== false);
             setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
+            setUseGlobalEmpathyDefaults(!(hasToolOverride || hasPromptOverride));
+            setEmpathyToolOverride(currentGroup.empathy_tool_override || "CARE");
+            setEmpathyPromptOverride(currentGroup.empathy_prompt_override || "");
           }
         }
       } catch (error) {
@@ -326,6 +361,11 @@ const GroupDetails = ({ group, onBack }) => {
             Authorization: token,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            use_global_empathy_defaults: useGlobalEmpathyDefaults,
+            empathy_tool_override: useGlobalEmpathyDefaults ? null : empathyToolOverride,
+            empathy_prompt_override: useGlobalEmpathyDefaults ? null : empathyPromptOverride,
+          }),
         }
       );
 
@@ -432,6 +472,56 @@ const GroupDetails = ({ group, onBack }) => {
               }
               label="Enable empathy coach"
             />
+            <Divider sx={{ my: 2 }} />
+            <Typography sx={{ fontWeight: 600, mb: 1 }}>
+              Empathy Evaluation Defaults
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
+              This group can inherit global empathy settings or use a custom prompt and tool.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={useGlobalEmpathyDefaults}
+                  onChange={(e) => {
+                    const useGlobal = e.target.checked;
+                    setUseGlobalEmpathyDefaults(useGlobal);
+                    if (useGlobal) {
+                      setEmpathyToolOverride(globalEmpathyTool || "CARE");
+                      setEmpathyPromptOverride(globalEmpathyPrompt || "");
+                    }
+                  }}
+                />
+              }
+              label="Use global empathy defaults"
+            />
+            {!useGlobalEmpathyDefaults && (
+              <>
+                <FormControl fullWidth sx={{ mb: 1.5 }}>
+                  <InputLabel id="group-empathy-tool-label">Group Evaluation Tool</InputLabel>
+                  <Select
+                    labelId="group-empathy-tool-label"
+                    value={empathyToolOverride}
+                    label="Group Evaluation Tool"
+                    onChange={(e) => setEmpathyToolOverride(e.target.value)}
+                  >
+                    <MenuItem value="CARE">CARE Measure</MenuItem>
+                    <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  label="Group Empathy Prompt Override"
+                  value={empathyPromptOverride}
+                  onChange={(e) => setEmpathyPromptOverride(e.target.value)}
+                  fullWidth
+                  multiline
+                  rows={4}
+                  sx={{ mb: 2 }}
+                  inputProps={{ maxLength: 4000 }}
+                  helperText="This prompt overrides the global empathy prompt for this group only."
+                />
+              </>
+            )}
             <FormControlLabel
               control={
                 <Switch

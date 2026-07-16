@@ -227,8 +227,8 @@ Evaluate the {pro}'s response(s) across all 10 empathy criteria on a 1-5 scale. 
 - forward_target should be plain text without special formatting
 """
 
-def get_empathy_prompt() -> str:
-    """Retrieve the latest empathy prompt from the empathy_prompt_history table using centralized connection manager."""
+def get_empathy_prompt(simulation_group_id: str = None) -> str:
+    """Retrieve effective empathy prompt with group override fallback to latest global prompt."""
     try:
         logger.info("🔍 RETRIEVING EMPATHY PROMPT FROM DATABASE")
         logger.info("🔗 DB_EMPATHY_PROMPT: Using centralized connection manager")
@@ -237,19 +237,32 @@ def get_empathy_prompt() -> str:
         pool_status = get_pool_status()
         logger.info(f"🔗 DB_POOL_STATUS: {pool_status}")
 
+        source = "global"
         with get_db_cursor() as cursor:
-            cursor.execute(
-                'SELECT prompt_content, created_at FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
-            )
+            result = None
+            if simulation_group_id:
+                cursor.execute(
+                    'SELECT empathy_prompt_override FROM "simulation_groups" WHERE simulation_group_id = %s LIMIT 1',
+                    (simulation_group_id,),
+                )
+                group_prompt_result = cursor.fetchone()
+                if group_prompt_result and group_prompt_result[0]:
+                    result = (group_prompt_result[0], "group_override")
+                    source = "group_override"
 
-            result = cursor.fetchone()
+            if not result:
+                cursor.execute(
+                    'SELECT prompt_content, created_at FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
+                )
+                result = cursor.fetchone()
+                source = "global"
 
         if result and result[0]:
             prompt_content = result[0]
             created_at = result[1]
-            logger.info(f"🎯 ADMIN EMPATHY PROMPT FOUND - Created: {created_at}")
-            logger.info(f"🎯 ADMIN PROMPT LENGTH: {len(prompt_content)} characters")
-            logger.info(f"🎯 ADMIN PROMPT PREVIEW: {prompt_content[:200]}...")
+            logger.info(f"🎯 EMPATHY PROMPT SOURCE: {source}, Created: {created_at}")
+            logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(prompt_content)} characters")
+            logger.info(f"🎯 EMPATHY PROMPT PREVIEW: {prompt_content[:200]}...")
 
             # Check if prompt has required placeholders
             if '{patient_context}' not in prompt_content or '{user_text}' not in prompt_content:

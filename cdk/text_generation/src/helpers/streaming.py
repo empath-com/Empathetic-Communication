@@ -89,6 +89,7 @@ def generate_streaming_response(
     patient_name: str,
     patient_age: str,
     patient_prompt: str,
+    simulation_group_id: str,
     bedrock_client=None,
     empathy_enabled: bool = False,
     empathy_tool: str = "CARE",
@@ -210,6 +211,7 @@ def generate_streaming_response(
                     patient_prompt=patient_prompt or "",
                     message_id=student_message_id,
                     empathy_tool=empathy_tool,
+                    simulation_group_id=simulation_group_id,
                 )
                 logger.info(f"✅ INLINE EMPATHY SAVED for message {student_message_id}")
             except Exception as empathy_err:
