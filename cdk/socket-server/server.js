@@ -122,12 +122,12 @@ io.on("connection", (socket) => {
     const pythonCmd = process.env.PYTHON_CMD || "python3";
     console.log(`🐍 PYTHON_CMD env var: ${process.env.PYTHON_CMD}`);
     console.log(`🐍 Using command: ${pythonCmd}`);
-    console.log(`🐍 Attempting to spawn: ${pythonCmd} nova_sonic.py`);
+    console.log(`🐍 Attempting to spawn: ${pythonCmd} voice_runtime.py`);
     console.log(`🔊 VOICE_RUNTIME env: ${process.env.VOICE_RUNTIME || "(not set — defaults to polly in Python)"}`);
     console.log(`📋 Session config: session_id=${config.session_id}, voice_id=${config.voice_id}, patient_id=${config.patient_id}`);
     
     try {
-      novaProcess = spawn(pythonCmd, ["nova_sonic.py"], {
+      novaProcess = spawn(pythonCmd, ["voice_runtime.py"], {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
@@ -379,7 +379,7 @@ io.on("connection", (socket) => {
         console.log("🐍 Trying 'python' instead of 'python3'");
         // Retry with 'python' command
         try {
-          novaProcess = spawn("python", ["nova_sonic.py"], {
+          novaProcess = spawn("python", ["voice_runtime.py"], {
             stdio: ["pipe", "pipe", "pipe"],
             env: {
               ...process.env,

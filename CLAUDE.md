@@ -93,7 +93,7 @@ cdk/                        # AWS CDK infrastructure (TypeScript)
   data_ingestion/           # Python Docker container — document ingestion for RAG
   socket-server/            # Node.js Socket.IO server (ECS) — voice + real-time chat
     server.js               # Main server
-    nova_sonic.py           # AWS Nova Sonic voice integration
+    voice_runtime.py        # Polly voice runtime + transcript integration
     langchain_chat_history.py
     voice_db_manager.py
   layers/                   # Lambda layers (shared dependencies)

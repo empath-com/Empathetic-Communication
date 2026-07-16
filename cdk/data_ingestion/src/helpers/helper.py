@@ -105,7 +105,7 @@ def store_group_data(
     # Grant the readwrite DB role SELECT on langchain tables so voice/rag_chain can query embeddings.
     # data_ingestion runs as the admin DB user (the only user that owns these tables), so this
     # is the only place where the GRANT can succeed. Without it, the user-level credentials
-    # used by nova_sonic.py / rag_chain.py cannot read the vectorstore.
+    # used by voice_runtime.py / rag_chain.py cannot read the vectorstore.
     try:
         cursor = connection.cursor()
         cursor.execute("GRANT SELECT ON langchain_pg_embedding TO readwrite")

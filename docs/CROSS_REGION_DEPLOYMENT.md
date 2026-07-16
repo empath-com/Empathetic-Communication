@@ -4,7 +4,7 @@ This document outlines the changes made to support deploying the Empathetic Comm
 
 ## Key Changes Made
 
-### 1. Nova Sonic Cross-Region Support (`cdk/socket-server/nova_sonic.py`)
+### 1. Voice Runtime Cross-Region Support (`cdk/socket-server/voice_runtime.py`)
 
 - **Separated Nova Sonic region from deployment region**: Nova Sonic requires `us-east-1`, but other Bedrock models can use the deployment region
 - **Added deployment region tracking**: `self.deployment_region` stores the actual deployment region

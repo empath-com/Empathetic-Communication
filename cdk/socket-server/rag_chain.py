@@ -152,7 +152,7 @@ def ensure_chain(
 ) -> None:
     """
     Build and cache the LLaMA chain for the given patient/group combination.
-    Called from nova_sonic.py via run_in_executor before audio suppression is enabled,
+    Called from voice_runtime.py via run_in_executor before audio suppression is enabled,
     so a build failure falls back to Nova Sonic's own response rather than silent failure.
     """
     llm_model_id = os.getenv("LLAMA_MODEL_ID", "meta.llama3-70b-instruct-v1:0")
