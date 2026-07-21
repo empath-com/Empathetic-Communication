@@ -60,6 +60,31 @@ flowchart LR
     Socket -->|Session / message persistence| RDS
 ```
 
+## External Dependencies Managed Outside This Repository (UBC IT)
+
+```mermaid
+flowchart LR
+    subgraph UBCIT["UBC IT managed (outside this repo)"]
+        FrontendDomain["Frontend DNS\nexample: empath-ai.pharmsci.ubc.ca"]
+        SocketDomain["Socket DNS + TLS certificate\nexample: ws.empath-ai.pharmsci.ubc.ca"]
+        SesDomain["Amazon SES verified sender domain\nused by Cognito custom email sender"]
+        AllowedDomains["Allowed sign-up domains list\nSSM: /VCI/AllowedEmailDomains"]
+    end
+
+    Amplify["AWS Amplify app"]
+    SocketAlb["Socket ALB/NLB endpoint\n(ws:// internal output)"]
+    Cognito["Amazon Cognito user pool"]
+
+    FrontendDomain -->|CNAME/alias| Amplify
+    SocketDomain -->|DNS + TLS termination for wss://| SocketAlb
+    SesDomain -->|Configured via COGNITO_SES_* env vars| Cognito
+    AllowedDomains -->|Optional sign-up restriction| Cognito
+```
+
+Notes:
+1. The custom Amazon SES sender domain is optional. If SES sender settings are not provided, Cognito uses its default email sender.
+2. The allowed sign-up domain list is also environment-specific. Some environments intentionally run Cognito without `/VCI/AllowedEmailDomains` restrictions.
+
 ## Description
 
 1. The React frontend is hosted on AWS Amplify and authenticates users with Amazon Cognito.

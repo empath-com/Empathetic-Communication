@@ -23,6 +23,8 @@
 
 ## Deployment Steps
 
+For cost-optimization behavior and scheduled scale-down details, see `docs/idleModes.md`.
+
 ### CDK CLI usage
 - Always run CDK commands from the `cdk/` folder and use the local CLI via `npx` so `cdk.json` is honored.
 - If you run from the repository root, pass `--app` explicitly.
@@ -407,6 +409,19 @@ aws ssm put-parameter \
     --type SecureString \
     --profile <YOUR-PROFILE-NAME>
 ```
+
+  `/VCI/AllowedEmailDomains` is optional and environment-specific. You only need this parameter in environments where sign-up should be restricted to specific email domains. Environments that do not require this restriction can run Cognito without this parameter.
+
+  If you want Cognito to send email through a custom Amazon SES sender identity/domain, configure these environment variables before deployment:
+
+  - `COGNITO_SES_FROM_EMAIL`
+  - `COGNITO_SES_FROM_NAME` (optional)
+  - `COGNITO_SES_REPLY_TO` (optional)
+  - `COGNITO_SES_CONFIGURATION_SET` (optional)
+  - `COGNITO_SES_REGION` (optional)
+  - `COGNITO_SES_VERIFIED_DOMAIN` (optional, for verified-domain SES setups)
+
+  If these are not set, Cognito uses its default email sender.
 
 #### Step 3a: CDK Deployment with an Existing VPC
 
