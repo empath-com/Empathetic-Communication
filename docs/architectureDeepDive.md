@@ -11,9 +11,12 @@ flowchart LR
     end
 
     Cognito["Amazon Cognito\nUser pool + identity pool"]
+    Ses["Amazon SES\noptional Cognito custom sender"]
+    Waf["AWS WAF\nattached to API Gateway (non-idle mode)"]
     Api["API Gateway\nREST API"]
     Authz["Role authorizer Lambdas\nadmin / instructor / student"]
     AppSync["AWS AppSync\ntext-stream subscriptions"]
+    SocketLb["ALB/NLB\nSocket entrypoint"]
     Socket["ECS Fargate Socket.IO server\nvoice + realtime chat"]
 
     subgraph Lambdas["Application Lambdas"]
@@ -32,11 +35,13 @@ flowchart LR
     end
 
     SPA <-->|Sign-in / JWT| Cognito
-    SPA -->|REST requests| Api
+    SPA -->|REST requests| Waf
+    Waf --> Api
     Api --> Authz
     Api --> AdminFn
     Api --> InstructorFn
     Api --> StudentFn
+    Cognito -->|Optional custom sender| Ses
 
     AdminFn --> RDS
     InstructorFn --> RDS
@@ -54,7 +59,8 @@ flowchart LR
     TextGen -->|Publish stream| AppSync
     SPA <-->|GraphQL subscription| AppSync
 
-    SPA <-->|Socket.IO / WSS| Socket
+    SPA <-->|Socket.IO / WSS| SocketLb
+    SocketLb <-->|HTTP/WebSocket forwarding| Socket
     Socket -->|Voice runtime + empathy| Bedrock
     Socket -->|Conversation history| Dynamo
     Socket -->|Session / message persistence| RDS
@@ -85,17 +91,97 @@ Notes:
 1. The custom Amazon SES sender domain is optional. If SES sender settings are not provided, Cognito uses its default email sender.
 2. The allowed sign-up domain list is also environment-specific. Some environments intentionally run Cognito without `/VCI/AllowedEmailDomains` restrictions.
 
+## CDK Control Plane (Infrastructure and Operations Wiring)
+
+```mermaid
+flowchart TD
+    subgraph CDK["CDK app and stacks"]
+        CdkApp["cdk/bin/cdk.ts\nstack composition + idleMode context"]
+        VpcStack["VpcStack\nVPC import, private subnets, SG foundations"]
+        DbStack["DatabaseStack\nRDS PostgreSQL, optional RDS Proxy, RDS stop scheduler (idle mode)"]
+        ApiStack["ApiServiceStack\nAPI Gateway, Cognito, AppSync, Lambdas, optional WAF"]
+        EcsStack["EcsSocketStack\nECS service + ALB/NLB + autoscaling schedules"]
+        AmplifyStack["AmplifyStack\nfrontend app + runtime env vars"]
+        DbFlow["DBFlowStack\ndb_setup trigger + migration layer"]
+        Cicd["CICDStack\nCodePipeline/CodeBuild/ECR for text_generation + data_ingestion"]
+    end
+
+    subgraph Config["Configuration and secret stores"]
+        Sm["AWS Secrets Manager\nVCISecrets, Cognito/app secrets"]
+        Ssm["AWS SSM Parameter Store\n/vci-owner-name, /VCI/AllowedEmailDomains"]
+    end
+
+    subgraph Ops["Observability and automation"]
+        CwLogs["CloudWatch Logs\nDataIngest log group"]
+        MetricFilter["Metric Filter\nTask timed out after"]
+        Alarm["CloudWatch Alarm\nDataIngest timeout alarm"]
+        Evb["EventBridge Rule\nalarm state change"]
+        TimeoutFn["timeoutHandler Lambda\nremediation path"]
+    end
+
+    subgraph SourceControl["Delivery control plane"]
+        Gh["GitHub repository"]
+        Conn["CodeConnections\nGitHub connection"]
+        Pipeline["CodePipeline"]
+        Builder["CodeBuild projects"]
+        Ecr["ECR repositories"]
+        DockerLambda["Docker Lambdas\nTextGen + DataIngest image updates"]
+    end
+
+    CdkApp --> VpcStack
+    CdkApp --> DbStack
+    CdkApp --> ApiStack
+    CdkApp --> EcsStack
+    CdkApp --> AmplifyStack
+    CdkApp --> DbFlow
+    CdkApp --> Cicd
+
+    VpcStack --> DbStack
+    VpcStack --> ApiStack
+    VpcStack --> EcsStack
+    DbStack --> ApiStack
+    DbStack --> EcsStack
+    DbStack --> DbFlow
+
+    Sm --> ApiStack
+    Sm --> DbStack
+    Sm --> DbFlow
+    Ssm --> AmplifyStack
+    Ssm --> ApiStack
+    Ssm --> Cicd
+
+    ApiStack --> CwLogs
+    CwLogs --> MetricFilter
+    MetricFilter --> Alarm
+    Alarm --> Evb
+    Evb --> TimeoutFn
+    DbStack --> TimeoutFn
+
+    Gh --> Conn
+    Conn --> Pipeline
+    Pipeline --> Builder
+    Builder --> Ecr
+    Ecr --> DockerLambda
+```
+
+This control-plane view covers key CDK-managed components that are intentionally simplified in the runtime diagram:
+1. Network and placement control (VPC/subnets/security groups).
+2. Secrets/config distribution (Secrets Manager and SSM).
+3. Automated operations wiring (CloudWatch + EventBridge + timeout handler).
+4. Database migration bootstrap path (DBFlow trigger Lambda).
+5. Image build and delivery path for Docker Lambdas (CodePipeline/CodeBuild/ECR).
+
 ## Description
 
-1. The React frontend is hosted on AWS Amplify and authenticates users with Amazon Cognito.
-2. Browser clients call the REST API through API Gateway, which delegates role checks to dedicated admin, instructor, and student authorizer Lambdas.
+1. The React frontend is hosted on AWS Amplify and authenticates users with Amazon Cognito. Cognito can optionally use Amazon SES as a custom email sender.
+2. Browser clients call the REST API through AWS WAF (when not in idle mode) and API Gateway, which delegates role checks to dedicated admin, instructor, and student authorizer Lambdas.
 3. API Gateway routes business requests to three main backend Lambdas: admin, instructor, and student. Those Lambdas read and write the shared PostgreSQL database through RDS Proxy.
 4. Instructors upload patient files through pre-signed S3 URLs. New uploads trigger the data-ingestion Lambda container.
 5. The data-ingestion Lambda uses Amazon Bedrock Titan embeddings and stores document vectors in PostgreSQL with pgvector.
 6. Student text chat calls the text-generation Lambda container, which combines RDS/pgvector retrieval with Amazon Bedrock Llama 3 inference.
 7. Conversation history is maintained in DynamoDB for LangChain chat memory, while relational application data such as sessions and messages remains in PostgreSQL.
 8. Generated text is streamed back to the frontend through AWS AppSync subscriptions.
-9. Realtime voice conversations use the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, DynamoDB-backed history, and RDS-backed session persistence.
+9. Realtime voice conversations use ALB/NLB load balancers in front of the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, DynamoDB-backed history, and RDS-backed session persistence.
 
 ## Database Schema
 
