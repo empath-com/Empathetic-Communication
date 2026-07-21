@@ -8,6 +8,27 @@ Guidelines for AI coding assistants (Claude Code, Copilot, Cursor, etc.) working
 - Prefer many small, focused files over fewer large ones.
 - Each file should have a single clear responsibility describable in one sentence.
 
+## Architecture Diagram Update Contract
+
+- `docs/architectureDeepDive.md` must stay in sync with architecture-impacting code changes.
+- This is enforced by CI: `.github/workflows/architecture-diagram-guard.yml`.
+- If your PR changes architecture-impacting paths, include an architecture doc update in the same PR.
+
+Architecture-impacting paths (guarded):
+- `cdk/bin/cdk.ts`
+- `cdk/lib/**`
+- `cdk/lambda/**`
+- `cdk/text_generation/**`
+- `cdk/data_ingestion/**`
+- `cdk/socket-server/**`
+- `cdk/OpenAPI_Swagger_Definition.yaml`
+- `frontend/src/hooks/useAuth.js`
+- `frontend/src/utils/voiceStream.js`
+
+Minimum required update when impacted:
+1. Update the runtime diagram and/or control-plane diagram as needed.
+2. Update nearby explanatory bullets in the same document so text and diagrams match.
+
 ## Naming Conventions
 
 ### Lambda Route Modules (`cdk/lambda/lib/<role>/`)

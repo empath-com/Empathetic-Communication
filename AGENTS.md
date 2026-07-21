@@ -45,6 +45,7 @@ Deliver safe, minimal, high-confidence changes to the Empathetic Communication p
 - Prefer construct-level updates in `cdk/lib/constructs/`.
 - Keep stack entrypoints in `cdk/lib/*stack.ts` thin and compositional.
 - Verify with `cd cdk && npm run build` and `cd cdk && npm test`.
+- If a change affects runtime or control-plane architecture, update diagrams and notes in `docs/architectureDeepDive.md` in the same PR.
 
 ### Frontend changes
 
@@ -57,6 +58,7 @@ Deliver safe, minimal, high-confidence changes to the Empathetic Communication p
 - Start in `cdk/text_generation/src/helpers/prompts.py` and `empathy.py`.
 - Preserve evaluation contract and existing response shape unless requested.
 - Cross-check `docs/promptModificationGuide.md` for expected workflow.
+- If LLM/RAG/streaming/data-ingestion wiring changes, update `docs/architectureDeepDive.md` to reflect the new architecture.
 
 ## Safe Command Set (Recommended)
 
@@ -74,6 +76,7 @@ Use these commands to validate changes. If one cannot run in the current environ
 3. Compatibility: external behavior unchanged unless requested.
 4. Verification: relevant checks run, or constraints clearly stated.
 5. Documentation: update related docs for any changed workflow.
+6. Architecture Sync: if architecture-impacting paths changed, `docs/architectureDeepDive.md` was updated (required by CI guard).
 
 ## Human-Escalation Triggers
 

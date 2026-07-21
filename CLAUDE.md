@@ -294,6 +294,20 @@ Key production values:
 - No automated frontend tests currently (manual testing via dev server)
 - Lambda functions tested manually via AWS Console or test events
 
+## Architecture Diagram Sync Policy
+
+- The architecture diagrams in `docs/architectureDeepDive.md` are required documentation, not optional.
+- Any PR that changes architecture-impacting paths must update `docs/architectureDeepDive.md` in the same PR.
+- Architecture-impacting paths include CDK stacks/constructs and runtime services under:
+  - `cdk/bin/cdk.ts`
+  - `cdk/lib/`
+  - `cdk/lambda/`
+  - `cdk/text_generation/`
+  - `cdk/data_ingestion/`
+  - `cdk/socket-server/`
+  - `cdk/OpenAPI_Swagger_Definition.yaml`
+- This is enforced by CI in `.github/workflows/architecture-diagram-guard.yml`.
+
 ## Module Size Guidelines
 
 - **Max ~400 lines** per source file. Split at 500+ lines.

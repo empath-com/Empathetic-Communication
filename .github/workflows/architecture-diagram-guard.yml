@@ -1,0 +1,43 @@
+name: Architecture Diagram Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  require-architecture-doc-update:
+    name: Require Architecture Diagram Update
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for architecture-impacting changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Files likely to change runtime/control-plane architecture views.
+          IMPACT_REGEX='^(cdk/bin/cdk\.ts|cdk/lib/|cdk/lambda/|cdk/text_generation/|cdk/data_ingestion/|cdk/socket-server/|cdk/OpenAPI_Swagger_Definition\.yaml|frontend/src/hooks/useAuth\.js|frontend/src/utils/voiceStream\.js)'
+
+          if echo "$CHANGED_FILES" | grep -Eiq "$IMPACT_REGEX"; then
+            if ! echo "$CHANGED_FILES" | grep -Fxq "docs/architectureDeepDive.md"; then
+              echo "Architecture-impacting files were modified, but docs/architectureDeepDive.md was not updated."
+              echo "Please update the architecture diagrams/notes in docs/architectureDeepDive.md in the same PR."
+              exit 1
+            fi
+          fi
+
+          echo "Architecture diagram guard passed."

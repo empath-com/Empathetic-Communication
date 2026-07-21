@@ -4,6 +4,16 @@ This directory contains GitHub Actions workflows for automated deployment of the
 
 ## Workflows
 
+### 0. `architecture-diagram-guard.yml` - Architecture Documentation Guard
+Fails PRs that modify architecture-impacting code paths without updating `docs/architectureDeepDive.md`.
+
+**Triggers:**
+- Pull requests (opened, synchronize, reopened, ready_for_review)
+
+**Purpose:**
+- Keeps runtime and control-plane diagrams in sync with CDK/LLM/service changes
+- Enforces architecture documentation updates in the same PR as implementation changes
+
 ### 1. `deploy-cdk.yml` - CDK Infrastructure Deployment
 Deploys the AWS CDK infrastructure stack including:
 - VPC and networking
