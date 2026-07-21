@@ -19,7 +19,8 @@ import {
   TableHead,
   TableRow,
 } from "@mui/material";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { apiGet, apiPost, apiPut } from "../../utils/apiClient";
 import {
   MRT_TableContainer,
   useMaterialReactTable,
@@ -28,6 +29,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import InstructorNewPatient from "./InstructorNewPatient";
 import InstructorEditPatients from "./InstructorEditPatients";
+import { titleCase } from "../../utils/textFormatting";
 
 function groupTitleCase(str) {
   if (typeof str !== "string") {
@@ -41,18 +43,6 @@ function groupTitleCase(str) {
       } else {
         return word.charAt(0).toUpperCase() + word.slice(1); // Only capitalize first letter, keep the rest unchanged
       }
-    })
-    .join(" ");
-}
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1); // Capitalize only the first letter, leave the rest of the word unchanged
     })
     .join(" ");
 }
@@ -75,33 +65,14 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
     }
 
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }instructor/ingestion_status?patient_id=${encodeURIComponent(
-          patientId
-        )}&simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const ingestionData = await response.json();
-        setIngestionStatus((prev) => ({ ...prev, [patientId]: ingestionData }));
-      } else {
-        console.error("Failed to fetch ingestion status:", response.statusText);
-        toast.error("Failed to fetch ingestion status");
-      }
+      const ingestionData = await apiGet("instructor/ingestion_status", {
+        patient_id: patientId,
+        simulation_group_id,
+      });
+      setIngestionStatus((prev) => ({ ...prev, [patientId]: ingestionData }));
     } catch (error) {
       console.error("Error fetching ingestion status:", error);
+      toast.error("Failed to fetch ingestion status");
     }
 
     setExpandedPatient(patientId);
@@ -132,33 +103,12 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
     );
 
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }instructor/toggle_llm_completion?patient_id=${encodeURIComponent(
-          patientId
-        )}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(
-          "Failed to update LLM completion status:",
-          response.statusText
-        );
-        toast.error("Failed to update LLM completion status");
-      }
+      await apiPut("instructor/toggle_llm_completion", undefined, {
+        patient_id: patientId,
+      });
     } catch (error) {
       console.error("Error updating LLM completion status:", error);
+      toast.error("Failed to update LLM completion status");
     }
   };
 
@@ -367,50 +317,18 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
 
   const fetchPatientsAndProfilePictures = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      // Fetch patient list
-      const patientResponse = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }instructor/view_patients?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      const patientData = await patientResponse.json();
+      const patientData = await apiGet("instructor/view_patients", {
+        simulation_group_id,
+      });
       setData(patientData);
 
       // Fetch profile pictures
-      const profileResponse = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }instructor/get_profile_pictures?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            patient_ids: patientData.map((p) => p.patient_id),
-          }),
-        }
+      const profilePics = await apiPost(
+        "instructor/get_profile_pictures",
+        { patient_ids: patientData.map((p) => p.patient_id) },
+        { simulation_group_id }
       );
-
-      if (profileResponse.ok) {
-        const profilePics = await profileResponse.json();
-        setProfilePictures(profilePics);
-      }
+      setProfilePictures(profilePics);
     } catch (error) {
       console.error("Error fetching patients or profile pictures:", error);
     }
@@ -426,29 +344,15 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
 
   const fetchVoiceSettings = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}instructor/groups?email=${encodeURIComponent(email)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const currentGroup = data.find(g => g.simulation_group_id === simulation_group_id);
-        if (currentGroup) {
-          setVoiceSettings({
-            adminVoiceEnabled: currentGroup.admin_voice_enabled !== false,
-            instructorVoiceEnabled: currentGroup.instructor_voice_enabled !== false
-          });
-          setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
-        }
+      const data = await apiGet("instructor/groups", { email });
+      const currentGroup = data.find(g => g.simulation_group_id === simulation_group_id);
+      if (currentGroup) {
+        setVoiceSettings({
+          adminVoiceEnabled: currentGroup.admin_voice_enabled !== false,
+          instructorVoiceEnabled: currentGroup.instructor_voice_enabled !== false
+        });
+        setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
       }
     } catch (error) {
       console.error("Error fetching voice settings:", error);
@@ -457,34 +361,15 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
 
   const updateVoiceSettings = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}instructor/update_voice_settings?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        toast.success("Voice settings updated successfully", {
-          position: "top-center",
-          autoClose: 2000,
-          theme: "colored",
-        });
-      } else {
-        console.error("Failed to update voice settings:", response.statusText);
-        toast.error("Failed to update voice settings", {
-          position: "top-center",
-          autoClose: 2000,
-          theme: "colored",
-        });
-      }
+      await apiPost("instructor/update_voice_settings", undefined, {
+        simulation_group_id,
+        instructor_voice_enabled: instructorVoiceEnabled,
+      });
+      toast.success("Voice settings updated successfully", {
+        position: "top-center",
+        autoClose: 2000,
+        theme: "colored",
+      });
     } catch (error) {
       console.error("Error updating voice settings:", error);
       toast.error("Error updating voice settings", {
@@ -511,83 +396,32 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
 
   const handleSaveChanges = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
 
       const updatePromises = data.map((patient, index) => {
         const patientNumber = index + 1;
-        return fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }instructor/reorder_patient?patient_id=${encodeURIComponent(
-            patient.patient_id
-          )}&patient_number=${patientNumber}&instructor_email=${encodeURIComponent(
-            email
-          )}`,
+        return apiPut(
+          "instructor/reorder_patient",
+          { patient_name: patient.patient_name },
           {
-            method: "PUT",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              patient_name: patient.patient_name,
-            }),
+            patient_id: patient.patient_id,
+            patient_number: patientNumber,
+            instructor_email: email,
           }
-        ).then((response) => {
-          if (!response.ok) {
-            console.error(
-              `Failed to update patient ${patient.patient_id}:`,
-              response.statusText
-            );
-            toast.error("Patient Order Update Failed", {
-              position: "top-center",
-              autoClose: 1000,
-              hideProgressBar: false,
-              closeOnClick: true,
-              pauseOnHover: true,
-              draggable: true,
-              progress: undefined,
-              theme: "colored",
-            });
-            return { success: false };
-          } else {
-            return response.json().then(() => {
-              return { success: true };
-            });
-          }
-        });
+        );
       });
 
-      const updateResults = await Promise.all(updatePromises);
-      const allUpdatesSuccessful = updateResults.every(
-        (result) => result.success
-      );
-
-      if (allUpdatesSuccessful) {
-        toast.success("Patient Order Updated Successfully", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      } else {
-        toast.error("Some patient updates failed", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      }
+      await Promise.all(updatePromises);
+      toast.success("Patient Order Updated Successfully", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
     } catch (error) {
       console.error("Error saving changes:", error);
       toast.error("An error occurred while saving changes", {

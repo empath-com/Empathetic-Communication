@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet, apiPost, apiDelete } from "../../utils/apiClient";
 
 import {
   Box,
@@ -27,19 +27,7 @@ import {
 
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(" ");
-}
+import { titleCase } from "../../utils/textFormatting";
 
 const GroupDetails = ({ group, onBack }) => {
   const groupStatus = JSON.parse(group.status);
@@ -65,51 +53,21 @@ const GroupDetails = ({ group, onBack }) => {
   useEffect(() => {
     const fetchActiveInstructors = async () => {
       try {
-        const session = await fetchAuthSession();
-        var token = session.tokens.idToken
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }admin/groupInstructors?simulation_group_id=${group.id}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setActiveInstructors(data);
-        } else {
-          console.error("Failed to fetch groups:", response.statusText);
-        }
+        const data = await apiGet("admin/groupInstructors", {
+          simulation_group_id: group.id,
+        });
+        setActiveInstructors(data);
       } catch (error) {
         console.error("Error fetching groups:", error);
       }
     };
     const fetchInstructors = async () => {
       try {
-        const session = await fetchAuthSession();
-        var token = session.tokens.idToken
         //replace if analytics for admin actions is needed
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }admin/instructors?instructor_email=replace`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setAllInstructors(data);
-        } else {
-          console.error("Failed to fetch groups:", response.statusText);
-        }
+        const data = await apiGet("admin/instructors", {
+          instructor_email: "replace",
+        });
+        setAllInstructors(data);
       } catch (error) {
         console.error("Error fetching groups:", error);
       }
@@ -117,23 +75,9 @@ const GroupDetails = ({ group, onBack }) => {
 
     const fetchGlobalEmpathyDefaults = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setGlobalEmpathyPrompt(data.current_prompt || "");
-          setGlobalEmpathyTool(data.current_empathy_tool || "CARE");
-        }
+        const data = await apiGet("admin/empathy_prompts");
+        setGlobalEmpathyPrompt(data.current_prompt || "");
+        setGlobalEmpathyTool(data.current_empathy_tool || "CARE");
       } catch (error) {
         console.error("Error fetching global empathy defaults:", error);
       }
@@ -145,33 +89,18 @@ const GroupDetails = ({ group, onBack }) => {
     // Fetch empathy_enabled status
     const fetchEmpathyStatus = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }admin/simulation_groups`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const currentGroup = data.find(g => g.simulation_group_id === group.id);
-          if (currentGroup) {
-            const hasToolOverride = !!currentGroup.empathy_tool_override;
-            const hasPromptOverride = !!currentGroup.empathy_prompt_override;
-            setGroupName(currentGroup.group_name || "");
-            setEmpathyEnabled(currentGroup.empathy_enabled !== false);
-            setAdminVoiceEnabled(currentGroup.admin_voice_enabled !== false);
-            setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
-            setUseGlobalEmpathyDefaults(!(hasToolOverride || hasPromptOverride));
-            setEmpathyToolOverride(currentGroup.empathy_tool_override || "CARE");
-            setEmpathyPromptOverride(currentGroup.empathy_prompt_override || "");
-          }
+        const data = await apiGet("admin/simulation_groups");
+        const currentGroup = data.find(g => g.simulation_group_id === group.id);
+        if (currentGroup) {
+          const hasToolOverride = !!currentGroup.empathy_tool_override;
+          const hasPromptOverride = !!currentGroup.empathy_prompt_override;
+          setGroupName(currentGroup.group_name || "");
+          setEmpathyEnabled(currentGroup.empathy_enabled !== false);
+          setAdminVoiceEnabled(currentGroup.admin_voice_enabled !== false);
+          setInstructorVoiceEnabled(currentGroup.instructor_voice_enabled !== false);
+          setUseGlobalEmpathyDefaults(!(hasToolOverride || hasPromptOverride));
+          setEmpathyToolOverride(currentGroup.empathy_tool_override || "CARE");
+          setEmpathyPromptOverride(currentGroup.empathy_prompt_override || "");
         }
       } catch (error) {
         console.error("Error fetching empathy status:", error);
@@ -210,22 +139,10 @@ const GroupDetails = ({ group, onBack }) => {
   };
 
   const handleDelete = async () => {
-    const session = await fetchAuthSession();
-    var token = session.tokens.idToken
-    const deleteResponse = await fetch(
-      `${import.meta.env.VITE_API_ENDPOINT
-      }admin/delete_group?&simulation_group_id=${encodeURIComponent(group.id)}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (deleteResponse.ok) {
-      await deleteResponse.json();
+    try {
+      await apiDelete("admin/delete_group", {
+        simulation_group_id: group.id,
+      });
       toast.success("Simulation Group Successfully Deleted", {
         position: "top-center",
         autoClose: 1000,
@@ -239,8 +156,8 @@ const GroupDetails = ({ group, onBack }) => {
       setTimeout(function () {
         onBack();
       }, 1000);
-    } else {
-      console.error("Failed to update enrolment:", deleteResponse.statusText);
+    } catch (error) {
+      console.error("Failed to delete group:", error);
       toast.error("update enrolment Failed", {
         position: "top-center",
         autoClose: 1000,
@@ -256,137 +173,52 @@ const GroupDetails = ({ group, onBack }) => {
 
   const handleSave = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
       // Delete existing enrollments
-      const deleteResponse = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/delete_group_instructor_enrolments?&simulation_group_id=${encodeURIComponent(
-          group.id
-        )}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!deleteResponse.ok) {
-        console.error("Failed to update enrolment:", deleteResponse.statusText);
-        toast.error("Update enrolment Failed", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        return;
-      }
+      await apiDelete("admin/delete_group_instructor_enrolments", {
+        simulation_group_id: group.id,
+      });
 
       // Enroll new instructors in parallel
       const enrollPromises = activeInstructors.map((instructor) =>
-        fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/enroll_instructor?simulation_group_id=${encodeURIComponent(
-            group.id
-          )}&instructor_email=${encodeURIComponent(instructor.user_email)}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        ).then((enrollResponse) => {
-          if (enrollResponse.ok) {
-            return enrollResponse.json().then(() => ({ success: true }));
-          } else {
-            console.error("Failed to enroll instructor:", enrollResponse.statusText);
-            toast.error("Enroll Instructor Failed", {
-              position: "top-center",
-              autoClose: 1000,
-              hideProgressBar: false,
-              closeOnClick: true,
-              pauseOnHover: true,
-              draggable: true,
-              progress: undefined,
-              theme: "colored",
-            });
-            return { success: false };
-          }
+        apiPost("admin/enroll_instructor", undefined, {
+          simulation_group_id: group.id,
+          instructor_email: instructor.user_email,
         })
       );
 
-      const enrollResults = await Promise.all(enrollPromises);
-      const allEnrolledSuccessfully = enrollResults.every((result) => result.success);
-
-      if (allEnrolledSuccessfully) {
-        toast.success("Enrolment Updated!", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      } else {
-        toast.error("Some instructors could not be enrolled", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      }
+      await Promise.all(enrollPromises);
+      toast.success("Enrolment Updated!", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
 
       // Update group access
-      const updateGroupAccess = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/updateGroupAccess?&simulation_group_id=${encodeURIComponent(
-          group.id
-        )}&group_name=${encodeURIComponent(
-          groupName
-        )}&access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
+      await apiPost(
+        "admin/updateGroupAccess",
         {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            use_global_empathy_defaults: useGlobalEmpathyDefaults,
-            empathy_tool_override: useGlobalEmpathyDefaults ? null : empathyToolOverride,
-            empathy_prompt_override: useGlobalEmpathyDefaults ? null : empathyPromptOverride,
-          }),
+          use_global_empathy_defaults: useGlobalEmpathyDefaults,
+          empathy_tool_override: useGlobalEmpathyDefaults ? null : empathyToolOverride,
+          empathy_prompt_override: useGlobalEmpathyDefaults ? null : empathyPromptOverride,
+        },
+        {
+          simulation_group_id: group.id,
+          group_name: groupName,
+          access: isActive,
+          empathy_enabled: empathyEnabled,
+          admin_voice_enabled: adminVoiceEnabled,
+          instructor_voice_enabled: instructorVoiceEnabled,
         }
       );
 
-      if (!updateGroupAccess.ok) {
-        console.error("Failed to update group access:", updateGroupAccess.statusText);
-        toast.error("Update group access Failed", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      } else {
-        console.log("Group access updated successfully");
-
-        // Close the dialog after successful save
-        onBack();
-      }
+      console.log("Group access updated successfully");
+      // Close the dialog after successful save
+      onBack();
     } catch (error) {
       console.error("Error in handleSave:", error);
       toast.error("An error occurred", {

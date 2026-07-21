@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
-import { fetchUserAttributes } from "aws-amplify/auth";
-
-import { signOut } from "aws-amplify/auth";
-
+import { fetchUserAttributes, signOut } from "aws-amplify/auth";
+import { apiGet, apiPost } from "../../utils/apiClient";
 
 import {
   Button,
@@ -17,19 +14,7 @@ import {
   Avatar,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1); // Capitalize only the first letter, leave the rest of the word unchanged
-    })
-    .join(" ");
-}
+import { titleCase } from "../../utils/textFormatting";
 
 export const GroupView = ({ group, setPatient, setGroup }) => {
   const [data, setData] = useState([]);
@@ -62,36 +47,16 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
   useEffect(() => {
     const fetchGroupPage = async () => {
       try {
-        const session = await fetchAuthSession();
         const { email } = await fetchUserAttributes();
-
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }student/simulation_group_page?email=${encodeURIComponent(
-            email
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setData(data);
-          await fetchProfilePictures(data);
-          fetchCompletionStatuses();
-          setLoading(false);
-          console.log(data);
-        } else {
-          console.error("Failed to fetch name:", response.statusText);
-        }
+        const data = await apiGet("student/simulation_group_page", {
+          email,
+          simulation_group_id: group.simulation_group_id,
+        });
+        setData(data);
+        await fetchProfilePictures(data);
+        fetchCompletionStatuses();
+        setLoading(false);
+        console.log(data);
       } catch (error) {
         console.error("Error fetching name:", error);
       }
@@ -99,38 +64,16 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
 
     const fetchCompletionStatuses = async () => {
       try {
-        const session = await fetchAuthSession();
         const { email } = await fetchUserAttributes();
-        const token = session.tokens.idToken;
-
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }student/get_completion_status?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&student_email=${encodeURIComponent(email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const completionMap = data.reduce((acc, entry) => {
-            acc[entry.patient_name] = entry.is_completed;
-            return acc;
-          }, {});
-          setCompletionStatuses(completionMap);
-        } else {
-          console.error(
-            "Failed to fetch completion statuses:",
-            response.statusText
-          );
-        }
+        const data = await apiGet("student/get_completion_status", {
+          simulation_group_id: group.simulation_group_id,
+          student_email: email,
+        });
+        const completionMap = data.reduce((acc, entry) => {
+          acc[entry.patient_name] = entry.is_completed;
+          return acc;
+        }, {});
+        setCompletionStatuses(completionMap);
       } catch (error) {
         console.error("Error fetching completion statuses:", error);
       }
@@ -138,36 +81,12 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
 
     const fetchProfilePictures = async (patients) => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }student/get_profile_pictures?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              patient_ids: patients.map((p) => p.patient_id),
-            }),
-          }
+        const profilePics = await apiPost(
+          "student/get_profile_pictures",
+          { patient_ids: patients.map((p) => p.patient_id) },
+          { simulation_group_id: group.simulation_group_id }
         );
-
-        if (response.ok) {
-          const profilePics = await response.json();
-          setProfilePictures(profilePics);
-        } else {
-          console.error(
-            "Failed to fetch profile pictures:",
-            response.statusText
-          );
-        }
+        setProfilePictures(profilePics);
       } catch (error) {
         console.error("Error fetching profile pictures:", error);
       }

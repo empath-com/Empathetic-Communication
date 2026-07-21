@@ -10,7 +10,8 @@ import {
   Divider,
   Tooltip,
 } from "@mui/material";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { apiGet, apiPut } from "../../utils/apiClient";
 import { toast, ToastContainer } from "react-toastify";
 import MobileStepper from "@mui/material/MobileStepper";
 import KeyboardArrowLeft from "@mui/icons-material/KeyboardArrowLeft";
@@ -108,20 +109,12 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
 
   const fetchPreviousPrompts = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }instructor/previous_prompts?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}&instructor_email=${encodeURIComponent(email)}`,
-        {
-          method: "GET",
-          headers: { Authorization: token, "Content-Type": "application/json" },
-        }
-      );
-      if (response.ok) setPreviousPrompts(await response.json());
+      const data = await apiGet("instructor/previous_prompts", {
+        simulation_group_id,
+        instructor_email: email,
+      });
+      setPreviousPrompts(data);
     } catch (e) {
       console.error(e);
     }
@@ -130,25 +123,10 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
   useEffect(() => {
     const fetchPrompt = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }instructor/get_prompt?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setUserPrompt(data.system_prompt);
-        }
+        const data = await apiGet("instructor/get_prompt", {
+          simulation_group_id,
+        });
+        setUserPrompt(data.system_prompt);
       } catch (e) {
         console.error(e);
       }
@@ -161,38 +139,26 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
 
   const handleSave = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }instructor/prompt?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}&instructor_email=${encodeURIComponent(email)}`,
-        {
-          method: "PUT",
-          headers: { Authorization: token, "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: `${userPrompt}` }),
-        }
+      const data = await apiPut(
+        "instructor/prompt",
+        { prompt: `${userPrompt}` },
+        { simulation_group_id, instructor_email: email }
       );
-      if (response.ok) {
-        const data = await response.json();
-        setUserPrompt(data.system_prompt);
-        fetchPreviousPrompts();
-        toast.success("Prompt updated", {
-          position: "top-center",
-          autoClose: 1200,
-          theme: "colored",
-        });
-      } else {
-        toast.error("Failed to update", {
-          position: "top-center",
-          autoClose: 1500,
-          theme: "colored",
-        });
-      }
+      setUserPrompt(data.system_prompt);
+      fetchPreviousPrompts();
+      toast.success("Prompt updated", {
+        position: "top-center",
+        autoClose: 1200,
+        theme: "colored",
+      });
     } catch (e) {
       console.error(e);
+      toast.error("Failed to update", {
+        position: "top-center",
+        autoClose: 1500,
+        theme: "colored",
+      });
     }
   };
 

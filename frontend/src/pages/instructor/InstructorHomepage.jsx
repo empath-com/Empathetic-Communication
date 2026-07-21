@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from "react";
 import { Routes, Route, useNavigate, useParams } from "react-router-dom";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { apiGet } from "../../utils/apiClient";
 import {
   Typography,
   Box,
@@ -28,18 +29,7 @@ import InstructorPatients from "./InstructorPatients";
 import InstructorNewPatient from "./InstructorNewPatient";
 import StudentDetails from "./StudentDetails";
 import { UserContext } from "../../UserContext";
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(" ");
-}
+import { titleCase } from "../../utils/textFormatting";
 
 // group details page
 const GroupDetails = () => {
@@ -53,25 +43,11 @@ const GroupDetails = () => {
   useEffect(() => {
     const fetchGroupName = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
         const { email } = await fetchUserAttributes();
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}instructor/groups?email=${encodeURIComponent(email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const currentGroup = data.find(g => g.simulation_group_id === simulationGroupId);
-          if (currentGroup) {
-            setGroupName(currentGroup.group_name);
-          }
+        const data = await apiGet("instructor/groups", { email });
+        const currentGroup = data.find(g => g.simulation_group_id === simulationGroupId);
+        if (currentGroup) {
+          setGroupName(currentGroup.group_name);
         }
       } catch (error) {
         console.error("Error fetching group name:", error);
@@ -180,33 +156,16 @@ const InstructorHomepage = () => {
   useEffect(() => {
     const fetchGroups = async () => {
       try {
-        const session = await fetchAuthSession();
-        var token = session.tokens.idToken;
         const { email } = await fetchUserAttributes();
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }instructor/groups?email=${encodeURIComponent(email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const formattedData = data.map((group) => ({
-            group: group.group_name,
-            description: group.group_description || "No description available",
-            date: new Date().toLocaleDateString(), // REPLACE
-            status: group.group_student_access ? "Active" : "Inactive",
-            id: group.simulation_group_id,
-          }));
-          setRows(formattedData);
-        } else {
-          console.error("Failed to fetch groups:", response.statusText);
-        }
+        const data = await apiGet("instructor/groups", { email });
+        const formattedData = data.map((group) => ({
+          group: group.group_name,
+          description: group.group_description || "No description available",
+          date: new Date().toLocaleDateString(), // REPLACE
+          status: group.group_student_access ? "Active" : "Inactive",
+          id: group.simulation_group_id,
+        }));
+        setRows(formattedData);
       } catch (error) {
         console.error("Error fetching groups:", error);
       }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { apiGet, apiPut, apiDelete } from "../../utils/apiClient";
 import { toast, ToastContainer } from "react-toastify";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import "react-toastify/dist/ReactToastify.css";
@@ -28,96 +29,17 @@ import {
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import jsPDF from "jspdf";
+import {
+  formatMessagesForPDF,
+  formatNotesForPDF,
+  formatMessages,
+} from "./utils/studentDetailsHelpers";
 
 const handleBackClick = () => {
   window.history.back();
 };
 
-// Formatting messages for PDF export
-const formatMessagesForPDF = (messages, studentName, patientName) => {
-  // Simple deduplication by content
-  const seen = new Set();
-  const uniqueMessages = messages.filter(msg => {
-    const key = msg.message_content.trim();
-
-    if (key.includes("Begin the conversation as the patient")) return false;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return uniqueMessages
-    .map(
-      (msg) =>
-        `${msg.student_sent ? `${studentName} (Student)` : `${patientName} (LLM)`}: ${msg.message_content.trim()}`
-    )
-    .join("\n");
-};
-
-const formatNotesForPDF = (notes) =>
-  `Notes: ${notes || "No notes taken."}`;
-
-// Helper function to format chat messages with distinct styling
-const formatMessages = (messages, studentName, patientName) => {
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return "Invalid Date";
-    return date
-      .toLocaleDateString(undefined, {
-        year: "2-digit",
-        month: "2-digit",
-        day: "2-digit",
-      })
-      .replace(/\//g, "-");
-  };
-
-  // Simple deduplication by content
-  const seen = new Set();
-  const uniqueMessages = messages.filter(message => {
-    const key = message.message_content.trim();
-    if (key.includes("Begin the conversation as the patient")) return false;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  const groupedMessages = uniqueMessages.reduce((acc, message) => {
-    const date = formatDate(message.time_sent);
-    if (!acc[date]) {
-      acc[date] = [];
-    }
-    acc[date].push(message);
-    return acc;
-  }, {});
-
-  return Object.keys(groupedMessages).map((date) => (
-    <Box key={date} sx={{ my: 2 }}>
-      <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>
-        {date}
-      </Typography>
-      {groupedMessages[date].map((message, idx) => (
-        <Box
-          key={idx}
-          sx={{
-            backgroundColor: message.student_sent ? "lightgreen" : "lightblue",
-            borderRadius: 2,
-            p: 1,
-            mb: 1,
-            maxWidth: "80%",
-            alignSelf: message.student_sent ? "flex-end" : "flex-start",
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: "bold" }}>
-            {message.student_sent ? `${studentName} (Student)` : `${patientName} (LLM)`}
-          </Typography>
-          <Typography variant="body1">{message.message_content.trim()}</Typography>
-        </Box>
-      ))}
-    </Box>
-  ))
-};
-
-// Helper function to format notes consistently
+// Helper function to format notes consistently (UI display only)
 const formatNotes = (noteText) => (
   <Box
     sx={{
@@ -152,54 +74,28 @@ const StudentDetails = () => {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }instructor/student_patients_messages?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}&student_email=${encodeURIComponent(student.email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
+        const data = await apiGet(
+          "instructor/student_patients_messages",
+          { simulation_group_id, student_email: student.email }
         );
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data);
-          setTabs(Object.keys(data)); // Tabs will represent patient names
+        setSessions(data);
+        setTabs(Object.keys(data)); // Tabs will represent patient names
 
-          // Fetch patient IDs directly
-          const patientsResponse = await fetch(
-            `${import.meta.env.VITE_API_ENDPOINT}instructor/view_patients?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
-            {
-              method: "GET",
-              headers: {
-                Authorization: token,
-                "Content-Type": "application/json",
-              },
-            }
-          );
+        // Fetch patient IDs directly
+        const patientsData = await apiGet(
+          "instructor/view_patients",
+          { simulation_group_id }
+        );
+        console.log('Patients data:', patientsData);
 
-          if (patientsResponse.ok) {
-            const patientsData = await patientsResponse.json();
-            console.log('Patients data:', patientsData);
+        // Create mapping of patient names to IDs
+        const patientIdMap = {};
+        patientsData.forEach(patient => {
+          patientIdMap[patient.patient_name] = patient.patient_id;
+        });
 
-            // Create mapping of patient names to IDs
-            const patientIdMap = {};
-            patientsData.forEach(patient => {
-              patientIdMap[patient.patient_name] = patient.patient_id;
-            });
-
-            console.log('Patient ID mapping:', patientIdMap);
-            setPatientIds(patientIdMap);
-          }
-        } else {
-          console.error("Failed to fetch student data:", response.statusText);
-        }
+        console.log('Patient ID mapping:', patientIdMap);
+        setPatientIds(patientIdMap);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -211,29 +107,12 @@ const StudentDetails = () => {
   useEffect(() => {
     const fetchCompletionStatuses = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }instructor/get_completion_status?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}&student_email=${encodeURIComponent(student.email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
+        const data = await apiGet(
+          "instructor/get_completion_status",
+          { simulation_group_id, student_email: student.email }
         );
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Completion statuses:', data);
-          setCompletionStatuses(data); // Set state with completion statuses
-        } else {
-          console.error("Failed to fetch completion statuses:", response.statusText);
-        }
+        console.log('Completion statuses:', data);
+        setCompletionStatuses(data); // Set state with completion statuses
       } catch (error) {
         console.error("Error fetching completion statuses:", error);
       }
@@ -244,32 +123,18 @@ const StudentDetails = () => {
 
   const toggleCompletionStatus = async (studentInteractionId) => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }instructor/toggle_completion?student_interaction_id=${studentInteractionId}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
+      const data = await apiPut(
+        "instructor/toggle_completion",
+        undefined,
+        { student_interaction_id: studentInteractionId }
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setCompletionStatuses((prevStatuses) =>
-          prevStatuses.map((status) =>
-            status.student_interaction_id === studentInteractionId
-              ? { ...status, is_completed: data.is_completed }
-              : status
-          )
-        );
-      } else {
-        console.error("Failed to toggle completion status:", response.statusText);
-      }
+      setCompletionStatuses((prevStatuses) =>
+        prevStatuses.map((status) =>
+          status.student_interaction_id === studentInteractionId
+            ? { ...status, is_completed: data.is_completed }
+            : status
+        )
+      );
     } catch (error) {
       console.error("Error toggling completion status:", error);
     }
@@ -293,52 +158,39 @@ const StudentDetails = () => {
 
   const handleUnenroll = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }instructor/delete_student?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}&user_email=${encodeURIComponent(
-          student.email
-        )}&instructor_email=${encodeURIComponent(email)}`,
+      await apiDelete(
+        "instructor/delete_student",
         {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
+          simulation_group_id,
+          user_email: student.email,
+          instructor_email: email,
         }
       );
-      if (response.ok) {
-        toast.success("Student unenrolled successfully", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        setTimeout(() => {
-          window.history.back();
-        }, 1000);
-      } else {
-        toast.error("Failed to unenroll student", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        console.error("Failed to unenroll student:", response.statusText);
-      }
+      toast.success("Student unenrolled successfully", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
+      setTimeout(() => {
+        window.history.back();
+      }, 1000);
     } catch (error) {
+      toast.error("Failed to unenroll student", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
       console.error("Error fetching data:", error);
     }
   };
@@ -404,45 +256,22 @@ const StudentDetails = () => {
     try {
       console.log('fetchEmpathySummary called with patientId:', patientId);
       console.log('Current patientIds mapping:', patientIds);
-
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      // Build the URL with required parameters
-      let url = `${import.meta.env.VITE_API_ENDPOINT}instructor/empathy_summary?session_id=default&simulation_group_id=${encodeURIComponent(
-        simulation_group_id
-      )}&student_email=${encodeURIComponent(student.email)}`;
-
-      // Add patient_id if provided
+      const queryParams = {
+        session_id: "default",
+        simulation_group_id,
+        student_email: student.email,
+      };
       if (patientId) {
-        url += `&patient_id=${encodeURIComponent(patientId)}`;
+        queryParams.patient_id = patientId;
         console.log(`Fetching empathy summary for specific patient: ${patientId}`);
       } else {
         console.log('Fetching overall empathy summary');
       }
 
-      console.log('Empathy summary URL:', url);
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Empathy summary response:', data);
-        setEmpathySummary(data);
-        handleEmpathyDialogOpen();
-      } else {
-        console.error('Failed to fetch empathy summary:', await response.text());
-        toast.error("Failed to fetch empathy summary", {
-          position: "top-center",
-          autoClose: 3000,
-        });
-      }
+      const data = await apiGet("instructor/empathy_summary", queryParams);
+      console.log('Empathy summary response:', data);
+      setEmpathySummary(data);
+      handleEmpathyDialogOpen();
     } catch (error) {
       console.error("Error fetching empathy summary:", error);
       toast.error("Error fetching empathy summary", {

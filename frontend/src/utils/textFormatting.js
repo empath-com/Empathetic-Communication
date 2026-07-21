@@ -14,3 +14,16 @@ export function titleCase(str) {
     })
     .join(" ");
 }
+
+/**
+ * Generates a random 16-character access code formatted as XXXX-XXXX-XXXX-XXXX.
+ * @returns {string}
+ */
+export function generateAccessCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < 16; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code.match(/.{1,4}/g).join("-");
+}

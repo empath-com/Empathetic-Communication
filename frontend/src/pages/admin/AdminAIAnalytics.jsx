@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiPost } from "../../utils/apiClient";
 import html2canvas from "html2canvas";
 import {
   ResponsiveContainer,
@@ -204,23 +204,7 @@ const AdminAIAnalytics = () => {
     setError("");
 
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-
-      const response = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/ai_analytics_query`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token,
-        },
-        body: JSON.stringify({ question: trimmedQuestion }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.details || data?.error || "Failed to run AI analytics query");
-      }
-
+      const data = await apiPost("admin/ai_analytics_query", { question: trimmedQuestion });
       setResult(data);
       const storedChartType =
         typeof window === "undefined"

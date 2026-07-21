@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet, apiPost, apiDelete } from "../../utils/apiClient";
 
 import {
   Typography,
@@ -21,16 +21,7 @@ import {
 
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-
-// Function to convert string to title case
-function titleCase(str) {
-  if (typeof str !== "string") return "";
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
+import { titleCase } from "../../utils/textFormatting";
 
 const InstructorDetails = ({ instructorData, onBack }) => {
   const instructor = instructorData;
@@ -42,24 +33,8 @@ const InstructorDetails = ({ instructorData, onBack }) => {
     // Fetch all simulation groups
     const fetchGroups = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/simulation_groups`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setAllGroups(data);
-        } else {
-          console.error("Failed to fetch groups:", response.statusText);
-        }
+        const data = await apiGet("admin/simulation_groups");
+        setAllGroups(data);
       } catch (error) {
         console.error("Error fetching groups:", error);
       }
@@ -68,28 +43,10 @@ const InstructorDetails = ({ instructorData, onBack }) => {
     // Fetch active groups for the instructor
     const fetchActiveGroups = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }admin/instructorGroups?instructor_email=${encodeURIComponent(
-            instructorData.email
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setActiveGroups(data);
-        } else {
-          console.error("Failed to fetch active groups:", response.statusText);
-        }
+        const data = await apiGet("admin/instructorGroups", {
+          instructor_email: instructorData.email,
+        });
+        setActiveGroups(data);
       } catch (error) {
         console.error("Error fetching active groups:", error);
       }
@@ -113,37 +70,20 @@ const InstructorDetails = ({ instructorData, onBack }) => {
 
   const handleDelete = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }admin/lower_instructor?email=${encodeURIComponent(
-          instructorData.email
-        )}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        toast.success("Instructor Demoted Successfully", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        setTimeout(() => onBack(), 1000);
-      } else {
-        console.error("Failed to demote instructor:", response.statusText);
-      }
+      await apiPost("admin/lower_instructor", undefined, {
+        email: instructorData.email,
+      });
+      toast.success("Instructor Demoted Successfully", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
+      setTimeout(() => onBack(), 1000);
     } catch (error) {
       console.error("Error demoting instructor:", error);
     }
@@ -151,84 +91,32 @@ const InstructorDetails = ({ instructorData, onBack }) => {
 
   const handleSave = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-  
       // Delete existing enrollments for the instructor
-      const deleteResponse = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/delete_instructor_enrolments?instructor_email=${encodeURIComponent(
-          instructor.email
-        )}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-  
-      if (!deleteResponse.ok) {
-        console.error("Failed to update enrolment:", deleteResponse.statusText);
-        toast.error("Update enrolment Failed", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        return;
-      }
+      await apiDelete("admin/delete_instructor_enrolments", {
+        instructor_email: instructor.email,
+      });
   
       // Enroll instructor in selected groups
       const enrollPromises = activeGroups.map((group) =>
-        fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/enroll_instructor?simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&instructor_email=${encodeURIComponent(instructor.email)}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        )
+        apiPost("admin/enroll_instructor", undefined, {
+          simulation_group_id: group.simulation_group_id,
+          instructor_email: instructor.email,
+        })
       );
   
-      const enrollResults = await Promise.all(enrollPromises);
-      const allEnrolledSuccessfully = enrollResults.every(
-        (result) => result.ok
-      );
-  
-      if (allEnrolledSuccessfully) {
-        toast.success("Enrolment Updated!", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        // Close the dialog after successful save
-        onBack();
-      } else {
-        toast.error("Some enrolments failed", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-      }
+      await Promise.all(enrollPromises);
+      toast.success("Enrolment Updated!", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
+      // Close the dialog after successful save
+      onBack();
     } catch (error) {
       console.error("Error in handleSave:", error);
       toast.error("An error occurred", {

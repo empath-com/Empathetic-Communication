@@ -18,19 +18,10 @@ import {
 } from "@mui/material";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet, apiPost } from "../../utils/apiClient";
+import { generateAccessCode } from "../../utils/textFormatting";
 
 const CHARACTER_LIMIT = 1000;
-
-function generateAccessCode() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 16; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  // Format the code into the pattern XXXX-XXXX-XXXX-XXXX
-  return code.match(/.{1,4}/g).join("-");
-}
 
 function formatInstructors(instructorsArray) {
   return instructorsArray.map((instructor, index) => ({
@@ -70,26 +61,9 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
   useEffect(() => {
     const fetchInstructors = async () => {
       try {
-        const session = await fetchAuthSession();
-        var token = session.tokens.idToken
         //replace if analytics for admin actions is needed
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }admin/instructors?instructor_email=replace`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setInstructors(formatInstructors(data));
-        } else {
-          console.error("Failed to fetch instructors:", response.statusText);
-        }
+        const data = await apiGet("admin/instructors", { instructor_email: "replace" });
+        setInstructors(formatInstructors(data));
       } catch (error) {
         console.error("Error fetching instructors:", error);
       }
@@ -97,27 +71,13 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
 
     const fetchGlobalEmpathyDefaults = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}admin/empathy_prompts`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const fetchedTool = data.current_empathy_tool || "CARE";
-          const fetchedPrompt = data.current_prompt || "";
-          setGlobalEmpathyTool(fetchedTool);
-          setGlobalEmpathyPrompt(fetchedPrompt);
-          setEmpathyToolOverride(fetchedTool);
-          setEmpathyPromptOverride(fetchedPrompt);
-        }
+        const data = await apiGet("admin/empathy_prompts");
+        const fetchedTool = data.current_empathy_tool || "CARE";
+        const fetchedPrompt = data.current_prompt || "";
+        setGlobalEmpathyTool(fetchedTool);
+        setGlobalEmpathyPrompt(fetchedPrompt);
+        setEmpathyToolOverride(fetchedTool);
+        setEmpathyPromptOverride(fetchedPrompt);
       } catch (error) {
         console.error("Error fetching global empathy defaults:", error);
       }
@@ -150,117 +110,70 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
     const access_code = generateAccessCode();
     // Handle the create simulationGroup logic here
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }admin/create_simulation_group?group_name=${encodeURIComponent(
-          simulationGroupName
-        )}&group_description=${encodeURIComponent(
-          groupDescription
-        )}&group_access_code=${encodeURIComponent(
-          access_code
-        )}&group_student_access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
+      const data = await apiPost(
+        "admin/create_simulation_group",
         {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            system_prompt: simulationGroupPrompt,
-            use_global_empathy_defaults: useGlobalEmpathyDefaults,
-            empathy_tool_override: useGlobalEmpathyDefaults
-              ? null
-              : empathyToolOverride,
-            empathy_prompt_override: useGlobalEmpathyDefaults
-              ? null
-              : empathyPromptOverride,
-          }),
+          system_prompt: simulationGroupPrompt,
+          use_global_empathy_defaults: useGlobalEmpathyDefaults,
+          empathy_tool_override: useGlobalEmpathyDefaults ? null : empathyToolOverride,
+          empathy_prompt_override: useGlobalEmpathyDefaults ? null : empathyPromptOverride,
+        },
+        {
+          group_name: simulationGroupName,
+          group_description: groupDescription,
+          group_access_code: access_code,
+          group_student_access: isActive,
+          empathy_enabled: empathyEnabled,
+          admin_voice_enabled: adminVoiceEnabled,
+          instructor_voice_enabled: instructorVoiceEnabled,
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        const { simulation_group_id } = data;
-        console.log('selectedInstructors', selectedInstructors)
-        const enrollPromises = selectedInstructors.map((instructor) =>
-          fetch(
-            `${import.meta.env.VITE_API_ENDPOINT
-            }admin/enroll_instructor?simulation_group_id=${encodeURIComponent(
-              simulation_group_id
-            )}&instructor_email=${encodeURIComponent(instructor.email)}`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: token,
-                "Content-Type": "application/json",
-              },
-            }
-          ).then((enrollResponse) => {
-            if (enrollResponse.ok) {
-              return enrollResponse.json().then(() => {
-                return { success: true };
-              });
-            } else {
-              console.error(
-                "Failed to enroll instructor:",
-                enrollResponse.statusText
-              );
-              toast.error("Enroll Instructor Failed", {
-                position: "top-center",
-                autoClose: 1000,
-                hideProgressBar: false,
-                closeOnClick: true,
-                pauseOnHover: true,
-                draggable: true,
-                progress: undefined,
-                theme: "colored",
-              });
-              return { success: false };
-            }
+      const { simulation_group_id } = data;
+      console.log('selectedInstructors', selectedInstructors);
+      const enrollPromises = selectedInstructors.map((instructor) =>
+        apiPost("admin/enroll_instructor", undefined, {
+          simulation_group_id,
+          instructor_email: instructor.email,
+        })
+          .then(() => ({ success: true }))
+          .catch((err) => {
+            console.error("Failed to enroll instructor:", err.message);
+            toast.error("Enroll Instructor Failed", {
+              position: "top-center",
+              autoClose: 1000,
+              hideProgressBar: false,
+              closeOnClick: true,
+              pauseOnHover: true,
+              draggable: true,
+              progress: undefined,
+              theme: "colored",
+            });
+            return { success: false };
           })
-        );
+      );
 
-        const enrollResults = await Promise.all(enrollPromises);
-        const allEnrolledSuccessfully = enrollResults.every(
-          (result) => result.success
-        );
+      const enrollResults = await Promise.all(enrollPromises);
+      const allEnrolledSuccessfully = enrollResults.every((result) => result.success);
 
-        if (allEnrolledSuccessfully || selectedInstructors.length === 0) {
-          toast.success("Simulation Group Created!", {
-            position: "top-center",
-            autoClose: 1000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "colored",
-          });
-          setTimeout(() => {
-            setSelectedComponent("AdminSimulationGroups");
-          }, 1000);
-        } else {
-          toast.error("Some instructors could not be enrolled", {
-            position: "top-center",
-            autoClose: 1000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "colored",
-          });
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.error || response.statusText || "Unknown error";
-        console.error("Failed to create simulation group:", errorMessage);
-        toast.error(`Creation Failed: ${errorMessage}`, {
+      if (allEnrolledSuccessfully || selectedInstructors.length === 0) {
+        toast.success("Simulation Group Created!", {
           position: "top-center",
-          autoClose: 3000,
+          autoClose: 1000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "colored",
+        });
+        setTimeout(() => {
+          setSelectedComponent("AdminSimulationGroups");
+        }, 1000);
+      } else {
+        toast.error("Some instructors could not be enrolled", {
+          position: "top-center",
+          autoClose: 1000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,

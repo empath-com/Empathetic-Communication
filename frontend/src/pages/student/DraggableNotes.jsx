@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet, apiPut } from "../../utils/apiClient";
 
 function DraggableNotes({ onClose, sessionId, zIndex = 50 }) {
   const [noteContent, setNoteContent] = useState("");
@@ -20,26 +20,8 @@ function DraggableNotes({ onClose, sessionId, zIndex = 50 }) {
 
   const fetchNotes = async (sessionId) => {
     try {
-      const authSession = await fetchAuthSession();
-      const token = authSession.tokens.idToken;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/get_notes?session_id=${encodeURIComponent(sessionId)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setNoteContent(data.notes || "");
-      } else {
-        console.error("Failed to fetch notes.");
-      }
+      const data = await apiGet("student/get_notes", { session_id: sessionId });
+      setNoteContent(data.notes || "");
     } catch (error) {
       console.error("Error fetching notes:", error);
     }
@@ -51,34 +33,20 @@ function DraggableNotes({ onClose, sessionId, zIndex = 50 }) {
 
   const handleSave = async () => {
     try {
-      const authSession = await fetchAuthSession();
-      const token = authSession.tokens.idToken;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/update_notes?session_id=${encodeURIComponent(sessionId)}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ notes: noteContent }),
-        }
+      await apiPut(
+        "student/update_notes",
+        { notes: noteContent },
+        { session_id: sessionId }
       );
-
-      if (response.ok) {
-        toast.success("Notes saved successfully!", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          theme: "colored",
-        });
-      } else {
-        console.error("Failed to save notes.");
-      }
+      toast.success("Notes saved successfully!", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        theme: "colored",
+      });
     } catch (error) {
       console.error("Error saving notes:", error);
     }

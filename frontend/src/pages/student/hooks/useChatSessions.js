@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { apiGet, apiDelete } from "../../../utils/apiClient";
 
 /**
  * Manages chat session CRUD: listing, creating, deleting, and switching sessions.
@@ -47,33 +48,17 @@ export default function useChatSessions({
       }
 
       try {
-        const authSession = await fetchAuthSession();
         const { email } = await fetchUserAttributes();
-        const token = authSession.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}student/patient?email=${encodeURIComponent(
-            email
-          )}&simulation_group_id=${encodeURIComponent(
-            group.simulation_group_id
-          )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data);
-          const latestSession = data[data.length - 1];
-          setSession(latestSession);
-          if (latestSession) {
-            setCurrentSessionId(latestSession.session_id);
-          }
-        } else {
-          console.error("Failed to fetch patient:", response.statusText);
+        const data = await apiGet("student/patient", {
+          email,
+          simulation_group_id: group.simulation_group_id,
+          patient_id: patient.patient_id,
+        });
+        setSessions(data);
+        const latestSession = data[data.length - 1];
+        setSession(latestSession);
+        if (latestSession) {
+          setCurrentSessionId(latestSession.session_id);
         }
       } catch (error) {
         console.error("Error fetching patient:", error);
@@ -183,38 +168,21 @@ export default function useChatSessions({
   // --- Delete session ---
   const handleDeleteSession = async (sessionDelete) => {
     try {
-      const authSession = await fetchAuthSession();
       const { email } = await fetchUserAttributes();
-      const token = authSession.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/delete_session?email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_id=${encodeURIComponent(sessionDelete.session_id)}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
+      await apiDelete("student/delete_session", {
+        email,
+        simulation_group_id: group.simulation_group_id,
+        patient_id: patient.patient_id,
+        session_id: sessionDelete.session_id,
+      });
+      setSessions((prevSessions) =>
+        prevSessions.filter(
+          (isession) => isession.session_id !== sessionDelete.session_id
+        )
       );
-      if (response.ok) {
-        await response.json();
-        setSessions((prevSessions) =>
-          prevSessions.filter(
-            (isession) => isession.session_id !== sessionDelete.session_id
-          )
-        );
-        if (sessionDelete.session_id === session?.session_id) {
-          setSession(null);
-          setMessages([]);
-        }
-      } else {
-        console.error("Failed to delete session:", response.statusText);
+      if (sessionDelete.session_id === session?.session_id) {
+        setSession(null);
+        setMessages([]);
       }
     } catch (error) {
       console.error("Error deleting session:", error);

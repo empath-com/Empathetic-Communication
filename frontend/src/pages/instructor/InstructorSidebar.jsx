@@ -18,7 +18,7 @@ import GroupIcon from "@mui/icons-material/Group";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet, apiPut } from "../../utils/apiClient";
 
 const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_group_id }) => {
   const navigate = useNavigate();
@@ -37,24 +37,10 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
     const fetchCode = async () => {
       if (!simulation_group_id) return;
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT}instructor/get_access_code?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const codeData = await response.json();
-          setAccessCode(codeData.group_access_code || "N/A");
-        } else {
-          setAccessCode("Error");
-        }
+        const codeData = await apiGet("instructor/get_access_code", {
+          simulation_group_id,
+        });
+        setAccessCode(codeData.group_access_code || "N/A");
       } catch (error) {
         setAccessCode("Error");
       }
@@ -103,22 +89,10 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
 
   const handleGenerateNewCode = async () => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const codeData = await response.json();
-        setAccessCode(codeData.access_code);
-      }
+      const codeData = await apiPut("instructor/generate_access_code", undefined, {
+        simulation_group_id,
+      });
+      setAccessCode(codeData.access_code);
     } catch (err) {
       console.error("Failed to generate code:", err);
     }

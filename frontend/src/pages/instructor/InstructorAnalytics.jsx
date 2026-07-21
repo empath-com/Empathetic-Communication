@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet } from "../../utils/apiClient";
 import {
   Container,
   Typography,
@@ -20,16 +20,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
+import { titleCase } from "../../utils/textFormatting";
 
 const InstructorAnalytics = ({ groupName, simulation_group_id }) => {
   const [tabValue, setTabValue] = useState(0);
@@ -38,29 +29,11 @@ const InstructorAnalytics = ({ groupName, simulation_group_id }) => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }instructor/analytics?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const analytics_data = await response.json();
-          console.log("Analytics data:", analytics_data);
-          setData(analytics_data);
-        } else {
-          console.error("Failed to fetch analytics:", response.statusText);
-        }
+        const analytics_data = await apiGet("instructor/analytics", {
+          simulation_group_id,
+        });
+        console.log("Analytics data:", analytics_data);
+        setData(analytics_data);
       } catch (error) {
         console.error("Error fetching analytics:", error);
       }

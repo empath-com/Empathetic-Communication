@@ -1,6 +1,6 @@
 import { useEffect, useState, useContext } from "react";
 import StudentHeader from "../../components/StudentHeader";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiPost, apiGet } from "../../utils/apiClient";
 
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -22,8 +22,8 @@ import {
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { fetchUserAttributes } from "aws-amplify/auth";
-import { useNavigate } from "react-router-dom";
-import { UserContext } from "../../UserContext";
+import { useNavigate } from "react-router-dom";import { UserContext } from "../../UserContext";
+import { titleCase } from "../../utils/textFormatting";
 // MUI theming
 const { palette } = createTheme();
 const { augmentColor } = palette;
@@ -34,19 +34,6 @@ const theme = createTheme({
     bg: createColor("#f8fafc"),
   },
 });
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map(function (word) {
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(" ");
-}
 
 export const StudentHomepage = ({ setGroup }) => {
   const navigate = useNavigate();
@@ -72,72 +59,25 @@ export const StudentHomepage = ({ setGroup }) => {
 
   const handleJoin = async (code) => {
     try {
-      const session = await fetchAuthSession();
       const { email } = await fetchUserAttributes();
-
-      var token = session.tokens.idToken;
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/enroll_student?student_email=${encodeURIComponent(
-          email
-        )}&group_access_code=${encodeURIComponent(code)}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        await response.json();
-        toast.success("Successfully Joined Group!", {
-          position: "top-center",
-          autoClose: 1000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "colored",
-        });
-        fetchGroups();
-        handleClose();
-      } else {
-        try {
-          const errorData = await response.json();
-          console.error("Failed to join group:", {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorData.error,
-          });
-          toast.error(`Failed to Join Group: ${errorData.error}`, {
-            position: "top-center",
-            autoClose: 1000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "colored",
-          });
-        } catch (e) {
-          console.error("Failed to fetch groups:", response.statusText);
-          toast.error("Failed to Join Group", {
-            position: "top-center",
-            autoClose: 1000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "colored",
-          });
-        }
-      }
+      await apiPost("student/enroll_student", undefined, {
+        student_email: email,
+        group_access_code: code,
+      });
+      toast.success("Successfully Joined Group!", {
+        position: "top-center",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "colored",
+      });
+      fetchGroups();
+      handleClose();
     } catch (error) {
-      console.error("Error fetching groups:", error);
+      console.error("Error joining group:", error);
       toast.error("Failed to Join Group", {
         position: "top-center",
         autoClose: 1000,
@@ -161,45 +101,15 @@ export const StudentHomepage = ({ setGroup }) => {
 
   const fetchGroups = async () => {
     try {
-      const session = await fetchAuthSession();
       const { email } = await fetchUserAttributes();
-
-      var token = session.tokens.idToken;
-      let response;
+      let data;
       if (isInstructorAsStudent) {
-        response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }instructor/student_group?email=${encodeURIComponent(email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        data = await apiGet("instructor/student_group", { email });
       } else {
-        response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }student/simulation_group?email=${encodeURIComponent(email)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        data = await apiGet("student/simulation_group", { email });
       }
-      if (response.ok) {
-        const data = await response.json();
-        setGroups(data);
-        setLoading(false);
-      } else {
-        console.error("Failed to fetch group:", response.statusText);
-      }
+      setGroups(data);
+      setLoading(false);
     } catch (error) {
       console.error("Error fetching group:", error);
     }

@@ -1,9 +1,6 @@
-const { initializeConnection } = require("../lib.js");
+const { CognitoIdentityProviderClient } = require("@aws-sdk/client-cognito-identity-provider");
 const { formatNames, generateAccessCode } = require("../shared/utils.js");
-const {
-  CognitoIdentityProviderClient,
-  AdminGetUserCommand,
-} = require("@aws-sdk/client-cognito-identity-provider");
+const { freshResponse, ensureDbConnection, lookupUserEmail, dispatchRoute, makeResponse } = require("../shared/runtime.js");
 
 // Import all route modules
 const groupRoutes = require("./groupRoutes.js");
@@ -29,23 +26,12 @@ const allRoutes = {
 
 let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL, CORS_ALLOWED_ORIGIN = "*" } = process.env;
 
-let sqlConnection = global.sqlConnection;
-
 exports.handler = async (event) => {
   const cognito_id = event.requestContext.authorizer.userId;
   const client = new CognitoIdentityProviderClient();
-  const userAttributesCommand = new AdminGetUserCommand({
-    UserPoolId: USER_POOL,
-    Username: cognito_id,
-  });
-  const userAttributesResponse = await client.send(userAttributesCommand);
+  const userEmailAttribute = await lookupUserEmail(client, USER_POOL, cognito_id);
 
-  const emailAttr = userAttributesResponse.UserAttributes.find(
-    (attr) => attr.Name === "email"
-  );
-  const userEmailAttribute = emailAttr ? emailAttr.Value : null;
-
-  // Check for query string parameters
+  // Reject if the caller is querying data for a different user.
   const queryStringParams = event.queryStringParameters || {};
   const queryEmail = queryStringParams.email;
   const instructorEmail = queryStringParams.instructor_email;
@@ -55,51 +41,22 @@ exports.handler = async (event) => {
     (instructorEmail && instructorEmail !== userEmailAttribute);
 
   if (isUnauthorized) {
-    return {
-      statusCode: 401,
-      headers: {
-        "Access-Control-Allow-Headers":
-          "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-        "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
-        "Access-Control-Allow-Methods": "*",
-      },
-      body: JSON.stringify({ error: "Unauthorized" }),
-    };
+    return makeResponse(401, { error: "Unauthorized" }, CORS_ALLOWED_ORIGIN);
   }
 
-  const response = {
-    statusCode: 200,
-    headers: {
-      "Access-Control-Allow-Headers":
-        "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-      "Access-Control-Allow-Origin": CORS_ALLOWED_ORIGIN,
-      "Access-Control-Allow-Methods": "*",
-    },
-    body: "",
-  };
-
-  // Initialize the database connection if not already initialized
-  if (!sqlConnection) {
-    await initializeConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT);
-    sqlConnection = global.sqlConnection;
-  }
+  const response = freshResponse(CORS_ALLOWED_ORIGIN);
+  const sqlConnection = await ensureDbConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT);
 
   try {
     const pathData = event.httpMethod + " " + event.resource;
-
-    const handler = allRoutes[pathData];
-    if (handler) {
-      await handler({
-        event,
-        sqlConnection,
-        response,
-        userEmailAttribute,
-        formatNames,
-        generateAccessCode,
-      });
-    } else {
-      throw new Error(`Unsupported route: "${pathData}"`);
-    }
+    await dispatchRoute(allRoutes, pathData, {
+      event,
+      sqlConnection,
+      response,
+      userEmailAttribute,
+      formatNames,
+      generateAccessCode,
+    }, response);
   } catch (error) {
     response.statusCode = 400;
     response.body = JSON.stringify(error.message);
@@ -108,3 +65,4 @@ exports.handler = async (event) => {
 
   return response;
 };
+

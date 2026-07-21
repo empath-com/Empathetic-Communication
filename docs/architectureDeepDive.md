@@ -2,27 +2,204 @@
 
 ## Architecture
 
-![Archnitecture Diagram](./images/architecture.png)
+```mermaid
+flowchart LR
+    subgraph Client["Client applications"]
+        Admin["Admin / Instructor / Student browser"]
+        SPA["React SPA on AWS Amplify"]
+        Admin --> SPA
+    end
+
+    Cognito["Amazon Cognito\nUser pool + identity pool"]
+    Api["API Gateway\nREST API"]
+    Authz["Role authorizer Lambdas\nadmin / instructor / student"]
+    AppSync["AWS AppSync\ntext-stream subscriptions"]
+    Socket["ECS Fargate Socket.IO server\nvoice + realtime chat"]
+
+    subgraph Lambdas["Application Lambdas"]
+        AdminFn["Admin Lambda\n(admin routes)"]
+        InstructorFn["Instructor Lambda\n(instructor routes)"]
+        StudentFn["Student Lambda\n(student routes)"]
+        TextGen["Text generation Lambda\nPython container"]
+        Ingest["Data ingestion Lambda\nPython container"]
+    end
+
+    subgraph Data["Storage and AI services"]
+        S3["S3 buckets\npatient files / uploads"]
+        RDS["RDS PostgreSQL + pgvector\nvia RDS Proxy"]
+        Dynamo["DynamoDB\nconversation history"]
+        Bedrock["Amazon Bedrock\nLlama 3 / Titan Embeddings / Nova Sonic"]
+    end
+
+    SPA <-->|Sign-in / JWT| Cognito
+    SPA -->|REST requests| Api
+    Api --> Authz
+    Api --> AdminFn
+    Api --> InstructorFn
+    Api --> StudentFn
+
+    AdminFn --> RDS
+    InstructorFn --> RDS
+    StudentFn --> RDS
+
+    SPA -->|Pre-signed upload flow| S3
+    S3 -->|Object-created event| Ingest
+    Ingest -->|Generate embeddings| Bedrock
+    Ingest -->|Store document vectors| RDS
+
+    SPA -->|Start / continue chat| TextGen
+    TextGen -->|RAG retrieval| RDS
+    TextGen -->|LLM inference| Bedrock
+    TextGen -->|Session history| Dynamo
+    TextGen -->|Publish stream| AppSync
+    SPA <-->|GraphQL subscription| AppSync
+
+    SPA <-->|Socket.IO / WSS| Socket
+    Socket -->|Voice runtime + empathy| Bedrock
+    Socket -->|Conversation history| Dynamo
+    Socket -->|Session / message persistence| RDS
+```
 
 ## Description
 
-1. The user sends a request to the application hosted on AWS Amplify.
-2. Amplify integrates with the backend API Gateway.
-3. Instructors can upload patient data to the application, which is stored in an S3 bucket using a pre-signed upload URL.
-4. Adding a new file to the S3 bucket triggers the data ingestion workflow. The Lambda function runs a Docker container with Amazon Elastic Container Registry (ECR) and uses LangChain to process documents.
-5. The Lambda function embeds the text from uploaded files into vectors using Amazon Bedrock. This project uses the Amazon Titan Text Embeddings V2 model to generate embeddings.
-6. The Lambda function stores the vectors in the PostgreSQL database.
-7. Users can perform simulation group management/access actions by sending an API request which invokes a Lambda function.
-8. This Lambda function interacts with Amazon RDS.
-9. Users can start chatting with the LLM by sending an API request that invokes the Lambda function to generate a response. The Lambda function runs a Docker container with Amazon ECR.
-10. The Lambda function stores the embedded messages in Amazon DynamoDB
-11. This Lambda function uses RAG architecture and LangChain to retrieve the response from LLMs hosted on Amazon Bedrock augmented with the patient's information stored in the Amazon RDS. This project uses Meta Llama 3 70 B as its selected LLM. 
-12. The LLM responses are streamed as chunks to the frontend using AppSync as a websocket implementation, so that the frontend may receive realtime responses as they are generated rather than receiving all of the generated text at once.
-13. An ECS server invokes Amazon Nova Sonic through bedrock and delivers chunks of audio to and from the backend via CloudFront and a websocket connection.
+1. The React frontend is hosted on AWS Amplify and authenticates users with Amazon Cognito.
+2. Browser clients call the REST API through API Gateway, which delegates role checks to dedicated admin, instructor, and student authorizer Lambdas.
+3. API Gateway routes business requests to three main backend Lambdas: admin, instructor, and student. Those Lambdas read and write the shared PostgreSQL database through RDS Proxy.
+4. Instructors upload patient files through pre-signed S3 URLs. New uploads trigger the data-ingestion Lambda container.
+5. The data-ingestion Lambda uses Amazon Bedrock Titan embeddings and stores document vectors in PostgreSQL with pgvector.
+6. Student text chat calls the text-generation Lambda container, which combines RDS/pgvector retrieval with Amazon Bedrock Llama 3 inference.
+7. Conversation history is maintained in DynamoDB for LangChain chat memory, while relational application data such as sessions and messages remains in PostgreSQL.
+8. Generated text is streamed back to the frontend through AWS AppSync subscriptions.
+9. Realtime voice conversations use the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, DynamoDB-backed history, and RDS-backed session persistence.
 
 ## Database Schema
 
-![Database Schema](./images/database_schema.png)
+```mermaid
+erDiagram
+    USERS ||--o{ ENROLMENTS : joins
+    SIMULATION_GROUPS ||--o{ ENROLMENTS : contains
+    SIMULATION_GROUPS ||--o{ PATIENTS : defines
+    PATIENTS ||--o{ PATIENT_DATA : stores
+    PATIENTS ||--o{ STUDENT_INTERACTIONS : used_in
+    ENROLMENTS ||--o{ STUDENT_INTERACTIONS : creates
+    STUDENT_INTERACTIONS ||--o{ SESSIONS : groups
+    SESSIONS ||--o{ MESSAGES : contains
+    SESSIONS ||--o{ FEEDBACK : summarizes
+    USERS ||--o{ USER_ENGAGEMENT_LOG : generates
+    SIMULATION_GROUPS ||--o{ USER_ENGAGEMENT_LOG : scopes
+    PATIENTS ||--o{ USER_ENGAGEMENT_LOG : references
+    ENROLMENTS ||--o{ USER_ENGAGEMENT_LOG : references
+    LANGCHAIN_PG_COLLECTION ||--o{ LANGCHAIN_PG_EMBEDDING : indexes
+
+    USERS {
+        uuid user_id PK
+        string user_email
+        string roles
+        timestamp last_sign_in
+    }
+
+    SIMULATION_GROUPS {
+        uuid simulation_group_id PK
+        string group_name
+        bool group_student_access
+        bool empathy_enabled
+        bool admin_voice_enabled
+        bool instructor_voice_enabled
+        text empathy_prompt_override
+        string empathy_tool_override
+    }
+
+    ENROLMENTS {
+        uuid enrolment_id PK
+        uuid user_id FK
+        uuid simulation_group_id FK
+        string enrolment_type
+    }
+
+    PATIENTS {
+        uuid patient_id PK
+        uuid simulation_group_id FK
+        string patient_name
+        int patient_number
+        bool llm_completion
+        string voice_id
+    }
+
+    PATIENT_DATA {
+        uuid file_id PK
+        uuid patient_id FK
+        string filepath
+        string ingestion_status
+        int file_number
+    }
+
+    STUDENT_INTERACTIONS {
+        uuid student_interaction_id PK
+        uuid patient_id FK
+        uuid enrolment_id FK
+        int patient_score
+        bool is_completed
+    }
+
+    SESSIONS {
+        uuid session_id PK
+        uuid student_interaction_id FK
+        string session_name
+        text notes
+    }
+
+    MESSAGES {
+        uuid message_id PK
+        uuid session_id FK
+        bool student_sent
+        string message_content
+        json empathy_evaluation
+    }
+
+    FEEDBACK {
+        uuid feedback_id PK
+        uuid session_id FK
+        int score
+        text analysis
+    }
+
+    USER_ENGAGEMENT_LOG {
+        uuid log_id PK
+        uuid user_id FK
+        uuid simulation_group_id FK
+        uuid patient_id FK
+        uuid enrolment_id FK
+        string engagement_type
+    }
+
+    SYSTEM_PROMPT_HISTORY {
+        uuid history_id PK
+        text prompt_content
+        timestamp created_at
+    }
+
+    EMPATHY_PROMPT_HISTORY {
+        uuid history_id PK
+        text prompt_content
+        string empathy_tool
+        timestamp created_at
+    }
+
+    LANGCHAIN_PG_COLLECTION {
+        uuid uuid PK
+        string name
+        json cmetadata
+    }
+
+    LANGCHAIN_PG_EMBEDDING {
+        uuid id PK
+        uuid collection_id FK
+        vector embedding
+        text document
+    }
+```
+
+Standalone tables such as `system_prompt_history` and `empathy_prompt_history` are configuration history stores rather than part of the main relational workflow chain. `langchain_pg_collection` and `langchain_pg_embedding` are the pgvector-backed retrieval tables used by document ingestion and RAG.
 
 ### RDS Langchain Tables
 

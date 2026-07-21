@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet } from "../../utils/apiClient";
 import {
   Typography,
   Box,
@@ -56,27 +56,8 @@ export const AdminSimulationGroups = () => {
   const refreshGroups = async () => {
     setLoading(true);
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}admin/simulation_groups`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setRows(getSimulationGroupInfo(data));
-      } else {
-        console.error(
-          "Failed to fetch simulation groups:",
-          response.statusText
-        );
-      }
+      const data = await apiGet("admin/simulation_groups");
+      setRows(getSimulationGroupInfo(data));
     } catch (error) {
       console.error("Error fetching simulation groups:", error);
     } finally {

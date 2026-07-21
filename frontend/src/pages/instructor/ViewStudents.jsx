@@ -15,23 +15,13 @@ import {
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet } from "../../utils/apiClient";
+import { titleCase } from "../../utils/textFormatting";
 
 // Helper function to create data and format text
 const createData = (name, email) => {
   return { name, email };
 };
-
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 const initialRows = [createData("loading...", "loading...")];
 
@@ -45,35 +35,16 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${import.meta.env.VITE_API_ENDPOINT
-          }instructor/view_students?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const formattedData = data.map((student) => {
-            return createData(
-              `${titleCase(student.first_name)} ${titleCase(
-                student.last_name
-              )}`,
-              student.user_email
-            );
-          });
-          setRows(formattedData);
-        } else {
-          console.error("Failed to fetch students:", response.statusText);
-        }
+        const data = await apiGet("instructor/view_students", {
+          simulation_group_id,
+        });
+        const formattedData = data.map((student) => {
+          return createData(
+            `${titleCase(student.first_name)} ${titleCase(student.last_name)}`,
+            student.user_email
+          );
+        });
+        setRows(formattedData);
       } catch (error) {
         console.error("Error fetching data:", error);
       }

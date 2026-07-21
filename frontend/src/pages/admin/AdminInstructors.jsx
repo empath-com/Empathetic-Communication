@@ -20,45 +20,19 @@ import {
   Button,
 } from "@mui/material";
 import { useState, useEffect } from "react";
-import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import { fetchUserAttributes } from "aws-amplify/auth";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import InstructorDetails from "./InstructorDetails";
+import { apiGet, apiPost } from "../../utils/apiClient";
+import { titleCase } from "../../utils/textFormatting";
 
-function titleCase(str) {
-  if (typeof str !== "string") {
-    return str;
-  }
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 const fetchInstructors = async () => {
   try {
-    const session = await fetchAuthSession();
     const userAttributes = await fetchUserAttributes();
-    const token = session.tokens.idToken;
     const adminEmail = userAttributes.email;
-
-    const response = await fetch(
-      `${
-        import.meta.env.VITE_API_ENDPOINT
-      }admin/instructors?instructor_email=${adminEmail}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-
-    const data = await response.json();
-    return data;
+    return await apiGet("admin/instructors", { instructor_email: adminEmail });
   } catch (error) {
     console.error("Error fetching instructors:", error);
     return [];
@@ -130,8 +104,6 @@ export const AdminInstructors = () => {
 
   const handleAddInstructor = async (email) => {
     try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
       const existingInstructor = rows.find((row) => row.email === email);
       if (existingInstructor) {
         toast.error(`Instructor with email ${email} already exists.`, {
@@ -145,19 +117,7 @@ export const AdminInstructors = () => {
         });
         return;
       }
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }admin/elevate_instructor?email=${email}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (!response.ok) throw new Error(`Error Status: ${response.status}`);
+      await apiPost(`admin/elevate_instructor`, undefined, { email });
 
       toast.success(`Instructor with email ${email} elevated`, {
         position: "top-center",

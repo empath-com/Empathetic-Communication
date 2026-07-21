@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, Typography, Box, Stack, FormControl, InputLabel, Select, MenuItem } from "@mui/material";
-import { fetchAuthSession } from "aws-amplify/auth";
+import { apiGet } from "../../utils/apiClient";
 
 const Sparkline = ({ data = [], width = 220, height = 48, stroke = "#10b981" }) => {
   if (!data || data.length === 0) return null;
@@ -81,13 +81,8 @@ const AdminStatistics = () => {
     return out;
   };
 
-  const fetchGroups = async (token) => {
-    const res = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/simulation_groups`, {
-      method: "GET",
-      headers: { Authorization: token, "Content-Type": "application/json" },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || res.statusText);
+  const fetchGroups = async () => {
+    const data = await apiGet("admin/simulation_groups");
     setGroups(Array.isArray(data) ? data.map(g => ({ id: g.simulation_group_id, name: g.group_name })) : []);
   };
 
@@ -95,48 +90,28 @@ const AdminStatistics = () => {
     try {
       setLoading(true);
       setError(null);
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken;
 
       // Fetch groups once (if empty)
       if (groups.length === 0) {
-        try { await fetchGroups(token); } catch (e) { /* non-blocking */ }
+        try { await fetchGroups(); } catch (e) { /* non-blocking */ }
       }
 
-      const params = new URLSearchParams();
-      if (days) params.set("days", String(days));
-      if (groupId) params.set("simulation_group_id", groupId);
+      const queryParams = {};
+      if (days) queryParams.days = String(days);
+      if (groupId) queryParams.simulation_group_id = groupId;
 
       // KPIs
-      const resActive = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/active_students_count?${params.toString()}`, {
-        method: "GET",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-      });
-      const dataActive = await resActive.json();
-      if (!resActive.ok) throw new Error(dataActive?.error || resActive.statusText);
+      const dataActive = await apiGet("admin/active_students_count", queryParams);
       setActiveStudents(dataActive.active_students ?? 0);
 
-      const resCompleted = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_count?${params.toString()}`, {
-        method: "GET",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-      });
-      const dataCompleted = await resCompleted.json();
-      if (!resCompleted.ok) throw new Error(dataCompleted?.error || resCompleted.statusText);
+      const dataCompleted = await apiGet("admin/completed_exercises_count", queryParams);
       setCompletedExercises(dataCompleted.completed_students ?? 0);
 
       // Trends
-      const resActiveTrend = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/active_students_trend?${params.toString()}`, {
-        method: "GET",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-      });
-      const trendActiveRows = await resActiveTrend.json();
+      const trendActiveRows = await apiGet("admin/active_students_trend", queryParams);
       setActiveTrend(normalizeTrend(trendActiveRows, days));
 
-      const resCompletedTrend = await fetch(`${import.meta.env.VITE_API_ENDPOINT}admin/completed_exercises_trend?${params.toString()}`, {
-        method: "GET",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-      });
-      const trendCompletedRows = await resCompletedTrend.json();
+      const trendCompletedRows = await apiGet("admin/completed_exercises_trend", queryParams);
       setCompletedTrend(normalizeTrend(trendCompletedRows, days));
     } catch (e) {
       setError(e.message);
