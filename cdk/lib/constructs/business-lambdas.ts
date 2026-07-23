@@ -208,8 +208,8 @@ export function createBusinessLambdas(
     `${id}-adminFunction`,
     {
       runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/adminFunction"),
-      handler: "adminFunction.handler",
+      code: lambda.Code.fromAsset("lambda"),
+      handler: "adminFunction/adminFunction.handler",
       timeout: Duration.seconds(300),
       vpc: vpcStack.vpc,
       securityGroups: [db.lambdaSecurityGroup],

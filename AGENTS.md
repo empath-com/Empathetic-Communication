@@ -18,6 +18,7 @@ Deliver safe, minimal, high-confidence changes to the Empathetic Communication p
 3. Preserve existing architecture and public APIs unless the task explicitly requires a breaking change.
 4. Keep edits scoped; avoid broad refactors when fixing a targeted issue.
 5. Validate changed areas with available tests/lint/build commands where feasible.
+6. `cd cdk && npm test` (which includes `test/lambda-bundle-integrity.test.ts`) must pass before any change is handed off. This test packages each Node.js Lambda exactly as `cdk deploy` would and requires its handler from that package — it catches Lambda code that references files outside its bundled `fromAsset` directory (e.g. a shared helper moved into `cdk/lambda/lib/shared/` without widening the asset scope), which silently deploys but throws `Cannot find module` on every invocation in production. This class of bug caused a full staging outage on 2026-07-23. Do not skip, weaken, or work around this test to make it pass — fix the underlying `fromAsset`/`handler` mismatch instead.
 
 ## Fast Repository Map
 
@@ -45,6 +46,7 @@ Deliver safe, minimal, high-confidence changes to the Empathetic Communication p
 - Prefer construct-level updates in `cdk/lib/constructs/`.
 - Keep stack entrypoints in `cdk/lib/*stack.ts` thin and compositional.
 - Verify with `cd cdk && npm run build` and `cd cdk && npm test`.
+- Adding or moving a Lambda's source files? `test/lambda-bundle-integrity.test.ts` auto-discovers every `lambda.Function` from source, so it needs no manual wiring — but it will fail loudly if the `fromAsset` path doesn't cover everything the handler requires. Treat that failure as a real deploy-breaking bug, not a test to bypass.
 - If a change affects runtime or control-plane architecture, update diagrams and notes in `docs/architectureDeepDive.md` in the same PR.
 
 ### Frontend changes
@@ -74,7 +76,7 @@ Use these commands to validate changes. If one cannot run in the current environ
 1. Scope: only required files changed.
 2. Safety: no secret leakage; no deploy commands executed.
 3. Compatibility: external behavior unchanged unless requested.
-4. Verification: relevant checks run, or constraints clearly stated.
+4. Verification: relevant checks run, or constraints clearly stated. `cd cdk && npm test` must pass — no exceptions — if any `cdk/` file changed.
 5. Documentation: update related docs for any changed workflow.
 6. Architecture Sync: if architecture-impacting paths changed, `docs/architectureDeepDive.md` was updated (required by CI guard).
 

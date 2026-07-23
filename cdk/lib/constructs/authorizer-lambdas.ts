@@ -31,8 +31,8 @@ export function createAuthorizerLambdas(
     `${id}-admin-authorization-api-gateway`,
     {
       runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/adminAuthorizerFunction"),
-      handler: "adminAuthorizerFunction.handler",
+      code: lambda.Code.fromAsset("lambda"),
+      handler: "adminAuthorizerFunction/adminAuthorizerFunction.handler",
       timeout: Duration.seconds(300),
       vpc: vpcStack.vpc,
       environment: {
@@ -61,8 +61,8 @@ export function createAuthorizerLambdas(
     `${id}-student-authorization-api-gateway`,
     {
       runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/studentAuthorizerFunction"),
-      handler: "studentAuthorizerFunction.handler",
+      code: lambda.Code.fromAsset("lambda"),
+      handler: "studentAuthorizerFunction/studentAuthorizerFunction.handler",
       timeout: Duration.seconds(300),
       vpc: vpcStack.vpc,
       environment: {
@@ -93,8 +93,8 @@ export function createAuthorizerLambdas(
     `${id}-instructor-authorization-api-gateway`,
     {
       runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/instructorAuthorizerFunction"),
-      handler: "instructorAuthorizerFunction.handler",
+      code: lambda.Code.fromAsset("lambda"),
+      handler: "instructorAuthorizerFunction/instructorAuthorizerFunction.handler",
       timeout: Duration.seconds(300),
       vpc: vpcStack.vpc,
       environment: {
