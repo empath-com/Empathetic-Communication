@@ -143,3 +143,10 @@ cdk/text_generation/src/__pycache__
 .n-dx.json
 cdk/socket-server/__pycache__/nova_sonic.cpython-312.pyc
 cdk/dist/
+
+# design-sync (claude.ai/design) — staged converter + generated output
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

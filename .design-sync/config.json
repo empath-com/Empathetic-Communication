@@ -1,0 +1,46 @@
+{
+  "projectId": "d6253ade-8620-4506-8216-21e4d76203d8",
+  "shape": "package",
+  "pkg": "frontend",
+  "globalName": "EmpathAI",
+  "srcDir": "src/components",
+  "buildCmd": "cd frontend && npm run build",
+  "entry": "frontend/.ds-entry.mjs",
+  "componentSrcMap": {
+    "AIMessage": "src/components/AIMessage.jsx",
+    "AdminHeader": "src/components/AdminHeader.jsx",
+    "EmpathyCoachSummary": "src/components/EmpathyCoachSummary.jsx",
+    "FileManagement": "src/components/FileManagement.jsx",
+    "InstructorHeader": "src/components/InstructorHeader.jsx",
+    "NovaVisualizer": "src/components/NovaVisualizer.jsx",
+    "Session": "src/components/Session.jsx",
+    "StudentHeader": "src/components/StudentHeader.jsx",
+    "StudentMessage": "src/components/StudentMessage.jsx",
+    "VoiceConversation": "src/components/VoiceConversation.jsx"
+  },
+  "dtsPropsFor": {
+    "AIMessage": "message: string; profilePicture?: string; name?: string; isStreaming?: boolean;",
+    "AdminHeader": "",
+    "EmpathyCoachSummary": "empathyData: { empathy_tool?: string; overall_score?: number; summary?: string; rapport?: number; listening?: number; whole_person?: number; affective_empathy?: number; communication?: number; shared_planning?: number; prepare?: number; recognise?: number; interact?: number; self_assess?: number; master?: number; strengths?: string[]; recommendations?: string[]; forward_target?: string; };",
+    "FileManagement": "newFiles: any[]; setNewFiles: (files: any[]) => void; files: any[]; setFiles: (files: any[]) => void; setDeletedFiles: (files: any[]) => void; savedFiles: any[]; setSavedFiles: (files: any[]) => void; loading: boolean; metadata: Record<string, any>; setMetadata: (metadata: Record<string, any>) => void; isDocument: boolean;",
+    "InstructorHeader": "",
+    "NovaVisualizer": "analyser?: AnalyserNode; width?: number; height?: number;",
+    "Session": "text: string; session: { session_id: string | number; [key: string]: any }; setSession: (session: any) => void; deleteSession: (session: any) => void; selectedSession?: { session_id: string | number } | null; setMessages: (messages: any[]) => void; setSessions: (sessions: any[]) => void;",
+    "StudentHeader": "",
+    "StudentMessage": "message: string; isMostRecent?: boolean; onDelete: (id?: any) => void; hasAiMessageAfter?: boolean; isPreview?: boolean;",
+    "VoiceConversation": "open: boolean; onClose: () => void; patientContext?: string; onEmpathyData?: (data: any) => void;"
+  },
+  "extraEntries": ["./src/UserContext.js"],
+  "overrides": {
+    "VoiceConversation": { "cardMode": "single", "viewport": "480x520" },
+    "AIMessage": { "cardMode": "column" },
+    "FileManagement": { "cardMode": "column" },
+    "StudentMessage": { "cardMode": "column" }
+  },
+  "provider": {
+    "component": "UserContext.Provider",
+    "props": { "value": { "isInstructorAsStudent": false } }
+  },
+  "cssEntry": "dist/assets/index-DSTe9S5t.css",
+  "readmeHeader": ".design-sync/conventions.md"
+}
