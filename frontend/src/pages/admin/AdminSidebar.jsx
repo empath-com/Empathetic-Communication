@@ -14,6 +14,7 @@ import GroupsIcon from "@mui/icons-material/Groups";
 import SettingsIcon from "@mui/icons-material/Settings";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import InsightsIcon from "@mui/icons-material/Insights";
+import EngineeringIcon from "@mui/icons-material/Engineering";
 
 const AdminSidebar = ({
   setSelectedComponent,
@@ -99,6 +100,11 @@ const AdminSidebar = ({
                 icon: <InsightsIcon />,
                 route: "AdminAIAnalytics",
               },
+              {
+                text: "Stress Testing",
+                icon: <EngineeringIcon />,
+                route: "AdminStressTesting",
+              },
             ].map((item, index) => (
               <React.Fragment key={index}>
                 <ListItem
@@ -152,7 +158,7 @@ const AdminSidebar = ({
                     />
                   )}
                 </ListItem>
-                {index < 4 && (
+                {index < 5 && (
                   <Divider
                     sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }}
                   />

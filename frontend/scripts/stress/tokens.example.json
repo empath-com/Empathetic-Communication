@@ -1,0 +1,10 @@
+[
+  {
+    "email": "student1@example.com",
+    "token": "replace-with-cognito-id-token"
+  },
+  {
+    "email": "student2@example.com",
+    "token": "replace-with-cognito-id-token"
+  }
+]

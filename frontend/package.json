@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stress:text": "node ./scripts/stress/text-stress.mjs",
+    "stress:voice": "node ./scripts/stress/voice-stress.mjs",
+    "stress:tokens": "node ./scripts/stress/bootstrap-tokens.mjs",
+    "stress:job-server": "node ./scripts/stress/job-server.mjs"
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.1.12",
