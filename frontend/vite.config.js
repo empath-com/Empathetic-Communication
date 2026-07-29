@@ -18,4 +18,9 @@ export default defineConfig({
   optimizeDeps: {
     include: ['aws-amplify'],
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setupTests.js',
+    globals: true,
+  },
 })

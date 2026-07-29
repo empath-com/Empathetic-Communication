@@ -40,8 +40,8 @@ function buildUrl(path, queryParams) {
   return url.toString();
 }
 
-async function request(method, path, { queryParams, body } = {}) {
-  const token = await getToken();
+async function request(method, path, { queryParams, body } = {}, tokenProvider = getToken) {
+  const token = await tokenProvider();
   const url = buildUrl(path, queryParams);
 
   const options = {
@@ -69,6 +69,21 @@ async function request(method, path, { queryParams, body } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+export function createApiClient({ tokenProvider } = {}) {
+  const provider = tokenProvider || getToken;
+
+  return {
+    request: (method, path, options) => request(method, path, options, provider),
+    get: (path, queryParams) => request("GET", path, { queryParams }, provider),
+    post: (path, body, queryParams) =>
+      request("POST", path, { body, queryParams }, provider),
+    put: (path, body, queryParams) => request("PUT", path, { body, queryParams }, provider),
+    delete: (path, queryParams) => request("DELETE", path, { queryParams }, provider),
+  };
+}
+
+const defaultClient = createApiClient();
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -79,7 +94,7 @@ async function request(method, path, { queryParams, body } = {}) {
  * @param {object} [queryParams]    Key/value pairs appended as query string.
  */
 export function apiGet(path, queryParams) {
-  return request("GET", path, { queryParams });
+  return defaultClient.get(path, queryParams);
 }
 
 /**
@@ -89,7 +104,7 @@ export function apiGet(path, queryParams) {
  * @param {object} [queryParams]    Key/value pairs appended as query string.
  */
 export function apiPost(path, body, queryParams) {
-  return request("POST", path, { body, queryParams });
+  return defaultClient.post(path, body, queryParams);
 }
 
 /**
@@ -99,7 +114,7 @@ export function apiPost(path, body, queryParams) {
  * @param {object} [queryParams]    Key/value pairs appended as query string.
  */
 export function apiPut(path, body, queryParams) {
-  return request("PUT", path, { body, queryParams });
+  return defaultClient.put(path, body, queryParams);
 }
 
 /**
@@ -108,7 +123,7 @@ export function apiPut(path, body, queryParams) {
  * @param {object} [queryParams]    Key/value pairs appended as query string.
  */
 export function apiDelete(path, queryParams) {
-  return request("DELETE", path, { queryParams });
+  return defaultClient.delete(path, queryParams);
 }
 
 /**

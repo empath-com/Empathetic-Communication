@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchAuthSession, fetchUserAttributes, signOut } from "aws-amplify/auth";
+import { signOut } from "aws-amplify/auth";
 import { SIMULATED_ROLE } from "../../utils/conversationBuilder";
-
-import {
-  startSpokenLLM,
-  stopSpokenLLM,
-  stopAudioPlayback,
-  initPlaybackContext,
-} from "../../utils/voiceStream";
 
 import {
   Dialog,
@@ -33,7 +26,12 @@ import useSidebarResize from "./hooks/useSidebarResize";
 import useChatSessions from "./hooks/useChatSessions";
 import useChatMessages from "./hooks/useChatMessages";
 import useEmpathyCoach from "./hooks/useEmpathyCoach";
+import useStudentChatBootstrap from "./hooks/useStudentChatBootstrap";
+import useStudentFiles from "./hooks/useStudentFiles";
+import useVoiceLifecycle from "./hooks/useVoiceLifecycle";
 import { filterUnwantedMessages } from "./hooks/chatMessageUtils";
+import useCachedAuth from "../../services/auth/useCachedAuth";
+import useStudentChatApi from "../../services/api/useStudentChatApi";
 
 // Sub-components
 import ChatSidebar from "./ChatSidebar";
@@ -57,24 +55,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isAItyping, setIsAItyping] = useState(false);
 
-  // =====================================================================
-  // Auth cache
-  // =====================================================================
-  const [authCache, setAuthCache] = useState({ token: null, exp: 0, email: null });
-
-  const getAuth = async () => {
-    const now = Date.now() / 1000;
-    if (authCache.token && authCache.exp - 60 > now && authCache.email) {
-      return authCache;
-    }
-    const authSession = await fetchAuthSession();
-    const token = authSession.tokens.idToken;
-    const exp = authSession.tokens?.idToken?.payload?.exp || now + 300;
-    const { email } = await fetchUserAttributes();
-    const updated = { token, exp, email };
-    setAuthCache(updated);
-    return updated;
-  };
+  const { getAuth } = useCachedAuth();
+  const { studentApi } = useStudentChatApi(getAuth);
 
   // =====================================================================
   // UI state for popouts / overlays / files
@@ -83,14 +65,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
   const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-
-  const [patientInfoFiles, setPatientInfoFiles] = useState([]);
-  const [isInfoLoading, setIsInfoLoading] = useState(false);
-  const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
-  const [isAnswerLoading, setIsAnswerLoading] = useState(false);
-  const [profilePicture, setProfilePicture] = useState(null);
 
   // =====================================================================
   // Ref bridge: lets useChatSessions call handleStreamingResponse from useChatMessages
@@ -109,6 +83,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     group,
     patient,
     getAuth,
+    studentApi,
     handleStreamingResponseRef,
     setIsAItyping,
     sessions,
@@ -136,6 +111,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     creatingSession: chatSessions.creatingSession,
     setCreatingSession: chatSessions.setCreatingSession,
     getAuth,
+    studentApi,
     empathyEnabled: empathy.empathyEnabled,
     setRealtimeEmpathy: empathy.setRealtimeEmpathy,
     handleNewChat: chatSessions.handleNewChat,
@@ -164,163 +140,19 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // =====================================================================
   // Restore patient/group from sessionStorage
   // =====================================================================
-  useEffect(() => {
-    const storedPatient = sessionStorage.getItem("patient");
-    if (storedPatient) {
-      setPatient(JSON.parse(storedPatient));
-    }
-  }, [setPatient]);
+  useStudentChatBootstrap({ setPatient, setGroup });
 
-  useEffect(() => {
-    const storedGroup = sessionStorage.getItem("group");
-    if (storedGroup) {
-      setGroup(JSON.parse(storedGroup));
-    }
-  }, [setGroup]);
+  const files = useStudentFiles({ group, patient, studentApi });
 
-  // =====================================================================
-  // Fetch files (patient info, answer key, profile picture)
-  // =====================================================================
-  const fetchFiles = async () => {
-    setIsInfoLoading(true);
-    setIsAnswerLoading(true);
-    try {
-      const authSession = await fetchAuthSession();
-      const token = authSession.tokens.idToken;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/get_all_files?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&patient_name=${encodeURIComponent(patient.patient_name)}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const infoFiles = Object.entries(data.info_files).map(
-          ([fileName, fileDetails]) => ({
-            name: fileName,
-            url: fileDetails.url,
-            type: fileName.split(".").pop().toLowerCase(),
-            metadata: fileDetails.metadata,
-          })
-        );
-        const answerFiles = Object.entries(data.answer_key_files).map(
-          ([fileName, fileDetails]) => ({
-            name: fileName,
-            url: fileDetails.url,
-            type: fileName.split(".").pop().toLowerCase(),
-            metadata: fileDetails.metadata,
-          })
-        );
-        const profilePic = data.profile_picture_url;
-        const profileUrl =
-          typeof profilePic === "string"
-            ? profilePic
-            : profilePic?.url || profilePic?.profile_picture_url || null;
-        setProfilePicture(profileUrl || null);
-        setPatientInfoFiles(infoFiles);
-        setAnswerKeyFiles(answerFiles);
-      } else {
-        console.error("Failed to fetch patient info files:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error fetching patient info files:", error);
-    } finally {
-      setIsInfoLoading(false);
-      setIsAnswerLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (patient && group) {
-      fetchFiles();
-    }
-    // fetchFiles reads the current patient/group and auth context.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patient, group]);
-
-  // =====================================================================
-  // Voice helpers
-  // =====================================================================
-  const fetchVoiceID = async () => {
-    try {
-      if (!patient?.patient_id) {
-        console.warn("Patient ID not available, defaulting to tiffany");
-        return "tiffany";
-      }
-      const authSession = await fetchAuthSession();
-      const token = authSession.tokens.idToken;
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/patient_voice_id?patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        return data.voice_id;
-      } else {
-        console.warn("Failed to fetch voice ID, defaulting to tiffany:", response.statusText);
-        return "tiffany";
-      }
-    } catch (error) {
-      console.warn("Error fetching voice ID, defaulting to tiffany:", error);
-      return "tiffany";
-    }
-  };
-
-  // Shared voice-stop: waits for the final AI response (stopSpokenLLM is async),
-  // then reloads messages so the DB-persisted voice turns appear in the chat.
-  const handleVoiceStop = async () => {
-    // Keep allowAudioRef = true while waiting so audio-chunk events from LLaMA
-    // are still played back by the useChatMessages handler. Only block after done.
-    stopAudioPlayback();
-    setIsRecording(false);
-    setShowVoiceOverlay(false);
-    chatSessions.setLoading(false);
-    await stopSpokenLLM();
-    chatMessages.allowAudioRef.current = false;
-    // Give the server's async DB writes a moment to land before reloading
-    setTimeout(() => chatMessages.getMessages(), 2000);
-  };
-
-  const handleVoiceToggle = () => {
-    if (isRecording) {
-      handleVoiceStop();
-    } else {
-      // Create/resume the shared playback AudioContext NOW, while we're inside
-      // the user-gesture handler — Chrome requires this for audio to play later.
-      initPlaybackContext();
-      chatMessages.allowAudioRef.current = true;
-      setShowVoiceOverlay(true);
-      fetchVoiceID().then((voice_id) => {
-        startSpokenLLM(voice_id, chatSessions.setLoading, currentSessionId, {
-          patient_name: patient?.patient_name,
-          patient_prompt: patient?.patient_prompt,
-          patient_id: patient?.patient_id || "",
-          llm_completion: !!patient?.llm_completion,
-          system_prompt: group?.system_prompt || "",
-        });
-      });
-      setIsRecording(true);
-      chatSessions.setLoading(true);
-    }
-  };
+  const voice = useVoiceLifecycle({
+    patient,
+    group,
+    currentSessionId,
+    setLoading: chatSessions.setLoading,
+    allowAudioRef: chatMessages.allowAudioRef,
+    getMessages: chatMessages.getMessages,
+    studentApi,
+  });
 
   // =====================================================================
   // Navigation / auth actions
@@ -394,7 +226,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           messages={messages}
           isAItyping={isAItyping}
           patient={patient}
-          profilePicture={profilePicture}
+          profilePicture={files.profilePicture}
           messagesEndRef={chatMessages.messagesEndRef}
           getMostRecentStudentMessageIndex={chatMessages.getMostRecentStudentMessageIndex}
           hasAiMessageAfter={chatMessages.hasAiMessageAfter}
@@ -411,8 +243,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           isAItyping={isAItyping}
           creatingSession={chatSessions.creatingSession}
           voiceEnabled={empathy.voiceEnabled}
-          isRecording={isRecording}
-          onVoiceToggle={handleVoiceToggle}
+          isRecording={voice.isRecording}
+          onVoiceToggle={voice.handleVoiceToggle}
         />
       </div>
 
@@ -429,15 +261,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       <FilesPopout
         open={isPatientInfoOpen}
         onClose={() => setIsPatientInfoOpen(false)}
-        files={patientInfoFiles}
-        isLoading={isInfoLoading}
+        files={files.patientInfoFiles}
+        isLoading={files.isInfoLoading}
       />
 
       <FilesPopout
         open={isAnswerKeyOpen}
         onClose={() => setIsAnswerKeyOpen(false)}
-        files={answerKeyFiles}
-        isLoading={isAnswerLoading}
+        files={files.answerKeyFiles}
+        isLoading={files.isAnswerLoading}
       />
 
       {/* Empathy Coach Dialog */}
@@ -553,7 +385,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       </Dialog>
 
       {/* Loading screen (not shown when voice panel is handling its own loading state) */}
-      {chatSessions.loading && !showVoiceOverlay && (
+      {chatSessions.loading && !voice.showVoiceOverlay && (
         <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm z-[2000] flex flex-col items-center justify-center">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
             <l-mirage size="48" speed="2.5" color="#10b981" />
@@ -568,7 +400,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       )}
 
       {/* Voice Side Panel */}
-      {showVoiceOverlay && (
+      {voice.showVoiceOverlay && (
         <div className="w-72 flex-shrink-0 flex flex-col bg-white border-l border-gray-200">
           {/* Panel header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -577,7 +409,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               <span className="text-sm font-semibold text-gray-800">Voice Mode</span>
             </div>
             <button
-              onClick={handleVoiceStop}
+              onClick={voice.handleVoiceStop}
               aria-label="Close voice panel"
               className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center transition-colors duration-200"
             >
@@ -597,12 +429,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               <>
                 {/* Profile picture */}
                 <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center overflow-hidden shadow-md">
-                  {profilePicture ? (
+                  {files.profilePicture ? (
                     <img
-                      src={profilePicture}
+                      src={files.profilePicture}
                       alt={patient?.patient_name}
                       className="w-24 h-24 object-cover"
-                      onError={() => setProfilePicture(null)}
+                      onError={() => files.setProfilePicture(null)}
                     />
                   ) : (
                     <MicIcon className="w-12 h-12 text-emerald-600" />
@@ -651,7 +483,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             width={300} 
             height={300} 
             className={`rounded-lg border-2 transition-all ${
-              isRecording 
+              voice.isRecording 
                 ? "border-emerald-400 bg-gray-900 opacity-100" 
                 : "border-transparent bg-transparent opacity-0 pointer-events-none"
             }`}

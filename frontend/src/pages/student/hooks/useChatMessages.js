@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { generateClient } from "aws-amplify/api";
 import { getSocket } from "../../../utils/socket";
 import { titleCase } from "../../../utils/textFormatting";
 import {
+  dedupeAndNormalizeMessages,
   filterUnwantedMessages,
   normalizeEmpathyData,
-  normalizeVoiceLine,
 } from "./chatMessageUtils";
 import useVoiceSocketMessages from "./useVoiceSocketMessages";
 
@@ -62,6 +61,7 @@ export default function useChatMessages({
   creatingSession,
   setCreatingSession,
   getAuth,
+  studentApi,
   empathyEnabled,
   setRealtimeEmpathy,
   handleNewChat,
@@ -121,19 +121,18 @@ export default function useChatMessages({
     async (llmVerdict) => {
       if (!patientRef.current || !groupRef.current) return;
       try {
-        const { token, email } = await getAuth();
-        const scoreUrl =
-          `${import.meta.env.VITE_API_ENDPOINT}student/update_patient_score` +
-          `?patient_id=${encodeURIComponent(patientRef.current.patient_id)}` +
-          `&student_email=${encodeURIComponent(email)}` +
-          `&simulation_group_id=${encodeURIComponent(groupRef.current.simulation_group_id)}` +
-          `&llm_verdict=${encodeURIComponent(Boolean(llmVerdict))}`;
-        fetch(scoreUrl, { method: "POST", headers: { Authorization: token } });
+        const { email } = await getAuth();
+        await studentApi.updatePatientScore({
+          patientId: patientRef.current.patient_id,
+          studentEmail: email,
+          simulationGroupId: groupRef.current.simulation_group_id,
+          llmVerdict,
+        });
       } catch (e) {
         console.error("Failed to update patient score:", e);
       }
     },
-    [getAuth]
+    [getAuth, studentApi]
   );
 
   const applyCompletionEffects = useCallback(async () => {
@@ -292,22 +291,13 @@ export default function useChatMessages({
   // --- Empathy evaluation after AI response ---
   const callEmpathyEvaluation = async (pending, sessionId) => {
     try {
-      const { token } = await getAuth();
-      let url =
-        `${import.meta.env.VITE_API_ENDPOINT}student/empathy_evaluation` +
-        `?session_id=${encodeURIComponent(sessionId)}` +
-        `&patient_id=${encodeURIComponent(pending.patientId)}` +
-        `&simulation_group_id=${encodeURIComponent(pending.groupId)}`;
-      if (pending.messageId) url += `&message_id=${encodeURIComponent(pending.messageId)}`;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-        body: JSON.stringify({ message_content: pending.messageContent }),
+      const data = await studentApi.evaluateEmpathy({
+        sessionId,
+        patientId: pending.patientId,
+        simulationGroupId: pending.groupId,
+        messageId: pending.messageId,
+        messageContent: pending.messageContent,
       });
-      if (!response.ok) return;
-
-      const data = await response.json();
       const empathyData = data.empathy_evaluation;
       if (!empathyData) return;
 
@@ -422,7 +412,7 @@ export default function useChatMessages({
   }, [session?.session_id]);
 
   // --- handleStreamingResponse: POST to text_generation, relies on AppSync subscription ---
-  const handleStreamingResponse = async (url, authToken, message, overrideSessionId = null) => {
+  const handleStreamingResponse = async (requestPayload, overrideSessionId = null) => {
     try {
       const sid = overrideSessionId || session?.session_id;
       if (!sid) throw new Error("No session ID available for streaming");
@@ -432,19 +422,13 @@ export default function useChatMessages({
         subscribeToStream(sid);
       }
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: authToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message_content: message }),
+      return await studentApi.textGenerationStream({
+        simulationGroupId: requestPayload.simulationGroupId,
+        sessionId: sid,
+        patientId: requestPayload.patientId,
+        sessionName: requestPayload.sessionName,
+        messageId: requestPayload.messageId,
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      return await response.json();
     } catch (error) {
       console.error("AppSync streaming error:", error);
       setMessages((prev) => prev.filter((m) => m.message_id !== STREAMING_TEMP_ID));
@@ -464,7 +448,6 @@ export default function useChatMessages({
     if (isSubmitting || isAItyping || creatingSessionRef.current) return;
     setIsSubmitting(true);
     let newSessionObj;
-    let authToken;
     let userEmail;
     let messageContent = messageInput.trim();
 
@@ -494,29 +477,15 @@ export default function useChatMessages({
         setCurrentSessionId(newSessionObj.session_id);
         return getAuth();
       })
-      .then(({ token, email }) => {
-        authToken = token;
+      .then(({ email }) => {
         userEmail = email;
-        const messageUrl = `${import.meta.env.VITE_API_ENDPOINT}student/create_message?session_id=${encodeURIComponent(
-          newSessionObj.session_id
-        )}&email=${encodeURIComponent(userEmail)}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(patient.patient_id)}`;
-
-        return fetch(messageUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ message_content: messageContent }),
+        return studentApi.createMessage({
+          sessionId: newSessionObj.session_id,
+          email: userEmail,
+          simulationGroupId: group.simulation_group_id,
+          patientId: patient.patient_id,
+          messageContent,
         });
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to create message: ${response.statusText}`);
-        }
-        return response.json();
       })
       .then((messageData) => {
         setNewMessage(messageData[0]);
@@ -526,24 +495,24 @@ export default function useChatMessages({
         const message = messageData[0].message_content;
         const messageId = messageData[0].message_id;
 
-        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT}student/text_generation?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&session_id=${encodeURIComponent(
-          newSessionObj.session_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent(
-          newSessionObj.session_name
-        )}&message_id=${encodeURIComponent(messageId)}&stream=true`;
-
         if (empathyEnabled) {
           pendingEmpathyRef.current = {
             messageContent: message,
             patientId: patient.patient_id,
             groupId: group.simulation_group_id,
+            messageId,
           };
         }
-        return handleStreamingResponse(textGenUrl, authToken, message, newSessionObj.session_id);
+        return handleStreamingResponse(
+          {
+            simulationGroupId: group.simulation_group_id,
+            sessionId: newSessionObj.session_id,
+            patientId: patient.patient_id,
+            sessionName: newSessionObj.session_name,
+            messageId,
+          },
+          newSessionObj.session_id
+        );
       })
       .catch((error) => {
         setIsSubmitting(false);
@@ -557,34 +526,15 @@ export default function useChatMessages({
 
   // --- Delete last message pair ---
   const handleDeleteMessage = async () => {
-    const authSession = await fetchAuthSession();
-    const token = authSession.tokens.idToken;
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_ENDPOINT}student/delete_last_message?session_id=${encodeURIComponent(
-          session.session_id
-        )}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
+      await studentApi.deleteLastMessage(session.session_id);
+      setMessages((prevMessages) => {
+        if (prevMessages.length >= 2) {
+          return prevMessages.slice(0, -2);
+        } else {
+          return [];
         }
-      );
-
-      if (response.ok) {
-        await response.json();
-        setMessages((prevMessages) => {
-          if (prevMessages.length >= 2) {
-            return prevMessages.slice(0, -2);
-          } else {
-            return [];
-          }
-        });
-      } else {
-        console.error("Failed to delete message:", response.statusText);
-      }
+      });
     } catch (error) {
       console.error("Error deleting message:", error);
     }
@@ -598,69 +548,13 @@ export default function useChatMessages({
         return;
       }
 
-      if (!import.meta.env.VITE_APPSYNC_GRAPHQL_URL) {
-        console.error("VITE_APPSYNC_GRAPHQL_URL is not configured");
-        return;
-      }
+      const result = await studentApi.getMessages(session.session_id);
+      const data = Array.isArray(result) ? result : result?.data?.listMessagesBySession || [];
 
-      const apiUrl = `${import.meta.env.VITE_API_ENDPOINT}student/get_messages?session_id=${encodeURIComponent(session.session_id)}`;
+      const uniqueMessages = dedupeAndNormalizeMessages(data);
 
-      const response = await fetch(apiUrl, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: (await fetchAuthSession()).tokens.idToken,
-        },
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        const data = Array.isArray(result) ? result : (result.data?.listMessagesBySession || []);
-
-        const uniqueMessages = [];
-        const messageIds = new Set();
-        const messageContentMap = new Map();
-
-        const sortedData = [...data].sort((a, b) => new Date(a.time_sent) - new Date(b.time_sent));
-
-        sortedData.forEach((message) => {
-          if (
-            message.message_content.trim() === "introduce yourself briefly" ||
-            message.message_content.includes("Begin the conversation as the")
-          ) {
-            return;
-          }
-
-          let normalizedMsg = { ...message };
-          const n = normalizeVoiceLine(normalizedMsg.message_content);
-          if (!n) return;
-
-          normalizedMsg.message_content = n.message_content;
-          normalizedMsg.student_sent = Object.prototype.hasOwnProperty.call(
-            n,
-            "student_sent"
-          )
-            ? n.student_sent
-            : message.student_sent;
-
-          const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"}-${normalizedMsg.message_content.trim()}`;
-
-          if (!messageIds.has(normalizedMsg.message_id) && !messageContentMap.has(contentKey)) {
-            messageIds.add(normalizedMsg.message_id);
-            messageContentMap.set(contentKey, true);
-            uniqueMessages.push(normalizedMsg);
-          } else {
-            console.log("Filtered out duplicate message:", normalizedMsg.message_content.substring(0, 30) + "...");
-          }
-        });
-
-        console.log(`[getMessages] Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`);
-        setMessages(filterUnwantedMessages(uniqueMessages));
-      } else {
-        const errorText = await response.text();
-        console.error("[getMessages] Failed to retrieve messages - Status:", response.status, response.statusText, "Body:", errorText);
-        setMessages([]);
-      }
+      console.log(`[getMessages] Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`);
+      setMessages(filterUnwantedMessages(uniqueMessages));
     } catch (error) {
       console.error("[getMessages] Error fetching messages:", error);
       setMessages([]);

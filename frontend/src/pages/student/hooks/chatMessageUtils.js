@@ -149,3 +149,48 @@ export function normalizeEmpathyData(empathyData = {}) {
     ...(empathyData.source ? { source: empathyData.source } : {}),
   };
 }
+
+/**
+ * Sort messages, normalize voice prefixes, remove known prompt/system rows,
+ * and drop duplicates by id/content-role pair.
+ */
+export function dedupeAndNormalizeMessages(data = []) {
+  const uniqueMessages = [];
+  const messageIds = new Set();
+  const messageContentMap = new Map();
+
+  const sortedData = [...data].sort(
+    (a, b) => new Date(a.time_sent) - new Date(b.time_sent)
+  );
+
+  sortedData.forEach((message) => {
+    const content = message?.message_content || "";
+    if (
+      content.trim() === "introduce yourself briefly" ||
+      content.includes("Begin the conversation as the")
+    ) {
+      return;
+    }
+
+    const normalized = normalizeVoiceLine(content);
+    if (!normalized) return;
+
+    const normalizedMsg = {
+      ...message,
+      message_content: normalized.message_content,
+      student_sent: Object.prototype.hasOwnProperty.call(normalized, "student_sent")
+        ? normalized.student_sent
+        : message.student_sent,
+    };
+
+    const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"}-${normalizedMsg.message_content.trim()}`;
+
+    if (!messageIds.has(normalizedMsg.message_id) && !messageContentMap.has(contentKey)) {
+      messageIds.add(normalizedMsg.message_id);
+      messageContentMap.set(contentKey, true);
+      uniqueMessages.push(normalizedMsg);
+    }
+  });
+
+  return uniqueMessages;
+}

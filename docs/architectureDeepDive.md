@@ -183,6 +183,16 @@ This control-plane view covers key CDK-managed components that are intentionally
 8. Generated text is streamed back to the frontend through AWS AppSync subscriptions.
 9. Realtime voice conversations use ALB/NLB load balancers in front of the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, DynamoDB-backed history, and RDS-backed session persistence.
 
+## Backend Request Pipeline (Phase 1 Refactor)
+
+The Node.js role routers now share a common request pipeline implementation in `cdk/lambda/lib/shared/requestPipeline.js`.
+
+1. Router handlers resolve route metadata from explicit domain registries (`student/domains.js`, `instructor/domains.js`, `adminFunction/routeDomains.js`).
+2. Required query-parameter validation is defined per route in domain metadata rather than duplicated inline in each handler.
+3. Instructor/student ownership checks (`email`, `student_email`, `user_email`, `instructor_email`) are enforced centrally before route execution.
+4. Typed operational errors in `cdk/lambda/lib/shared/errors.js` standardize status-code mapping and error payload shape.
+5. Domain service modules in `cdk/lambda/lib/services/` host shared SQL/business logic for groups, sessions, users, empathy, and voice to reduce route-handler duplication.
+
 ## Database Schema
 
 ```mermaid

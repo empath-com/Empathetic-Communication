@@ -1,94 +1,19 @@
+const { getSimulationGroupsByUser, getInstructorGroups } = require("../services/groupsService");
+
 const routes = {
   "GET /instructor/student_group": async ({ event, sqlConnection, response }) => {
-    if (
-      event.queryStringParameters != null &&
-      event.queryStringParameters.email
-    ) {
-      const email = event.queryStringParameters.email;
-
-      try {
-        // First, get the user_id for the given email
-        const userResult = await sqlConnection`
-          SELECT user_id FROM "users" WHERE user_email = ${email};
-        `;
-
-        if (userResult.length === 0) {
-          response.statusCode = 404;
-          response.body = JSON.stringify({ error: "User not found" });
-          return response;
-        }
-
-        const userId = userResult[0].user_id;
-
-        // Now, fetch the simulation groups for that user_id
-        const data = await sqlConnection`
-          SELECT sg.*
-          FROM "enrolments" e
-          JOIN "simulation_groups" sg
-          ON e.simulation_group_id = sg.simulation_group_id
-          WHERE e.user_id = ${userId}
-          ORDER BY sg.group_name, sg.simulation_group_id;
-        `;
-
-        response.statusCode = 200;
-        response.body = JSON.stringify(data);
-      } catch (err) {
-        response.statusCode = 500;
-        console.error(err);
-        response.body = JSON.stringify({ error: "Internal server error" });
-      }
-    } else {
-      response.statusCode = 400;
-      response.body = JSON.stringify({ error: "Invalid value" });
-    }
+    const email = event.queryStringParameters.email;
+    const data = await getSimulationGroupsByUser(sqlConnection, email);
+    response.statusCode = 200;
+    response.body = JSON.stringify(data);
     return response;
   },
 
   "GET /instructor/groups": async ({ event, sqlConnection, response }) => {
-    if (
-      event.queryStringParameters != null &&
-      event.queryStringParameters.email
-    ) {
-      const instructorEmail = event.queryStringParameters.email;
-
-      try {
-        // First, get the user ID using the email
-        const userIdResult = await sqlConnection`
-            SELECT user_id
-            FROM "users"
-            WHERE user_email = ${instructorEmail}
-            LIMIT 1;
-          `;
-
-        const userId = userIdResult[0]?.user_id;
-
-        if (!userId) {
-          response.statusCode = 404;
-          response.body = JSON.stringify({ error: "Instructor not found" });
-          return response;
-        }
-
-        // Query to get all simulation groups where the instructor is enrolled
-        const data = await sqlConnection`
-            SELECT g.*
-            FROM "enrolments" e
-            JOIN "simulation_groups" g ON e.simulation_group_id = g.simulation_group_id
-            WHERE e.user_id = ${userId}
-            AND e.enrolment_type = 'instructor'
-            ORDER BY g.group_name, g.simulation_group_id;
-          `;
-
-        response.statusCode = 200;
-        response.body = JSON.stringify(data);
-      } catch (err) {
-        response.statusCode = 500;
-        console.error(err);
-        response.body = JSON.stringify({ error: "Internal server error" });
-      }
-    } else {
-      response.statusCode = 400;
-      response.body = JSON.stringify({ error: "email is required" });
-    }
+    const instructorEmail = event.queryStringParameters.email;
+    const data = await getInstructorGroups(sqlConnection, instructorEmail);
+    response.statusCode = 200;
+    response.body = JSON.stringify(data);
     return response;
   },
 

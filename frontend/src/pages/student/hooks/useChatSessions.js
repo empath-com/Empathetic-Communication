@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchUserAttributes } from "aws-amplify/auth";
-import { apiGet, apiDelete } from "../../../utils/apiClient";
 
 /**
  * Manages chat session CRUD: listing, creating, deleting, and switching sessions.
@@ -26,6 +24,7 @@ export default function useChatSessions({
   group,
   patient,
   getAuth,
+  studentApi,
   handleStreamingResponseRef,
   setIsAItyping,
   sessions,
@@ -48,11 +47,11 @@ export default function useChatSessions({
       }
 
       try {
-        const { email } = await fetchUserAttributes();
-        const data = await apiGet("student/patient", {
+        const { email } = await getAuth();
+        const data = await studentApi.getPatientSessions({
           email,
-          simulation_group_id: group.simulation_group_id,
-          patient_id: patient.patient_id,
+          simulationGroupId: group.simulation_group_id,
+          patientId: patient.patient_id,
         });
         setSessions(data);
         const latestSession = data[data.length - 1];
@@ -68,7 +67,7 @@ export default function useChatSessions({
     };
 
     fetchPatient();
-  }, [group, patient, setCurrentSessionId, setSession, setSessions]);
+  }, [group, patient, getAuth, studentApi, setCurrentSessionId, setSession, setSessions]);
 
   // --- Refs to read fresh submitting/typing state without dep-array issues ---
   const isSubmittingRef = useRef(false);
@@ -100,34 +99,17 @@ export default function useChatSessions({
   // --- Create new chat session ---
   const handleNewChat = () => {
     let sessionData;
-    let authToken;
 
     setTimeout(() => setIsAItyping(true), 775);
     return getAuth()
-      .then(({ token, email }) => {
-        authToken = token;
+      .then(({ email }) => {
         const session_name = "New chat";
-        const url = `${import.meta.env.VITE_API_ENDPOINT}student/create_session?email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent(session_name)}`;
-
-        return fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
+        return studentApi.createSession({
+          email,
+          simulationGroupId: group.simulation_group_id,
+          patientId: patient.patient_id,
+          sessionName: session_name,
         });
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to create session: ${response.statusText}`);
-        }
-        return response.json();
       })
       .then((data) => {
         sessionData = data[0];
@@ -137,20 +119,15 @@ export default function useChatSessions({
         setSession(sessionData);
         setCreatingSession(false);
 
-        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT}student/text_generation?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&session_id=${encodeURIComponent(
-          sessionData.session_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
-
         // Use the ref to call handleStreamingResponse from useChatMessages
         if (handleStreamingResponseRef.current) {
           return handleStreamingResponseRef.current(
-            textGenUrl,
-            authToken,
-            "",
+            {
+              simulationGroupId: group.simulation_group_id,
+              sessionId: sessionData.session_id,
+              patientId: patient.patient_id,
+              sessionName: "New chat",
+            },
             sessionData.session_id
           );
         }
@@ -168,12 +145,12 @@ export default function useChatSessions({
   // --- Delete session ---
   const handleDeleteSession = async (sessionDelete) => {
     try {
-      const { email } = await fetchUserAttributes();
-      await apiDelete("student/delete_session", {
+      const { email } = await getAuth();
+      await studentApi.deleteSession({
         email,
-        simulation_group_id: group.simulation_group_id,
-        patient_id: patient.patient_id,
-        session_id: sessionDelete.session_id,
+        simulationGroupId: group.simulation_group_id,
+        patientId: patient.patient_id,
+        sessionId: sessionDelete.session_id,
       });
       setSessions((prevSessions) =>
         prevSessions.filter(

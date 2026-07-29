@@ -10,6 +10,8 @@ import {
   fetchAuthSession,
 } from "aws-amplify/auth";
 import { toast } from "react-toastify";
+import { createApiClient } from "../../utils/apiClient";
+import { createStudentChatApi } from "../../services/api/studentChatApi";
 
 const toastOpts = {
   position: "top-center",
@@ -21,6 +23,15 @@ const toastOpts = {
   progress: undefined,
   theme: "colored",
 };
+
+const authApiClient = createApiClient({
+  tokenProvider: async () => {
+    const session = await fetchAuthSession();
+    return session.tokens.idToken;
+  },
+});
+
+const authStudentApi = createStudentChatApi(authApiClient);
 
 /**
  * Auth-flow state machine hook.
@@ -252,30 +263,13 @@ export default function useAuthFlow() {
       console.log("handle auto sign in", user.isSignedIn);
 
       if (user.isSignedIn) {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }student/create_user?user_email=${encodeURIComponent(
-            username
-          )}&username=${encodeURIComponent(
-            username
-          )}&first_name=${encodeURIComponent(
-            firstName
-          )}&last_name=${encodeURIComponent(
-            lastName
-          )}&preferred_name=${encodeURIComponent(firstName)}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const data = await response.json();
+        const data = await authStudentApi.createStudentUserProfile({
+          userEmail: username,
+          username,
+          firstName,
+          lastName,
+          preferredName: firstName,
+        });
         console.log("Response from backend:", data);
 
         setLoading(false);

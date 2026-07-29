@@ -1,3 +1,5 @@
+const { getUserIdByEmail } = require("../services/usersService");
+
 const routes = {
   "GET /instructor/view_students": async ({ event, sqlConnection, response }) => {
     if (
@@ -43,23 +45,7 @@ const routes = {
         event.queryStringParameters;
 
       try {
-        // Step 1: Get the user ID from the user email
-        const userResult = await sqlConnection`
-          SELECT user_id
-          FROM "users"
-          WHERE user_email = ${user_email}
-          LIMIT 1;
-        `;
-
-        const userId = userResult[0]?.user_id;
-
-        if (!userId) {
-          response.statusCode = 404;
-          response.body = JSON.stringify({
-            error: "User not found",
-          });
-          return response;
-        }
+        const userId = await getUserIdByEmail(sqlConnection, user_email);
 
         // Step 2: Delete the student from the simulation group enrolments
         const deleteResult = await sqlConnection`
@@ -116,21 +102,7 @@ const routes = {
         event.queryStringParameters.simulation_group_id;
 
       try {
-        // Step 1: Get the user ID from the user email
-        const userResult = await sqlConnection`
-          SELECT user_id
-          FROM "users"
-          WHERE user_email = ${studentEmail}
-          LIMIT 1;
-        `;
-
-        const userId = userResult[0]?.user_id;
-
-        if (!userId) {
-          response.statusCode = 404;
-          response.body = JSON.stringify({ error: "User not found" });
-          return response;
-        }
+        const userId = await getUserIdByEmail(sqlConnection, studentEmail);
 
         // Step 2: Query to get the student's messages for a specific simulation group
         const messages = await sqlConnection`
@@ -171,23 +143,7 @@ const routes = {
         event.queryStringParameters.simulation_group_id;
 
       try {
-        // Step 1: Get the user ID from the student email
-        const userResult = await sqlConnection`
-                SELECT user_id
-                FROM "users"
-                WHERE user_email = ${studentEmail}
-                LIMIT 1;
-            `;
-
-        const userId = userResult[0]?.user_id;
-
-        if (!userId) {
-          response.statusCode = 404;
-          response.body = JSON.stringify({
-            error: "Student not found",
-          });
-          return response;
-        }
+        const userId = await getUserIdByEmail(sqlConnection, studentEmail);
 
         // Step 2: Get all patients linked to the student under the given simulation group
         const studentPatients = await sqlConnection`
