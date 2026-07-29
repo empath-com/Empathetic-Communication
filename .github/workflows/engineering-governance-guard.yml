@@ -1,0 +1,62 @@
+name: Engineering Governance Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  docs-consistency:
+    name: Docs Consistency and Stale Content Guard
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate docs consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check_docs_consistency.sh
+
+  debt-scorecard:
+    name: Debt Scorecard Freshness
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate scorecard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/generate_debt_scorecard.sh
+
+      - name: Verify scorecard committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- docs/tech-debt-scorecard.md; then
+            echo "docs/tech-debt-scorecard.md is out of date."
+            echo "Run: bash .github/scripts/generate_debt_scorecard.sh"
+            git --no-pager diff -- docs/tech-debt-scorecard.md
+            exit 1
+          fi
+
+  adr-presence:
+    name: ADR Presence Guard
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required ADRs exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f docs/adr/ADR-0001-shared-router-pipeline.md
+          test -f docs/adr/ADR-0002-structured-logging-standard.md
+          test -f docs/adr/ADR-0003-api-contract-governance.md
+          echo "Required ADR files exist."

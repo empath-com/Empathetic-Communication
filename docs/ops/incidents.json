@@ -1,0 +1,11 @@
+[
+  {
+    "id": "INC-2026-07-23-lambda-bundle-integrity",
+    "date": "2026-07-23",
+    "environment": "staging",
+    "severity": "high",
+    "escaped": true,
+    "summary": "Lambda bundle scope mismatch caused Cannot find module failures for protected API paths.",
+    "source": "AGENTS.md non-negotiable guardrails item 6"
+  }
+]
