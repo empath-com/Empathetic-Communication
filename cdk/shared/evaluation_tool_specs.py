@@ -9,6 +9,8 @@ CARE_TOOL_NAME_STRICT = "submit_empathy_evaluation"
 CARE_TOOL_NAME_RELAXED = "submit_empathy_evaluation_relaxed"
 PRISM_TOOL_NAME_STRICT = "submit_prism_evaluation"
 PRISM_TOOL_NAME_RELAXED = "submit_prism_evaluation_relaxed"
+NURSE_TOOL_NAME_STRICT = "submit_nurse_evaluation"
+NURSE_TOOL_NAME_RELAXED = "submit_nurse_evaluation_relaxed"
 
 CARE_CRITERIA = [
     "making_feel_at_ease",
@@ -25,8 +27,11 @@ CARE_CRITERIA = [
 
 PRISM_CRITERIA = ["prepare", "recognise", "interact", "self_assess", "master"]
 
+NURSE_CRITERIA = ["name", "understand", "respect", "support", "explore"]
+
 CARE_JUSTIFICATION_KEYS = [f"{k}_justification" for k in CARE_CRITERIA]
 PRISM_JUSTIFICATION_KEYS = [f"{k}_justification" for k in PRISM_CRITERIA]
+NURSE_JUSTIFICATION_KEYS = [f"{k}_justification" for k in NURSE_CRITERIA]
 
 CARE_CRITERIA_LABELS = {
     "making_feel_at_ease": "1. Making you feel at ease",
@@ -49,6 +54,14 @@ PRISM_CRITERIA_LABELS = {
     "master": "M. Master — Integrated skill delivery",
 }
 
+NURSE_CRITERIA_LABELS = {
+    "name": "N. Name — Recognize and acknowledge patient emotion",
+    "understand": "U. Understand — Validate the emotional response",
+    "respect": "R. Respect — Acknowledge patient strengths and effort",
+    "support": "S. Support — Communicate partnership and support",
+    "explore": "E. Explore — Use open-ended questions to deepen understanding",
+}
+
 
 def resolve_schema_variant(schema_variant: str | None = None) -> str:
     normalized = (schema_variant or os.getenv("EMPATHY_TOOL_SCHEMA_VARIANT", SCHEMA_VARIANT_STRICT)).strip().lower()
@@ -65,6 +78,12 @@ def get_prism_tool_name(schema_variant: str | None = None) -> str:
     if resolve_schema_variant(schema_variant) == SCHEMA_VARIANT_RELAXED:
         return PRISM_TOOL_NAME_RELAXED
     return PRISM_TOOL_NAME_STRICT
+
+
+def get_nurse_tool_name(schema_variant: str | None = None) -> str:
+    if resolve_schema_variant(schema_variant) == SCHEMA_VARIANT_RELAXED:
+        return NURSE_TOOL_NAME_RELAXED
+    return NURSE_TOOL_NAME_STRICT
 
 
 def _care_base_properties() -> dict:
@@ -207,5 +226,87 @@ def get_prism_tool_spec(schema_variant: str | None = None) -> dict:
         f"Evaluate the {_pro} using PRISM (5 dimensions) and return structured scores with reasoning."
         if strict
         else f"PRISM scoring schema for {_pro}."
+    )
+    return {"toolSpec": {"name": tool_name, "description": description, "inputSchema": {"json": schema}}}
+
+
+def _nurse_base_properties() -> dict:
+    return {
+        "name": {"type": "integer", "minimum": 1, "maximum": 4},
+        "understand": {"type": "integer", "minimum": 1, "maximum": 4},
+        "respect": {"type": "integer", "minimum": 1, "maximum": 4},
+        "support": {"type": "integer", "minimum": 1, "maximum": 4},
+        "explore": {"type": "integer", "minimum": 1, "maximum": 4},
+        "emotional_cues": {
+            "type": "object",
+            "properties": {
+                "detected_emotions": {"type": "array", "items": {"type": "string"}},
+                "missed_emotions": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "judge_reasoning": {
+            "type": "object",
+            "properties": {
+                "name_justification": {"type": "string"},
+                "understand_justification": {"type": "string"},
+                "respect_justification": {"type": "string"},
+                "support_justification": {"type": "string"},
+                "explore_justification": {"type": "string"},
+                "overall_assessment": {"type": "string"},
+            },
+        },
+        "feedback": {
+            "type": "object",
+            "properties": {
+                "strengths": {"type": "array", "items": {"type": "string"}},
+                "missed_opportunities": {"type": "array", "items": {"type": "string"}},
+                "role_modelled_response": {"type": "string"},
+                "behaviour_goal": {"type": "string"},
+            },
+        },
+    }
+
+
+def get_nurse_tool_spec(schema_variant: str | None = None) -> dict:
+    _pro = PRACTITIONER_ROLE
+    variant = resolve_schema_variant(schema_variant)
+    strict = variant == SCHEMA_VARIANT_STRICT
+    tool_name = get_nurse_tool_name(variant)
+    schema = {
+        "type": "object",
+        "properties": _nurse_base_properties(),
+    }
+    if strict:
+        schema["required"] = [
+            "name",
+            "understand",
+            "respect",
+            "support",
+            "explore",
+            "emotional_cues",
+            "judge_reasoning",
+            "feedback",
+        ]
+        schema["properties"]["emotional_cues"]["required"] = ["detected_emotions", "missed_emotions"]
+        schema["properties"]["judge_reasoning"]["required"] = [
+            "name_justification",
+            "understand_justification",
+            "respect_justification",
+            "support_justification",
+            "explore_justification",
+            "overall_assessment",
+        ]
+        schema["properties"]["feedback"]["required"] = [
+            "strengths",
+            "missed_opportunities",
+            "role_modelled_response",
+            "behaviour_goal",
+        ]
+
+    description = (
+        f"Evaluate the {_pro} using the NURSE framework (5 empathic communication domains, scored 1–4) "
+        "and return structured scores, emotional cue detection, and actionable feedback."
+        if strict
+        else f"NURSE empathic communication scoring schema for {_pro}."
     )
     return {"toolSpec": {"name": tool_name, "description": description, "inputSchema": {"json": schema}}}

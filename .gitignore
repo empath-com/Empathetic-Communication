@@ -156,3 +156,5 @@ frontend/stress-reports/*
 
 # Generated stress token bundles
 frontend/scripts/stress/tokens.generated.json
+cdk/shared/__pycache__
+__pycache__
