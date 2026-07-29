@@ -193,6 +193,16 @@ The Node.js role routers now share a common request pipeline implementation in `
 4. Typed operational errors in `cdk/lambda/lib/shared/errors.js` standardize status-code mapping and error payload shape.
 5. Domain service modules in `cdk/lambda/lib/services/` host shared SQL/business logic for groups, sessions, users, empathy, and voice to reduce route-handler duplication.
 
+## Observability And Operability (Phase 3)
+
+Phase 3 introduces a shared structured logging contract for Node runtime paths and maps those logs to CloudWatch metrics, dashboards, and alert policies.
+
+1. Lambda runtime contract lives in `cdk/lambda/lib/shared/logger.js`; socket runtime contract lives in `cdk/socket-server/logger.js`. Both expose the same interface (`createLogger`, `child`, `debug`, `info`, `warn`, `error`) and honor `LOG_LEVEL`/`NODE_LOG_LEVEL` environment controls.
+2. The shared request pipeline (`cdk/lambda/lib/shared/requestPipeline.js`) now emits structured request lifecycle events with correlation fields: `requestId`, `role`, `route`, `sessionId`, `durationMs`, and `errorCode`.
+3. Socket runtime paths (`cdk/socket-server/server.js`, `cdk/socket-server/novaOutputProcessor.js`) emit structured operational events for authentication outcomes, text-stream starts/errors, disconnects, voice session lifecycle, and DB configuration failures.
+4. API stack monitoring (`cdk/lib/constructs/monitoring.ts`) now derives Lambda request/error/DB-connection metrics from structured logs, adds an ops dashboard, and creates SLO-aligned alarms (SEV2/SEV3 tags in alarm descriptions).
+5. Socket stack monitoring (`cdk/lib/ecs-socket-stack.ts`) now derives streaming-failure, disconnect-spike, and DB-connection metrics from socket structured logs, plus error-budget burn indicators aligned to a 99.5% stream-success SLO.
+
 ## Database Schema
 
 ```mermaid

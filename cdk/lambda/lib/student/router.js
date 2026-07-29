@@ -8,6 +8,8 @@ let { SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT, USER_POOL, CORS_ALLOWED_ORIGIN = "*
 exports.handler = createRoleRequestHandler({
   corsAllowedOrigin: CORS_ALLOWED_ORIGIN,
   routeDomains,
+  role: "student",
+  service: "student-lambda",
   getDbConnection: () => ensureDbConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT),
   auth: {
     enabled: true,

@@ -2,16 +2,22 @@ const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { spawn } = require("child_process");
+const { randomUUID } = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { verifyToken, getStsCredentials } = require("./auth");
 const { processNovaOutput, processNovaPlainTextLine } = require("./novaOutputProcessor");
+const { createLogger } = require("./logger");
 
 const app = express();
 const server = createServer(app);
+const logger = createLogger({ service: "socket-server", component: "runtime", role: "socket" });
 
 const corsOrigin = process.env.CORS_ALLOWED_ORIGIN || "*";
-console.log(`🌐 CORS configured for origin: ${corsOrigin}`);
+logger.info("Socket CORS configured", {
+  event: "socket_cors_configured",
+  corsOrigin,
+});
 
 const io = new Server(server, {
   cors: { origin: corsOrigin, methods: ["GET", "POST"] },
@@ -37,7 +43,13 @@ app.get("/health", (req, res) => {
     health_checks: healthCheckCount,
     memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
   };
-  console.log(`[${new Date().toISOString()}] Health check #${healthCheckCount} from ${req.ip} - Uptime: ${uptime}s, Clients: ${io.engine.clientsCount}`);
+  logger.debug("Socket health check", {
+    event: "socket_health_check",
+    route: "GET /health",
+    requestId: req.headers["x-request-id"] || null,
+    activeClients: io.engine.clientsCount,
+    uptimeSeconds: uptime,
+  });
   res.json(metrics);
 });
 
@@ -51,40 +63,98 @@ io.use(async (socket, next) => {
     const decoded = await verifyToken(token);
     socket.userId = decoded.sub;
     socket.userEmail = decoded.email;
-    console.log("🔐 User authenticated:", socket.userEmail);
+    logger.info("Socket user authenticated", {
+      event: "socket_auth_success",
+      route: "socket_auth",
+      userEmail: socket.userEmail,
+      socketId: socket.id,
+      requestId: socket.handshake.auth?.requestId || null,
+    });
     next();
   } catch (err) {
-    console.error("🔐 Authentication failed:", err.message);
+    logger.error(
+      "Socket authentication failed",
+      {
+        event: "socket_auth_failure",
+        route: "socket_auth",
+        socketId: socket.id,
+      },
+      err
+    );
     next(new Error("Authentication failed"));
   }
 });
 
 io.on("connection", (socket) => {
+  const requestId = socket.handshake.auth?.requestId || randomUUID();
+  socket.data.requestId = requestId;
   totalConnections++;
-  console.log(`🔌 CLIENT CONNECTED: ${socket.id} (Total connections: ${totalConnections}, Active: ${io.engine.clientsCount})`);
-  console.log(
-    process.env.SM_DB_CREDENTIALS
-      ? "✅ DB CREDENTIALS LOADED"
-      : "❌ NO DB CREDENTIALS"
-  );
-  console.log(
-    process.env.RDS_PROXY_ENDPOINT ? `✅ RDS PROXY: ${process.env.RDS_PROXY_ENDPOINT}` : "❌ NO RDS PROXY"
-  );
+  const socketLogger = logger.child({
+    socketId: socket.id,
+    requestId,
+    userEmail: socket.userEmail || null,
+    route: "socket_connection",
+  });
+
+  socketLogger.info("Socket client connected", {
+    event: "socket_connected",
+    activeClients: io.engine.clientsCount,
+    totalConnections,
+  });
+
+  if (process.env.SM_DB_CREDENTIALS) {
+    socketLogger.info("Socket DB credentials loaded", {
+      event: "db_credentials_loaded",
+      route: "socket_connection",
+    });
+  } else {
+    socketLogger.error("Socket DB credentials missing", {
+      event: "db_connection_error",
+      route: "socket_connection",
+      errorCode: "MISSING_DB_CREDENTIALS",
+    });
+  }
+
+  if (process.env.RDS_PROXY_ENDPOINT) {
+    socketLogger.info("Socket RDS proxy configured", {
+      event: "db_proxy_configured",
+      route: "socket_connection",
+      rdsProxyEndpoint: process.env.RDS_PROXY_ENDPOINT,
+    });
+  } else {
+    socketLogger.error("Socket RDS proxy missing", {
+      event: "db_connection_error",
+      route: "socket_connection",
+      errorCode: "MISSING_RDS_PROXY_ENDPOINT",
+    });
+  }
 
   let novaProcess = null;
   let novaReady = false;
   let diagnosisCompleted = false;
 
   setTimeout(() => {
-    console.log(`🔌 ACTIVE CLIENTS: ${io.engine.clientsCount}`);
+    socketLogger.debug("Socket active client snapshot", {
+      event: "socket_active_clients_snapshot",
+      route: "socket_connection",
+      activeClients: io.engine.clientsCount,
+    });
   }, 100);
 
   socket.on("error", (err) => {
-    console.error("🔌 SOCKET ERROR:", err);
+    socketLogger.error("Socket error", {
+      event: "socket_error",
+      route: "socket_connection",
+    }, err);
   });
 
   const startVoiceSession = async (config = {}) => {
-    console.log("🚀 Starting Nova Sonic session for client:", socket.id);
+    socketLogger.info("Starting Nova voice session", {
+      event: "voice_session_start",
+      route: "start_voice_session",
+      sessionId: config.session_id || null,
+      patientId: config.patient_id || null,
+    });
 
     audioStarted = false;
     // Clear any lingering end-audio wait so the new session's mic input isn't silently dropped
@@ -100,13 +170,25 @@ io.on("connection", (socket) => {
     diagnosisCompleted = false;
 
     // Get Cognito Identity Pool credentials for user-specific access
-    console.log("🔑 Getting Cognito Identity Pool credentials for user:", socket.userEmail);
+    socketLogger.debug("Requesting STS credentials", {
+      event: "socket_sts_credentials_requested",
+      route: "start_voice_session",
+      sessionId: config.session_id || null,
+    });
     let stsCredentials;
     try {
       stsCredentials = await getStsCredentials(socket.handshake.auth.token);
-      console.log("✅ Successfully obtained Cognito Identity Pool credentials");
+      socketLogger.info("STS credentials acquired", {
+        event: "socket_sts_credentials_acquired",
+        route: "start_voice_session",
+        sessionId: config.session_id || null,
+      });
     } catch (error) {
-      console.error("❌ Failed to get Cognito credentials:", error.message);
+      socketLogger.error("Failed to get STS credentials", {
+        event: "socket_sts_credentials_error",
+        route: "start_voice_session",
+        sessionId: config.session_id || null,
+      }, error);
       socket.emit("nova-error", { error: "Failed to authenticate with AWS services" });
       return;
     }
@@ -115,11 +197,15 @@ io.on("connection", (socket) => {
     
     // Try python3 first, then python if that fails
     const pythonCmd = process.env.PYTHON_CMD || "python3";
-    console.log(`🐍 PYTHON_CMD env var: ${process.env.PYTHON_CMD}`);
-    console.log(`🐍 Using command: ${pythonCmd}`);
-    console.log(`🐍 Attempting to spawn: ${pythonCmd} voice_runtime.py`);
-    console.log(`🔊 VOICE_RUNTIME env: ${process.env.VOICE_RUNTIME || "(not set — defaults to polly in Python)"}`);
-    console.log(`📋 Session config: session_id=${config.session_id}, voice_id=${config.voice_id}, patient_id=${config.patient_id}`);
+    socketLogger.debug("Preparing Nova process spawn", {
+      event: "nova_process_spawn_prepare",
+      route: "start_voice_session",
+      sessionId: config.session_id || null,
+      patientId: config.patient_id || null,
+      voiceId: config.voice_id || null,
+      pythonCmd,
+      voiceRuntime: process.env.VOICE_RUNTIME || "polly",
+    });
     
     try {
       novaProcess = spawn(pythonCmd, ["voice_runtime.py"], {
@@ -143,9 +229,18 @@ io.on("connection", (socket) => {
           COGNITO_TOKEN: socket.handshake.auth.token || "",
         },
       });
-      console.log("📡 Nova process spawned with PID:", novaProcess.pid);
+      socketLogger.info("Nova process spawned", {
+        event: "nova_process_spawned",
+        route: "start_voice_session",
+        sessionId: config.session_id || null,
+        pid: novaProcess.pid,
+      });
     } catch (error) {
-      console.error("❌ Failed to spawn Nova process:", error.message);
+      socketLogger.error("Failed to spawn Nova process", {
+        event: "nova_process_spawn_error",
+        route: "start_voice_session",
+        sessionId: config.session_id || null,
+      }, error);
       socket.emit("nova-error", { error: "Failed to start voice system" });
       return;
     }
@@ -160,7 +255,12 @@ io.on("connection", (socket) => {
     novaProcess.stdout.on("data", (data) => {
       stdoutLineBuffer += data.toString();
       if (stdoutLineBuffer.length > STDOUT_BUFFER_MAX) {
-        console.error(`⚠️ stdoutLineBuffer exceeded ${STDOUT_BUFFER_MAX / 1e6} MB — truncating to prevent OOM`);
+        socketLogger.warn("Nova stdout buffer exceeded safety threshold", {
+          event: "nova_stdout_buffer_limit",
+          route: "nova_stdout",
+          sessionId: config.session_id || null,
+          maxBytes: STDOUT_BUFFER_MAX,
+        });
         stdoutLineBuffer = stdoutLineBuffer.slice(-1024); // keep tail in case it's mid-line
       }
       const lines = stdoutLineBuffer.split("\n");
@@ -171,7 +271,14 @@ io.on("connection", (socket) => {
         .forEach((line) => {
           try {
             const parsed = JSON.parse(line);
-            if (parsed.type !== "audio") console.log("📤 NOVA JSON:", parsed);
+            if (parsed.type !== "audio") {
+              socketLogger.debug("Nova JSON output", {
+                event: "nova_json_output",
+                route: "nova_stdout",
+                sessionId: config.session_id || null,
+                novaType: parsed.type,
+              });
+            }
             processNovaOutput(parsed, socket, {
               novaReady,
               setNovaReady: (value) => { novaReady = value; },
@@ -186,20 +293,25 @@ io.on("connection", (socket) => {
                   responseWaitTimeout = null;
                 }
               },
-            });
+            }, socketLogger);
           } catch {
             processNovaPlainTextLine(line, socket, {
               setNovaReady: (value) => { novaReady = value; },
               diagnosisCompleted,
               setDiagnosisCompleted: (value) => { diagnosisCompleted = value; },
-            });
+            }, socketLogger);
           }
         });
     });
 
     novaProcess.stderr.on("data", (data) => {
       const stderrText = data.toString().trim();
-      console.warn("⚠️ Nova stderr:", stderrText);
+      socketLogger.warn("Nova stderr output", {
+        event: "nova_stderr",
+        route: "nova_stderr",
+        sessionId: config.session_id || null,
+        stderr: stderrText,
+      });
       
       // Forward important stderr messages to frontend for debugging
       if (stderrText.includes("EMPATHY") || stderrText.includes("🧠") || stderrText.includes("ERROR")) {
@@ -212,8 +324,11 @@ io.on("connection", (socket) => {
     });
 
     novaProcess.on("error", (error) => {
-      console.error("❌ Nova process error:", error.message);
-      console.error("❌ Nova process error details:", error);
+      socketLogger.error("Nova process error", {
+        event: "nova_process_error",
+        route: "nova_process",
+        sessionId: config.session_id || null,
+      }, error);
       
       // Send error details to frontend
       socket.emit("nova-error", { 
@@ -223,7 +338,11 @@ io.on("connection", (socket) => {
       });
       
       if (error.code === "ENOENT") {
-        console.log("🐍 Trying 'python' instead of 'python3'");
+        socketLogger.warn("Python3 unavailable; retrying with python", {
+          event: "nova_python_retry",
+          route: "nova_process",
+          sessionId: config.session_id || null,
+        });
         // Retry with 'python' command
         try {
           novaProcess = spawn("python", ["voice_runtime.py"], {
@@ -247,9 +366,18 @@ io.on("connection", (socket) => {
               COGNITO_TOKEN: socket.handshake.auth.token || "",
             },
           });
-          console.log("📡 Nova process spawned with 'python', PID:", novaProcess.pid);
+          socketLogger.info("Nova process spawned with python fallback", {
+            event: "nova_process_spawned_fallback",
+            route: "nova_process",
+            sessionId: config.session_id || null,
+            pid: novaProcess.pid,
+          });
         } catch (retryError) {
-          console.error("❌ Failed to spawn with 'python' too:", retryError.message);
+          socketLogger.error("Nova python fallback spawn failed", {
+            event: "nova_process_spawn_error_fallback",
+            route: "nova_process",
+            sessionId: config.session_id || null,
+          }, retryError);
           socket.emit("nova-error", { error: "Python not found" });
         }
       } else {
@@ -258,7 +386,12 @@ io.on("connection", (socket) => {
     });
 
     novaProcess.on("close", (code) => {
-      console.log("🔚 Nova process closed with code:", code);
+      socketLogger.info("Nova process closed", {
+        event: "nova_process_closed",
+        route: "nova_process",
+        sessionId: config.session_id || null,
+        exitCode: code,
+      });
       novaProcess = null;
       novaReady = false;
     });
@@ -284,13 +417,22 @@ io.on("connection", (socket) => {
       if (!audioStarted) {
         novaProcess.stdin.write(JSON.stringify({ type: "start_audio" }) + "\n");
         audioStarted = true;
-        console.log("🎬 Sent start_audio to Nova process");
+        socketLogger.debug("Sent start_audio to Nova", {
+          event: "nova_start_audio_sent",
+          route: "audio_input",
+        });
       }
       novaProcess.stdin.write(
         JSON.stringify({ type: "audio", data: msg.data }) + "\n"
       );
     } else {
-      console.log("❌ Cannot send audio - not ready or stdin closed");
+      socketLogger.warn("Audio input dropped because Nova is not ready", {
+        event: "audio_input_dropped",
+        route: "audio_input",
+        novaReady,
+        hasNovaProcess: Boolean(novaProcess),
+        stdinWritable: Boolean(novaProcess?.stdin?.writable),
+      });
     }
   });
 
@@ -300,13 +442,20 @@ io.on("connection", (socket) => {
       novaProcess.stdin.write(
         JSON.stringify({ type: "text", data: msg.text }) + "\n"
       );
-      console.log("📝 Sent text to Nova process");
+      socketLogger.debug("Sent text to Nova", {
+        event: "nova_text_sent",
+        route: "text_input",
+      });
     }
   });
 
   // ─── Text generation streaming ─────────────────────────────────────────────
   socket.on("text-generation", async (data) => {
-    console.log("🚀 Text generation request:", data);
+    socketLogger.info("Text generation stream start", {
+      event: "text_generation_stream_start",
+      route: "socket_text_generation",
+      sessionId: data.session_id || null,
+    });
 
     try {
       const response = await fetch(
@@ -341,13 +490,21 @@ io.on("connection", (socket) => {
               const eventData = JSON.parse(line.slice(6));
               socket.emit("text-stream", eventData);
             } catch (e) {
-              console.warn("Failed to parse SSE:", line);
+              socketLogger.warn("Failed to parse SSE line", {
+                event: "text_generation_sse_parse_error",
+                route: "socket_text_generation",
+                sessionId: data.session_id || null,
+              });
             }
           }
         }
       }
     } catch (error) {
-      console.error("Text generation error:", error);
+      socketLogger.error("Text generation stream error", {
+        event: "text_generation_stream_error",
+        route: "socket_text_generation",
+        sessionId: data.session_id || null,
+      }, error);
       socket.emit("text-stream", {
         type: "error",
         content: "Failed to generate response",
@@ -357,7 +514,13 @@ io.on("connection", (socket) => {
 
   // ─── End‑audio event ─────────────────────────────────────────────────────
   socket.on("end-audio", () => {
-    console.log(`🛑 end-audio received — novaProcess=${!!novaProcess}, writable=${novaProcess?.stdin?.writable}, novaReady=${novaReady}`);
+    socketLogger.debug("Received end-audio", {
+      event: "end_audio_received",
+      route: "end_audio",
+      hasNovaProcess: Boolean(novaProcess),
+      stdinWritable: Boolean(novaProcess?.stdin?.writable),
+      novaReady,
+    });
     if (novaProcess && novaProcess.stdin.writable && novaReady) {
       novaProcess.stdin.write(JSON.stringify({ type: "end_audio" }) + "\n");
       audioStarted = false;
@@ -368,24 +531,40 @@ io.on("connection", (socket) => {
       waitingForResponse = true;
       if (responseWaitTimeout) clearTimeout(responseWaitTimeout);
       responseWaitTimeout = setTimeout(() => {
-        console.log("⏱️ responseWait timeout — re-enabling audio input");
+        socketLogger.warn("Response wait timeout reached; re-enabling audio", {
+          event: "end_audio_response_wait_timeout",
+          route: "end_audio",
+        });
         waitingForResponse = false;
         responseWaitTimeout = null;
       }, 30000);
 
-      console.log("🛑 Sent end_audio to Nova process, waitingForResponse=true");
+      socketLogger.info("Forwarded end-audio to Nova", {
+        event: "end_audio_forwarded",
+        route: "end_audio",
+      });
     } else {
-      console.log("⚠️ end-audio NOT forwarded — Nova not ready or process missing");
+      socketLogger.warn("End-audio not forwarded; Nova not ready", {
+        event: "end_audio_dropped",
+        route: "end_audio",
+        hasNovaProcess: Boolean(novaProcess),
+        stdinWritable: Boolean(novaProcess?.stdin?.writable),
+        novaReady,
+      });
     }
   });
 
   // ─── Voice transcription for manual empathy evaluation ──────────────────
   socket.on("voice-transcription", (data) => {
-    console.log("🎤 VOICE TRANSCRIPTION: Received for empathy evaluation:", data.text?.substring(0, 50));
-    console.log("🎤 VOICE TRANSCRIPTION: Session ID:", data.session_id);
-    console.log("🎤 VOICE TRANSCRIPTION: Nova ready:", novaReady);
-    console.log("🎤 VOICE TRANSCRIPTION: Nova process exists:", !!novaProcess);
-    console.log("🎤 VOICE TRANSCRIPTION: Stdin writable:", novaProcess?.stdin?.writable);
+    socketLogger.info("Voice transcription received", {
+      event: "voice_transcription_received",
+      route: "voice_transcription",
+      sessionId: data.session_id || null,
+      preview: data.text?.substring(0, 50) || "",
+      novaReady,
+      hasNovaProcess: Boolean(novaProcess),
+      stdinWritable: Boolean(novaProcess?.stdin?.writable),
+    });
     
     if (novaProcess && novaProcess.stdin.writable && novaReady) {
       try {
@@ -398,9 +577,17 @@ io.on("connection", (socket) => {
           simulation_group_id: data.simulation_group_id || undefined,
         };
         
-        console.log("🎤 VOICE TRANSCRIPTION: Sending message to Nova:", JSON.stringify(message).substring(0, 100));
+        socketLogger.debug("Forwarding transcription to Nova", {
+          event: "voice_transcription_forwarded",
+          route: "voice_transcription",
+          sessionId: data.session_id || null,
+        });
         novaProcess.stdin.write(JSON.stringify(message) + "\n");
-        console.log("✅ VOICE TRANSCRIPTION: Successfully sent to Nova for empathy evaluation");
+        socketLogger.info("Voice transcription forwarded successfully", {
+          event: "voice_transcription_forward_success",
+          route: "voice_transcription",
+          sessionId: data.session_id || null,
+        });
         
         // Also emit confirmation to frontend
         socket.emit("transcription-received", { 
@@ -409,14 +596,22 @@ io.on("connection", (socket) => {
         });
         
       } catch (error) {
-        console.error("❌ VOICE TRANSCRIPTION: Error sending to Nova:", error);
+        socketLogger.error("Voice transcription forwarding failed", {
+          event: "voice_transcription_forward_error",
+          route: "voice_transcription",
+          sessionId: data.session_id || null,
+        }, error);
         socket.emit("transcription-error", { error: error.message });
       }
     } else {
-      console.log("❌ VOICE TRANSCRIPTION: Cannot send - Nova not ready or stdin not writable");
-      console.log("   - Nova process:", !!novaProcess);
-      console.log("   - Stdin writable:", novaProcess?.stdin?.writable);
-      console.log("   - Nova ready:", novaReady);
+      socketLogger.warn("Voice transcription dropped; Nova unavailable", {
+        event: "voice_transcription_dropped",
+        route: "voice_transcription",
+        sessionId: data.session_id || null,
+        hasNovaProcess: Boolean(novaProcess),
+        stdinWritable: Boolean(novaProcess?.stdin?.writable),
+        novaReady,
+      });
       
       socket.emit("transcription-error", { 
         error: "Voice system not ready",
@@ -433,7 +628,10 @@ io.on("connection", (socket) => {
 
   // ─── Optional Stop event ────────────────────────────────────────────────
   socket.on("stop-nova-sonic", () => {
-    console.log("🛑 Stop requested by client");
+    socketLogger.info("Stop Nova requested by client", {
+      event: "nova_stop_requested",
+      route: "stop_nova",
+    });
     if (novaProcess) {
       novaProcess.kill();
       novaProcess = null;
@@ -443,7 +641,12 @@ io.on("connection", (socket) => {
 
   // ─── Do NOT kill on disconnect ──────────────────────────────────────────
   socket.on("disconnect", () => {
-    console.log("🔌 CLIENT DISCONNECTED:", socket.id, "- Nova still running");
+    socketLogger.warn("Socket client disconnected", {
+      event: "socket_disconnected",
+      route: "socket_connection",
+      sessionId: null,
+      activeClients: io.engine.clientsCount,
+    });
   });
 });
 
@@ -452,30 +655,52 @@ const PORT = process.env.PORT || 80;
 server.listen(PORT, "0.0.0.0", () => {
   serverReady = true;
   const startupTime = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
-  console.log(`\n${'='.repeat(70)}`);
-  console.log(`✅ Socket server ready and listening on port ${PORT}`);
-  console.log(`   Startup time: ${startupTime}s`);
-  console.log(`   Time: ${new Date().toISOString()}`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`${'='.repeat(70)}\n`);
+  logger.info("Socket server ready", {
+    event: "socket_server_ready",
+    route: "server_startup",
+    port: Number(PORT),
+    startupTimeSeconds: startupTime,
+    environment: process.env.NODE_ENV || "development",
+  });
   
   // Log environment readiness
   if (process.env.SM_DB_CREDENTIALS) {
-    console.log(`✅ DB Credentials: LOADED`);
+    logger.info("Socket startup DB credentials loaded", {
+      event: "db_credentials_loaded",
+      route: "server_startup",
+    });
   } else {
-    console.log(`⚠️  DB Credentials: NOT SET`);
+    logger.error("Socket startup DB credentials missing", {
+      event: "db_connection_error",
+      route: "server_startup",
+      errorCode: "MISSING_DB_CREDENTIALS",
+    });
   }
   
   if (process.env.RDS_PROXY_ENDPOINT) {
-    console.log(`✅ RDS Proxy: ${process.env.RDS_PROXY_ENDPOINT}`);
+    logger.info("Socket startup RDS proxy configured", {
+      event: "db_proxy_configured",
+      route: "server_startup",
+      rdsProxyEndpoint: process.env.RDS_PROXY_ENDPOINT,
+    });
   } else {
-    console.log(`⚠️  RDS Proxy: NOT SET`);
+    logger.error("Socket startup RDS proxy missing", {
+      event: "db_connection_error",
+      route: "server_startup",
+      errorCode: "MISSING_RDS_PROXY_ENDPOINT",
+    });
   }
   
   if (process.env.APPSYNC_GRAPHQL_URL) {
-    console.log(`✅ AppSync GraphQL: CONFIGURED`);
+    logger.info("Socket startup AppSync configured", {
+      event: "appsync_configured",
+      route: "server_startup",
+    });
   } else {
-    console.log(`⚠️  AppSync GraphQL: NOT SET`);
+    logger.warn("Socket startup AppSync not set", {
+      event: "appsync_missing",
+      route: "server_startup",
+    });
   }
   
   // Start a watchdog to log status every 30 seconds if running for debugging
@@ -483,7 +708,14 @@ server.listen(PORT, "0.0.0.0", () => {
     setInterval(() => {
       const uptime = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
       const memory = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-      console.log(`📊 Status: Uptime=${uptime}s, Clients=${io.engine.clientsCount}, Memory=${memory}MB, HealthChecks=${healthCheckCount}`);
+      logger.info("Socket periodic status", {
+        event: "socket_periodic_status",
+        route: "server_status",
+        uptimeSeconds: uptime,
+        activeClients: io.engine.clientsCount,
+        memoryMb: memory,
+        healthChecks: healthCheckCount,
+      });
     }, 30000);
   }
 });

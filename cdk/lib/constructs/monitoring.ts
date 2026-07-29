@@ -25,6 +25,31 @@ export function createMonitoring(
 ): void {
   const { id, db, vpcStack, dataIngestFn, psycopgLayer, powertoolsLayer, lambdaRole } = props;
 
+  // Structured Lambda log groups used by the shared request pipeline.
+  const studentLogGroup = new logs.LogGroup(scope, `${id}-StudentLambdaLogGroup`, {
+    logGroupName: `/aws/lambda/${id}-studentFunction`,
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  });
+
+  const instructorLogGroup = new logs.LogGroup(scope, `${id}-InstructorLambdaLogGroup`, {
+    logGroupName: `/aws/lambda/${id}-instructorFunction`,
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  });
+
+  const adminLogGroup = new logs.LogGroup(scope, `${id}-AdminLambdaLogGroup`, {
+    logGroupName: `/aws/lambda/${id}-adminFunction`,
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  });
+
+  const textGenLogGroup = new logs.LogGroup(scope, `${id}-TextGenLambdaLogGroup`, {
+    logGroupName: `/aws/lambda/${id}-TextGenLambdaDockerFunction`,
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  });
+
   // Create Log Group for dataIngestLambdaDockerFunc
   const logGroup = new logs.LogGroup(scope, `${id}-DataIngestLambdaLogGroup`, {
     logGroupName: `/aws/lambda/${dataIngestFn.functionName}`,
@@ -114,4 +139,130 @@ export function createMonitoring(
 
   // Link the EventBridge rule to trigger timeoutHandlerLambda
   timeoutRule.addTarget(new targets.LambdaFunction(timeoutHandlerLambda));
+
+  // Structured request/error metrics from Lambda shared request pipeline.
+  const requestMetricFilters = [studentLogGroup, instructorLogGroup, adminLogGroup].map(
+    (targetGroup, idx) =>
+      new logs.MetricFilter(scope, `${id}-LambdaRequestCountFilter-${idx}`, {
+        logGroup: targetGroup,
+        metricNamespace: "EmpathAI/Observability",
+        metricName: "LambdaRequestCount",
+        filterPattern: logs.FilterPattern.stringValue("$.event", "=", "lambda_request_received"),
+        metricValue: "1",
+      })
+  );
+
+  const errorMetricFilters = [studentLogGroup, instructorLogGroup, adminLogGroup].map(
+    (targetGroup, idx) =>
+      new logs.MetricFilter(scope, `${id}-LambdaRequestErrorFilter-${idx}`, {
+        logGroup: targetGroup,
+        metricNamespace: "EmpathAI/Observability",
+        metricName: "LambdaRequestErrors",
+        filterPattern: logs.FilterPattern.stringValue("$.event", "=", "lambda_request_error"),
+        metricValue: "1",
+      })
+  );
+
+  const dbConnectionErrorFilters = [studentLogGroup, instructorLogGroup, adminLogGroup, textGenLogGroup].map(
+    (targetGroup, idx) =>
+      new logs.MetricFilter(scope, `${id}-LambdaDbConnectionErrorFilter-${idx}`, {
+        logGroup: targetGroup,
+        metricNamespace: "EmpathAI/Observability",
+        metricName: "DbConnectionErrors",
+        filterPattern: logs.FilterPattern.stringValue("$.event", "=", "db_connection_error"),
+        metricValue: "1",
+      })
+  );
+
+  const lambdaRequestCount = requestMetricFilters[0].metric({
+    statistic: "Sum",
+    period: Duration.minutes(5),
+  });
+  const lambdaRequestErrors = errorMetricFilters[0].metric({
+    statistic: "Sum",
+    period: Duration.minutes(5),
+  });
+  const lambdaDbConnectionErrors = dbConnectionErrorFilters[0].metric({
+    statistic: "Sum",
+    period: Duration.minutes(5),
+  });
+
+  const lambdaErrorRatePercent = new cloudwatch.MathExpression({
+    expression: "100 * errors / MAX([requests, 1])",
+    usingMetrics: {
+      errors: lambdaRequestErrors,
+      requests: lambdaRequestCount,
+    },
+    period: Duration.minutes(5),
+    label: "Lambda Error Rate (%)",
+  });
+
+  // SLO target is 99.0% request success => 1.0% error budget.
+  const lambdaErrorBudgetBurn = new cloudwatch.MathExpression({
+    expression: "(100 * errors / MAX([requests, 1])) / 1",
+    usingMetrics: {
+      errors: lambdaRequestErrors,
+      requests: lambdaRequestCount,
+    },
+    period: Duration.minutes(5),
+    label: "Lambda Error Budget Burn (x)",
+  });
+
+  new cloudwatch.Alarm(scope, `${id}-LambdaErrorRateWarnAlarm`, {
+    metric: lambdaErrorRatePercent,
+    threshold: 2,
+    evaluationPeriods: 2,
+    alarmDescription:
+      "[SEV3][SLO] Lambda error rate exceeded 2% over 10 minutes; investigate route-level failures.",
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  });
+
+  new cloudwatch.Alarm(scope, `${id}-LambdaErrorBudgetBurnWarnAlarm`, {
+    metric: lambdaErrorBudgetBurn,
+    threshold: 1,
+    evaluationPeriods: 3,
+    alarmDescription:
+      "[SEV3][ErrorBudget] Lambda error budget burn rate >= 1.0x for 15 minutes.",
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  });
+
+  new cloudwatch.Alarm(scope, `${id}-LambdaDbConnectionCriticalAlarm`, {
+    metric: lambdaDbConnectionErrors,
+    threshold: 1,
+    evaluationPeriods: 1,
+    alarmDescription:
+      "[SEV2] Lambda DB connection errors detected. Check Secrets Manager and RDS proxy health.",
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  });
+
+  const opsDashboard = new cloudwatch.Dashboard(scope, `${id}-LambdaOpsDashboard`, {
+    dashboardName: `${id}-lambda-ops`,
+  });
+
+  opsDashboard.addWidgets(
+    new cloudwatch.TextWidget({
+      markdown:
+        "## Lambda Operability\nSLO: 99.0% success over 5-minute windows. Alerts are tiered to reduce noise and preserve on-call focus.",
+      width: 24,
+      height: 3,
+    })
+  );
+
+  opsDashboard.addWidgets(
+    new cloudwatch.GraphWidget({
+      title: "Lambda Request Volume vs Errors",
+      width: 12,
+      left: [lambdaRequestCount, lambdaRequestErrors],
+      stacked: false,
+    }),
+    new cloudwatch.GraphWidget({
+      title: "Lambda Error Rate and Error Budget Burn",
+      width: 12,
+      left: [lambdaErrorRatePercent, lambdaErrorBudgetBurn],
+      stacked: false,
+    })
+  );
 }

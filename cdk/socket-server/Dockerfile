@@ -29,6 +29,7 @@ RUN pip install --upgrade pip setuptools && \
 COPY socket-server/server.js ./
 COPY socket-server/auth.js ./
 COPY socket-server/novaOutputProcessor.js ./
+COPY socket-server/logger.js ./
 
 ENV AWS_DEFAULT_REGION=us-east-1
 

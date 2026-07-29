@@ -1,8 +1,10 @@
 const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
 const postgres = require("postgres");
+const { createLogger } = require("../lib/shared/logger");
 
 // Create a Secrets Manager client
 const secretsManager = new SecretsManagerClient();
+const logger = createLogger({ service: "admin-db", component: "db-init", role: "admin" });
 
 async function initializeConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT) {
     try {
@@ -26,9 +28,11 @@ async function initializeConnection(SM_DB_CREDENTIALS, RDS_PROXY_ENDPOINT) {
         // Global variable to hold the database connection
         global.sqlConnectionTableCreator = postgres(connectionConfig);
 
-        console.log("Database connection initialized");
+        logger.info("Database connection initialized", { event: "db_connection_initialized" });
     } catch (error) {
-        console.error("Error initializing database connection:", error);
+        logger.error("Database connection initialization failed", {
+            event: "db_connection_error",
+        }, error);
         throw new Error("Failed to initialize database connection");
     }
 }

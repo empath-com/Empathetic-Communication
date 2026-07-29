@@ -9,6 +9,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
 import * as bedrock from "aws-cdk-lib/aws-bedrock";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 
@@ -43,6 +44,13 @@ export class EcsSocketStack extends Stack {
       type: "String",
       default: "",
       description: "Custom domain for WebSocket server (e.g., ws.example.com). Certificate and DNS must be configured externally. Leave empty to use ALB DNS name.",
+    });
+
+    const nodeLogLevel = new cdk.CfnParameter(this, "nodeLogLevel", {
+      type: "String",
+      default: "info",
+      description: "Node service log level for socket server (error|warn|info|debug)",
+      allowedValues: ["error", "warn", "info", "debug"],
     });
 
     const vpc = vpcStack.vpc;
@@ -174,12 +182,18 @@ export class EcsSocketStack extends Stack {
     });
 
     // 4) Container listening on port 80
+    const socketLogGroup = new logs.LogGroup(this, "SocketRuntimeLogGroup", {
+      logGroupName: `/ecs/${id}-socket-runtime`,
+      retention: logs.RetentionDays.THREE_MONTHS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     taskDef.addContainer("SocketContainer", {
       image: ecs.ContainerImage.fromAsset(".", { file: "socket-server/Dockerfile" }),
       portMappings: [{ containerPort: 80 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "Socket",
-        logRetention: logs.RetentionDays.THREE_MONTHS,
+        logGroup: socketLogGroup,
       }),
       environment: {
         NODE_ENV: "production",
@@ -195,6 +209,7 @@ export class EcsSocketStack extends Stack {
         APPSYNC_GRAPHQL_URL: apiServiceStack.appSyncApi.graphqlUrl,
         SOCKET_EXECUTION_ROLE_ARN: taskRole.roleArn,
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
+        LOG_LEVEL: nodeLogLevel.valueAsString,
         // Must match the model used to embed documents in text_generation (business-lambdas.ts)
         EMBEDDING_MODEL_ID: "amazon.titan-embed-text-v2:0",
         // Hybrid voice mode: LLaMA handles reasoning, Nova Sonic handles STT/TTS only.
@@ -438,5 +453,145 @@ export class EcsSocketStack extends Stack {
       value: "For cross-account access: 1) Set up VPC peering/PrivateLink, 2) Update security group rules to allow consuming account VPC CIDR, 3) Use ALB DNS name from outputs above",
       description: "Steps for cross-account access configuration",
     });
+
+    // ---------------------------------------------------------------------
+    // Phase 3 operability: structured logs -> metrics, dashboards, alerts
+    // ---------------------------------------------------------------------
+    const streamStartFilter = new logs.MetricFilter(this, "SocketTextStreamStartFilter", {
+      logGroup: socketLogGroup,
+      metricNamespace: "EmpathAI/Observability",
+      metricName: "SocketTextStreamStarts",
+      filterPattern: logs.FilterPattern.stringValue("$.event", "=", "text_generation_stream_start"),
+      metricValue: "1",
+    });
+
+    const streamErrorFilter = new logs.MetricFilter(this, "SocketTextStreamErrorFilter", {
+      logGroup: socketLogGroup,
+      metricNamespace: "EmpathAI/Observability",
+      metricName: "SocketTextStreamErrors",
+      filterPattern: logs.FilterPattern.stringValue("$.event", "=", "text_generation_stream_error"),
+      metricValue: "1",
+    });
+
+    const disconnectSpikeFilter = new logs.MetricFilter(this, "SocketDisconnectFilter", {
+      logGroup: socketLogGroup,
+      metricNamespace: "EmpathAI/Observability",
+      metricName: "SocketDisconnects",
+      filterPattern: logs.FilterPattern.stringValue("$.event", "=", "socket_disconnected"),
+      metricValue: "1",
+    });
+
+    const dbConnectionErrorFilter = new logs.MetricFilter(this, "SocketDbConnectionErrorFilter", {
+      logGroup: socketLogGroup,
+      metricNamespace: "EmpathAI/Observability",
+      metricName: "SocketDbConnectionErrors",
+      filterPattern: logs.FilterPattern.stringValue("$.event", "=", "db_connection_error"),
+      metricValue: "1",
+    });
+
+    const streamStarts = streamStartFilter.metric({ statistic: "Sum", period: Duration.minutes(5) });
+    const streamErrors = streamErrorFilter.metric({ statistic: "Sum", period: Duration.minutes(5) });
+    const disconnects = disconnectSpikeFilter.metric({ statistic: "Sum", period: Duration.minutes(5) });
+    const dbConnectionErrors = dbConnectionErrorFilter.metric({ statistic: "Sum", period: Duration.minutes(5) });
+
+    const streamErrorRatePercent = new cloudwatch.MathExpression({
+      expression: "100 * errors / MAX([starts, 1])",
+      usingMetrics: {
+        errors: streamErrors,
+        starts: streamStarts,
+      },
+      period: Duration.minutes(5),
+      label: "Socket Stream Error Rate (%)",
+    });
+
+    // SLO target is 99.5% stream success => 0.5% error budget.
+    const streamErrorBudgetBurn = new cloudwatch.MathExpression({
+      expression: "(100 * errors / MAX([starts, 1])) / 0.5",
+      usingMetrics: {
+        errors: streamErrors,
+        starts: streamStarts,
+      },
+      period: Duration.minutes(5),
+      label: "Socket Stream Error Budget Burn (x)",
+    });
+
+    new cloudwatch.Alarm(this, "SocketStreamingFailureCriticalAlarm", {
+      metric: streamErrors,
+      threshold: 5,
+      evaluationPeriods: 1,
+      alarmDescription:
+        "[SEV2] Streaming failure burst detected (>=5 failures in 5 minutes).",
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, "SocketDisconnectSpikeWarnAlarm", {
+      metric: disconnects,
+      threshold: 50,
+      evaluationPeriods: 1,
+      alarmDescription:
+        "[SEV3] Socket disconnect spike detected (>=50 disconnects in 5 minutes).",
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, "SocketDbConnectionCriticalAlarm", {
+      metric: dbConnectionErrors,
+      threshold: 1,
+      evaluationPeriods: 1,
+      alarmDescription:
+        "[SEV2] Socket DB connection/configuration errors detected.",
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, "SocketErrorBudgetBurnWarnAlarm", {
+      metric: streamErrorBudgetBurn,
+      threshold: 1,
+      evaluationPeriods: 3,
+      alarmDescription:
+        "[SEV3][ErrorBudget] Socket stream error budget burn rate >= 1.0x for 15 minutes.",
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const socketOpsDashboard = new cloudwatch.Dashboard(this, "SocketOpsDashboard", {
+      dashboardName: `${id}-socket-ops`,
+    });
+
+    socketOpsDashboard.addWidgets(
+      new cloudwatch.TextWidget({
+        markdown:
+          "## Socket Runtime Operability\nSLO: 99.5% stream success. Alerting is tiered by severity to reduce noise and speed triage.",
+        width: 24,
+        height: 3,
+      })
+    );
+
+    socketOpsDashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "Text Stream Starts vs Errors",
+        width: 12,
+        left: [streamStarts, streamErrors],
+      }),
+      new cloudwatch.GraphWidget({
+        title: "Stream Error Rate and Error Budget Burn",
+        width: 12,
+        left: [streamErrorRatePercent, streamErrorBudgetBurn],
+      })
+    );
+
+    socketOpsDashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "Socket Disconnect Spikes",
+        width: 12,
+        left: [disconnects],
+      }),
+      new cloudwatch.GraphWidget({
+        title: "Socket DB Connection Errors",
+        width: 12,
+        left: [dbConnectionErrors],
+      })
+    );
   }
 }

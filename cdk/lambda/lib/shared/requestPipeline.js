@@ -1,5 +1,6 @@
 const { CognitoIdentityProviderClient } = require("@aws-sdk/client-cognito-identity-provider");
 const { freshResponse, lookupUserEmail } = require("./runtime");
+const { createLogger } = require("./logger");
 const {
   BadRequestError,
   UnauthorizedError,
@@ -85,6 +86,8 @@ function createRoleRequestHandler({
   corsAllowedOrigin = "*",
   getDbConnection,
   routeDomains,
+  role = "unknown",
+  service = "lambda-api",
   auth = {
     enabled: false,
   },
@@ -93,7 +96,33 @@ function createRoleRequestHandler({
   const routeMap = buildRouteMap(routeDomains);
 
   return async (event) => {
+    const startTime = Date.now();
+    const requestId =
+      event?.requestContext?.requestId ||
+      event?.headers?.["x-amzn-requestid"] ||
+      event?.headers?.["x-request-id"] ||
+      "unknown";
+    const pathData = `${event.httpMethod} ${event.resource}`;
+    const routeSessionId =
+      event?.queryStringParameters?.session_id ||
+      event?.queryStringParameters?.sessionId ||
+      null;
+
+    const logger = createLogger({
+      service,
+      component: "request-pipeline",
+      role,
+      requestId,
+      route: pathData,
+      sessionId: routeSessionId,
+    });
+
     const response = freshResponse(corsAllowedOrigin);
+    logger.info("Lambda request received", {
+      event: "lambda_request_received",
+      method: event?.httpMethod,
+      resource: event?.resource,
+    });
 
     try {
       const sqlConnection = await getDbConnection();
@@ -119,7 +148,6 @@ function createRoleRequestHandler({
         enforceQueryOwnership(event, userEmailAttribute, auth.ownedQueryParams || []);
       }
 
-      const pathData = `${event.httpMethod} ${event.resource}`;
       const routeDefinition = routeMap[pathData];
 
       if (!routeDefinition) {
@@ -143,10 +171,28 @@ function createRoleRequestHandler({
       if (response.body === "") {
         response.body = JSON.stringify({ ok: true });
       }
+
+      logger.info("Lambda request completed", {
+        event: "lambda_request_completed",
+        statusCode: response.statusCode,
+        durationMs: Date.now() - startTime,
+        domain: routeDefinition.domain,
+      });
     } catch (error) {
       const operationalError = toOperationalError(error);
       response.statusCode = operationalError.statusCode;
       response.body = makeErrorBody(operationalError);
+
+      logger.error(
+        "Lambda request failed",
+        {
+          event: "lambda_request_error",
+          statusCode: operationalError.statusCode,
+          errorCode: operationalError.code,
+          durationMs: Date.now() - startTime,
+        },
+        operationalError
+      );
     }
 
     return response;

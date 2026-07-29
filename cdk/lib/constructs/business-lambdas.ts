@@ -22,6 +22,7 @@ export interface BusinessLambdasProps {
   appSyncApi: appsync.GraphqlApi;
   simulatedRole: string;
   practitionerRole: string;
+  nodeLogLevel: cdk.CfnParameter;
 }
 
 export interface BusinessLambdasResult {
@@ -54,6 +55,7 @@ export function createBusinessLambdas(
     appSyncApi,
     simulatedRole,
     practitionerRole,
+    nodeLogLevel,
   } = props;
 
   // S3 Buckets
@@ -150,6 +152,7 @@ export function createBusinessLambdas(
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         USER_POOL: "", // Will be set by orchestrator
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
+        LOG_LEVEL: nodeLogLevel.valueAsString,
       },
       functionName: `${id}-studentFunction`,
       memorySize: 512,
@@ -184,6 +187,7 @@ export function createBusinessLambdas(
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         USER_POOL: "", // Will be set by orchestrator
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
+        LOG_LEVEL: nodeLogLevel.valueAsString,
       },
       functionName: `${id}-instructorFunction`,
       memorySize: 512,
@@ -217,6 +221,7 @@ export function createBusinessLambdas(
         SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
+        LOG_LEVEL: nodeLogLevel.valueAsString,
       },
       functionName: `${id}-adminFunction`,
       memorySize: 512,

@@ -14,6 +14,8 @@ async function getAdminDbConnection() {
 exports.handler = createRoleRequestHandler({
   corsAllowedOrigin: CORS_ALLOWED_ORIGIN,
   routeDomains,
+  role: "admin",
+  service: "admin-lambda",
   getDbConnection: getAdminDbConnection,
   auth: {
     enabled: false,

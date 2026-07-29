@@ -56,6 +56,13 @@ export class ApiServiceStack extends cdk.Stack {
       description: "Allowed origin for CORS requests (default: *)",
     });
 
+    const nodeLogLevel = new cdk.CfnParameter(this, "nodeLogLevel", {
+      type: "String",
+      default: "info",
+      description: "Node service log level (error|warn|info|debug)",
+      allowedValues: ["error", "warn", "info", "debug"],
+    });
+
     // Get CORS origin from environment variable or parameter (default: *)
     const corsOriginEnv = process.env.CORS_ALLOWED_ORIGIN || "*";
 
@@ -111,6 +118,7 @@ export class ApiServiceStack extends cdk.Stack {
       appSyncApi: this.appSyncApi,
       simulatedRole,
       practitionerRole,
+      nodeLogLevel,
     });
 
     // Set USER_POOL environment on student and instructor functions
