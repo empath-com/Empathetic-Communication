@@ -495,7 +495,7 @@ export class EcsSocketStack extends Stack {
     const dbConnectionErrors = dbConnectionErrorFilter.metric({ statistic: "Sum", period: Duration.minutes(5) });
 
     const streamErrorRatePercent = new cloudwatch.MathExpression({
-      expression: "100 * errors / MAX([starts, 1])",
+      expression: "100 * errors / IF(starts > 0, starts, 1)",
       usingMetrics: {
         errors: streamErrors,
         starts: streamStarts,
@@ -506,7 +506,7 @@ export class EcsSocketStack extends Stack {
 
     // SLO target is 99.5% stream success => 0.5% error budget.
     const streamErrorBudgetBurn = new cloudwatch.MathExpression({
-      expression: "(100 * errors / MAX([starts, 1])) / 0.5",
+      expression: "(100 * errors / IF(starts > 0, starts, 1)) / 0.5",
       usingMetrics: {
         errors: streamErrors,
         starts: streamStarts,

@@ -10,6 +10,8 @@ const CARE_CRITERIA = [
 
 const PRISM_CRITERIA = ['prepare', 'recognise', 'interact', 'self_assess', 'master'];
 
+const NURSE_CRITERIA = ['name', 'understand', 'respect', 'support', 'explore'];
+
 const studentEmpathySummary = async (event, sqlConnection) => {
   const { session_id, email, simulation_group_id, patient_id } =
     event.queryStringParameters || {};
@@ -108,22 +110,25 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     }
 
     const empathyTool = evaluation.evaluation_tool || 'CARE';
-    const toolLabel = empathyTool === 'PRISM' ? 'PRISM' : 'CARE';
-    const criteria = empathyTool === 'PRISM' ? PRISM_CRITERIA : CARE_CRITERIA;
+    const isNurse = empathyTool === 'NURSE';
+    const isPrism = empathyTool === 'PRISM';
+    const toolLabel = isNurse ? 'NURSE' : isPrism ? 'PRISM' : 'CARE';
+    const maxScale = isNurse ? 4 : 5;
+    const criteria = isNurse ? NURSE_CRITERIA : isPrism ? PRISM_CRITERIA : CARE_CRITERIA;
 
-    // Extract and clamp criterion scores to 1-5
+    // Extract and clamp criterion scores to tool scale
     const criteriaScores = Object.fromEntries(
       criteria.map(k => {
         const score = evaluation[k];
-        return [k, typeof score === 'number' ? Math.max(1, Math.min(5, score)) : 3];
+        return [k, typeof score === 'number' ? Math.max(1, Math.min(maxScale, score)) : Math.ceil(maxScale / 2)];
       })
     );
 
     const totalCriteriaHits = criteria.reduce((sum, k) => sum + criteriaScores[k], 0);
     const averageScore = Math.round((totalCriteriaHits / criteria.length) * 10) / 10;
 
-    // For CARE: aggregate individual scores into 6 display domains
-    const domainScores = empathyTool !== 'PRISM' ? {
+    // For CARE only: aggregate individual scores into 6 display domains
+    const domainScores = (!isPrism && !isNurse) ? {
       rapport:           criteriaScores.making_feel_at_ease + criteriaScores.letting_tell_story,
       listening:         criteriaScores.really_listening,
       whole_person:      criteriaScores.interested_in_whole_person + criteriaScores.understanding_concerns,
@@ -135,14 +140,17 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     const feedback = evaluation.feedback && typeof evaluation.feedback === 'object'
       ? evaluation.feedback : {};
     const strengths = Array.isArray(feedback.strengths) ? [...new Set(feedback.strengths)] : [];
-    const recommendations = Array.isArray(feedback.improvement_suggestions)
-      ? [...new Set(feedback.improvement_suggestions)] : [];
-    const forwardTarget = feedback.forward_target || null;
+    const recommendations = isNurse
+      ? (Array.isArray(feedback.missed_opportunities) ? [...new Set(feedback.missed_opportunities)] : [])
+      : (Array.isArray(feedback.improvement_suggestions) ? [...new Set(feedback.improvement_suggestions)] : []);
+    const forwardTarget = isNurse
+      ? (feedback.behaviour_goal || null)
+      : (feedback.forward_target || null);
 
     const overallAssessment = evaluation.judge_reasoning?.overall_assessment || '';
     const summary = overallAssessment
-      ? `${overallAssessment} Latest full-thread score: ${averageScore}/5.0 across all ${toolLabel} criteria.`
-      : `Latest full-thread empathy evaluation average: ${averageScore}/5.0 across all ${toolLabel} criteria.`;
+      ? `${overallAssessment} Latest full-thread score: ${averageScore}/${maxScale}.0 across all ${toolLabel} criteria.`
+      : `Latest full-thread empathy evaluation average: ${averageScore}/${maxScale}.0 across all ${toolLabel} criteria.`;
 
     return {
       statusCode: 200,

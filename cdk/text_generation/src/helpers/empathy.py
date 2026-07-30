@@ -8,11 +8,11 @@ from pydantic import BaseModel, Field
 
 from .prompts import get_empathy_prompt, get_default_empathy_prompt
 from .evaluation_tool_specs import (
-    CARE_CRITERIA, PRISM_CRITERIA,
-    CARE_CRITERIA_LABELS, PRISM_CRITERIA_LABELS,
-    CARE_JUSTIFICATION_KEYS, PRISM_JUSTIFICATION_KEYS,
-    get_care_tool_name, get_prism_tool_name,
-    get_care_tool_spec, get_prism_tool_spec,
+    CARE_CRITERIA, PRISM_CRITERIA, NURSE_CRITERIA,
+    CARE_CRITERIA_LABELS, PRISM_CRITERIA_LABELS, NURSE_CRITERIA_LABELS,
+    CARE_JUSTIFICATION_KEYS, PRISM_JUSTIFICATION_KEYS, NURSE_JUSTIFICATION_KEYS,
+    get_care_tool_name, get_prism_tool_name, get_nurse_tool_name,
+    get_care_tool_spec, get_prism_tool_spec, get_nurse_tool_spec,
     resolve_schema_variant,
 )
 
@@ -80,6 +80,30 @@ def _build_no_evidence_evaluation(tool: str, transcript: str, bedrock_client) ->
             "forward_target": "Interact"
         }
         evaluation["evaluation_tool"] = "PRISM"
+    elif tool == "NURSE":
+        evaluation = {k: 1 for k in NURSE_CRITERIA}
+        evaluation["emotional_cues"] = {"detected_emotions": [], "missed_emotions": []}
+        evaluation["judge_reasoning"] = {
+            "name_justification": reason,
+            "understand_justification": reason,
+            "respect_justification": reason,
+            "support_justification": reason,
+            "explore_justification": reason,
+            "overall_assessment": (
+                "You sent a very short message, so there is not enough evidence yet to evaluate your empathic communication. "
+                "In your next turn, acknowledge the patient emotion by name, validate their experience, and ask an open question."
+            )
+        }
+        evaluation["feedback"] = {
+            "strengths": ["You initiated the interaction, which keeps the conversation open."],
+            "missed_opportunities": [
+                "Name the patient's emotion explicitly before responding.",
+                "Use an open question to invite the patient to share more."
+            ],
+            "role_modelled_response": "",
+            "behaviour_goal": "Name"
+        }
+        evaluation["evaluation_tool"] = "NURSE"
     else:
         evaluation = {k: 1 for k in CARE_CRITERIA}
         evaluation["judge_reasoning"] = {
@@ -155,7 +179,12 @@ def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
     """If model output still contains unsupported claims, replace narrative text with safe grounded text."""
     fallback_line = "Assessment grounded only in provided transcript text. No explicit additional evidence is present."
     reasoning = evaluation.get("judge_reasoning") or {}
-    keys = PRISM_JUSTIFICATION_KEYS if tool == "PRISM" else CARE_JUSTIFICATION_KEYS
+    if tool == "NURSE":
+        keys = NURSE_JUSTIFICATION_KEYS
+    elif tool == "PRISM":
+        keys = PRISM_JUSTIFICATION_KEYS
+    else:
+        keys = CARE_JUSTIFICATION_KEYS
     for key in keys:
         reasoning[key] = fallback_line
     reasoning["overall_assessment"] = (
@@ -166,14 +195,23 @@ def _apply_grounded_text_fallback(evaluation: dict, tool: str = "CARE"):
 
     feedback = evaluation.get("feedback") or {}
     feedback["strengths"] = [f"You acknowledged the {SIMULATED_ROLE} and invited them to continue sharing."]
-    feedback["improvement_suggestions"] = [
-        f"Use explicit reflective phrases tied to the {SIMULATED_ROLE}'s exact words, then propose one collaborative next step."
-    ]
-    feedback["forward_target"] = "Collaborative planning with explicit transcript-grounded reflections"
+    if tool == "NURSE":
+        feedback["missed_opportunities"] = [
+            f"Name the {SIMULATED_ROLE}'s emotion explicitly and use open questions to deepen understanding."
+        ]
+        feedback.pop("improvement_suggestions", None)
+        feedback.pop("forward_target", None)
+        feedback["role_modelled_response"] = ""
+        feedback["behaviour_goal"] = "Name the patient emotion explicitly in your next response"
+    else:
+        feedback["improvement_suggestions"] = [
+            f"Use explicit reflective phrases tied to the {SIMULATED_ROLE}'s exact words, then propose one collaborative next step."
+        ]
+        feedback["forward_target"] = "Collaborative planning with explicit transcript-grounded reflections"
     evaluation["feedback"] = feedback
 
 
-def evaluate_empathy(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None) -> dict:
+def evaluate_empathy(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None, schema_variant: str = None) -> dict:
     """
     LLM-as-a-Judge empathy evaluation using structured scoring methodology with prompt caching.
     """
@@ -219,8 +257,8 @@ TRANSCRIPT_END"""
         logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
         return None
 
-    care_tool_spec = get_care_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
-    care_tool_name = get_care_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
+    care_tool_spec = get_care_tool_spec(schema_variant or EMPATHY_TOOL_SCHEMA_VARIANT)
+    care_tool_name = get_care_tool_name(schema_variant or EMPATHY_TOOL_SCHEMA_VARIANT)
 
     strict_retry_addendum = """
 
@@ -365,7 +403,7 @@ STRICT RETRY MODE:
         logger.exception("Full traceback:")
         return None
 
-def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None) -> dict:
+def evaluate_empathy_prism(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None, schema_variant: str = None) -> dict:
     """
     LLM-as-a-Judge empathy evaluation using the PRISM framework (SDT-informed).
     Five dimensions: Prepare, Recognise, Interact, Self-Assess, Master — each 1-5.
@@ -393,8 +431,8 @@ TRANSCRIPT_END"""
         logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
         return None
 
-    prism_tool_spec = get_prism_tool_spec(EMPATHY_TOOL_SCHEMA_VARIANT)
-    prism_tool_name = get_prism_tool_name(EMPATHY_TOOL_SCHEMA_VARIANT)
+    prism_tool_spec = get_prism_tool_spec(schema_variant or EMPATHY_TOOL_SCHEMA_VARIANT)
+    prism_tool_name = get_prism_tool_name(schema_variant or EMPATHY_TOOL_SCHEMA_VARIANT)
 
     strict_retry_addendum = """
 
@@ -499,6 +537,201 @@ STRICT RETRY MODE:
         logger.error(f"❌ PRISM EVALUATION ERROR: {e}")
         logger.exception("Full traceback:")
         return None
+
+
+def evaluate_empathy_nurse(student_response: str, patient_context: str, bedrock_client, simulation_group_id: str = None, schema_variant: str = None) -> dict:
+    """
+    LLM-as-a-Judge empathy evaluation using the NURSE framework.
+    Five domains: Name, Understand, Respect, Support, Explore — each scored 1–4.
+    """
+    logger.info("🧠 NURSE EMPATHY EVALUATION STARTED")
+
+    try:
+        static_system_prompt = get_empathy_prompt(simulation_group_id=simulation_group_id)
+        if len(static_system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+            logger.warning(f"⚠️ Empathy prompt too long ({len(static_system_prompt)} chars), using default")
+            static_system_prompt = get_default_empathy_prompt()
+    except Exception as prompt_error:
+        logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
+        static_system_prompt = get_default_empathy_prompt()
+
+    cached_system_prompt = f"{static_system_prompt}\n\n{STATIC_GROUNDING_INSTRUCTIONS}"
+    dynamic_user_prompt = f"""PATIENT_CONTEXT:
+{patient_context}
+
+TRANSCRIPT_START
+{student_response}
+TRANSCRIPT_END"""
+
+    if student_response not in dynamic_user_prompt:
+        logger.error("❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT")
+        return None
+
+    _variant = schema_variant or EMPATHY_TOOL_SCHEMA_VARIANT
+    nurse_tool_spec = get_nurse_tool_spec(_variant)
+    nurse_tool_name = get_nurse_tool_name(_variant)
+
+    strict_retry_addendum = """
+
+STRICT RETRY MODE:
+- TEXT-ONLY CHANNEL: do NOT mention nodding, eye contact, body language, facial expressions, or tone unless explicitly written in transcript.
+- Do NOT introduce names unless they appear verbatim in transcript.
+- If uncertain, state evidence is not present.
+"""
+
+    try:
+        for attempt in range(MAX_GROUNDING_RETRIES + 1):
+            prompt_for_attempt = dynamic_user_prompt + (strict_retry_addendum if attempt > 0 else "")
+            body = {
+                "system": [{"text": cached_system_prompt, "cachePoint": {"type": "default"}}],
+                "messages": [{"role": "user", "content": [{"text": prompt_for_attempt}]}],
+                "toolConfig": {
+                    "tools": [nurse_tool_spec],
+                    "toolChoice": {"tool": {"name": nurse_tool_name}},
+                },
+                "inferenceConfig": {"temperature": 0.1, "maxTokens": EMPATHY_MAX_OUTPUT_TOKENS}
+            }
+
+            logger.info(f"🚀 CALLING BEDROCK (NURSE): {bedrock_client['model_id']} (attempt {attempt + 1})")
+            try:
+                response = bedrock_client["client"].invoke_model(
+                    modelId="amazon.nova-lite-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+            except Exception as model_error:
+                if _is_tooluse_sequence_error(model_error):
+                    logger.warning("NURSE ToolUse invalid-sequence error detected; returning no-evidence fallback")
+                    return _build_no_evidence_evaluation("NURSE", student_response, bedrock_client)
+
+                logger.warning(f"Nova Lite failed, trying us-east-1: {model_error}")
+                try:
+                    fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    response = fallback_client.invoke_model(
+                        modelId="amazon.nova-lite-v1:0",
+                        contentType="application/json",
+                        accept="application/json",
+                        body=json.dumps(body)
+                    )
+                except Exception as fallback_error:
+                    if _is_tooluse_sequence_error(fallback_error):
+                        logger.warning("NURSE ToolUse invalid-sequence error in fallback region; returning no-evidence fallback")
+                        return _build_no_evidence_evaluation("NURSE", student_response, bedrock_client)
+                    raise
+
+            result = json.loads(response["body"].read())
+            usage = result.get("usage", {})
+            cache_read = usage.get("cacheReadInputTokenCount", 0)
+            cache_write = usage.get("cacheWriteInputTokenCount", 0)
+            logger.info(f"NURSE CACHE STATS: Read={cache_read}, Write={cache_write}")
+
+            content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+            evaluation = None
+            for block in content_blocks:
+                tool_use = block.get("toolUse", {})
+                if tool_use.get("name") == nurse_tool_name:
+                    evaluation = tool_use.get("input", {})
+                    break
+
+            if not evaluation:
+                logger.error(f"❌ NO NURSE TOOL USE BLOCK IN RESPONSE: {json.dumps(result)[:400]}")
+                if attempt >= MAX_GROUNDING_RETRIES:
+                    return _build_no_evidence_evaluation("NURSE", student_response, bedrock_client)
+                continue
+
+            for key in NURSE_CRITERIA:
+                val = evaluation.get(key)
+                if isinstance(val, str):
+                    try:
+                        evaluation[key] = max(1, min(4, int(val)))
+                    except (ValueError, TypeError):
+                        evaluation[key] = 2
+                elif isinstance(val, int):
+                    evaluation[key] = max(1, min(4, val))
+                else:
+                    evaluation[key] = 2
+
+            issue = _grounding_issue(evaluation, student_response)
+            if issue and attempt < MAX_GROUNDING_RETRIES:
+                logger.warning(f"⚠️ NURSE grounding issue ({issue}); retrying")
+                continue
+
+            if issue and attempt >= MAX_GROUNDING_RETRIES:
+                logger.error(f"❌ NURSE grounding issue persists; applying safe fallback")
+                _apply_grounded_text_fallback(evaluation, tool="NURSE")
+
+            evaluation["evaluation_method"] = "LLM-as-a-Judge"
+            evaluation["evaluation_tool"] = "NURSE"
+            evaluation["judge_model"] = bedrock_client["model_id"]
+            logger.info("✅ NURSE EVALUATION COMPLETED SUCCESSFULLY")
+            return evaluation
+
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ NURSE JSON DECODE ERROR: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ NURSE EVALUATION ERROR: {e}")
+        logger.exception("Full traceback:")
+        return None
+
+
+def build_nurse_feedback(evaluation) -> str:
+    """Build empathy feedback using the NURSE framework (1–4 scale)."""
+    if not evaluation:
+        return "**Empathy Coach:** System temporarily unavailable.\\\\n"
+
+    scores = {key: evaluation.get(key, 2) for key in NURSE_CRITERIA}
+    avg_score = sum(scores.values()) / len(NURSE_CRITERIA)
+    high_performers = [label for key, label in NURSE_CRITERIA_LABELS.items() if scores.get(key, 0) >= 3]
+    growth_areas = [label for key, label in NURSE_CRITERIA_LABELS.items() if scores.get(key, 0) <= 1]
+
+    feedback = f"**Empathy Coach (NURSE Framework - 1-4 Scale):**\\\\n\\\\n"
+    feedback += f"**Overall Score: {avg_score:.1f} / 4.0**\\\\n\\\\n"
+
+    if high_performers:
+        feedback += "**Strengths (scoring 3-4):**\\\\n"
+        for label in high_performers:
+            feedback += f"• ✅ {label}\\\\n"
+        feedback += "\\\\n"
+
+    if growth_areas:
+        feedback += "**Areas for Growth (scoring 1):**\\\\n"
+        for label in growth_areas:
+            feedback += f"• 📈 {label}\\\\n"
+        feedback += "\\\\n"
+
+    judge_reasoning = evaluation.get("judge_reasoning", {})
+    if judge_reasoning.get("overall_assessment"):
+        assessment = judge_reasoning["overall_assessment"]
+        assessment = assessment.replace("The student", "You").replace("the student", "you")
+        feedback += f"**Comprehensive Coach Assessment:**\\\\n\\\\n{assessment}\\\\n\\\\n"
+
+    eval_feedback = evaluation.get("feedback", {}) or {}
+    strengths = eval_feedback.get("strengths", [])
+    if strengths:
+        feedback += "**What Worked Well:**\\\\n\\\\n"
+        for i, s in enumerate(strengths, 1):
+            feedback += f"{i}. {s}\\\\n\\\\n"
+        feedback += "\\\\n"
+
+    missed = eval_feedback.get("missed_opportunities", [])
+    if missed:
+        feedback += "**Missed Opportunities:**\\\\n\\\\n"
+        for i, s in enumerate(missed, 1):
+            feedback += f"{i}. {s}\\\\n\\\\n"
+        feedback += "\\\\n"
+
+    role_modelled = eval_feedback.get("role_modelled_response", "")
+    if role_modelled:
+        feedback += f"**Example Response:**\\\\n{role_modelled}\\\\n\\\\n"
+
+    behaviour_goal = eval_feedback.get("behaviour_goal", "")
+    if behaviour_goal:
+        feedback += f"Focus for Your Next Interaction: {behaviour_goal}\\\\n\\\\n"
+
+    feedback += "---\\\\n\\\\n"
+    return feedback
 
 
 def build_prism_feedback(evaluation) -> str:
@@ -733,14 +966,28 @@ def handle_empathy_evaluation(
                 f"✂️ Trimmed transcript input to last {MAX_TRANSCRIPT_CHARS_FOR_EVAL} chars for latency control"
             )
 
+        # Parse base tool and schema variant from the empathy_tool string.
+        # e.g. "CARE_RELAXED" → base_tool="CARE", schema_variant="relaxed"
+        _schema_variant = "relaxed" if empathy_tool.endswith("_RELAXED") else None
+        _base_tool = empathy_tool[:-8] if empathy_tool.endswith("_RELAXED") else empathy_tool
+
         # Evaluate empathy for the message using the selected tool
         logger.info(f"🎯 Evaluating empathy ({empathy_tool}) for: {evaluation_input[:100]}...")
-        if empathy_tool == "PRISM":
+        if _base_tool == "NURSE":
+            empathy_evaluation = evaluate_empathy_nurse(
+                evaluation_input,
+                patient_context,
+                bedrock_client,
+                simulation_group_id=simulation_group_id,
+                schema_variant=_schema_variant,
+            )
+        elif _base_tool == "PRISM":
             empathy_evaluation = evaluate_empathy_prism(
                 evaluation_input,
                 patient_context,
                 bedrock_client,
                 simulation_group_id=simulation_group_id,
+                schema_variant=_schema_variant,
             )
         else:
             empathy_evaluation = evaluate_empathy(
@@ -748,6 +995,7 @@ def handle_empathy_evaluation(
                 patient_context,
                 bedrock_client,
                 simulation_group_id=simulation_group_id,
+                schema_variant=_schema_variant,
             )
 
         if not empathy_evaluation:
@@ -777,7 +1025,11 @@ def handle_empathy_evaluation(
                 logger.warning("⚠️ Voice: no student message found in session to attach empathy evaluation")
 
         # Build feedback using the appropriate formatter
-        if empathy_tool == "PRISM":
+        if _base_tool == "NURSE":
+            empathy_feedback = build_nurse_feedback(empathy_evaluation)
+            criteria_hit = sum(empathy_evaluation.get(k, 0) for k in NURSE_CRITERIA)
+            max_per_message = 20
+        elif _base_tool == "PRISM":
             empathy_feedback = build_prism_feedback(empathy_evaluation)
             criteria_hit = sum(empathy_evaluation.get(k, 0) for k in PRISM_CRITERIA)
             max_per_message = 25

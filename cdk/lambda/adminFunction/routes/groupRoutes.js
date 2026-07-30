@@ -7,7 +7,7 @@
  *         GET groupInstructors, GET instructorGroups
  */
 
-const VALID_EMPATHY_TOOLS = ["CARE", "PRISM"];
+const VALID_EMPATHY_TOOLS = ["CARE", "CARE_RELAXED", "PRISM", "PRISM_RELAXED", "NURSE", "NURSE_RELAXED"];
 const REQUIRED_EMPATHY_PROMPT_PLACEHOLDERS = ["{patient_context}", "{user_text}"];
 
 function normalizeEmpathyPromptOverride(value, useGlobalDefaults) {

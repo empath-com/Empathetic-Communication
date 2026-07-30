@@ -254,14 +254,16 @@ def get_empathy_settings(simulation_group_id: str) -> tuple:
             empathy_enabled = bool(row[0]) if row else False
             group_tool_override = row[1] if row else None
 
-            if group_tool_override in ("CARE", "PRISM"):
+            _valid_tools = frozenset({"CARE", "CARE_RELAXED", "PRISM", "PRISM_RELAXED", "NURSE", "NURSE_RELAXED"})
+            if group_tool_override in _valid_tools:
                 empathy_tool = group_tool_override
             else:
                 cursor.execute(
                     'SELECT empathy_tool FROM "empathy_prompt_history" ORDER BY created_at DESC LIMIT 1'
                 )
                 tool_row = cursor.fetchone()
-                empathy_tool = (tool_row[0] or "CARE") if tool_row else "CARE"
+                raw_tool = (tool_row[0] or "CARE") if tool_row else "CARE"
+                empathy_tool = raw_tool if raw_tool in _valid_tools else "CARE"
 
         return empathy_enabled, empathy_tool
     except Exception as e:

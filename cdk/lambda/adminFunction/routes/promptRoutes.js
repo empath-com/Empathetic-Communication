@@ -4,7 +4,7 @@
  *         GET empathy_prompts, POST update_empathy_prompt, POST restore_empathy_prompt
  */
 
-const VALID_EMPATHY_TOOLS = ["CARE", "PRISM"];
+const VALID_EMPATHY_TOOLS = ["CARE", "CARE_RELAXED", "PRISM", "PRISM_RELAXED", "NURSE", "NURSE_RELAXED"];
 
 module.exports = {
   "GET /admin/system_prompts": async ({ sqlConnection, response }) => {

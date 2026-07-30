@@ -63,6 +63,12 @@ export default function useEmpathyCoach({ group, patient, session }) {
         interact: data.interact || 0,
         self_assess: data.self_assess || 0,
         master: data.master || 0,
+        // NURSE criterion scores
+        name: data.name || 0,
+        understand: data.understand || 0,
+        respect: data.respect || 0,
+        support: data.support || 0,
+        explore: data.explore || 0,
         summary: data.summary || "",
         strengths: data.strengths || [],
         recommendations: data.recommendations || [],

@@ -370,7 +370,11 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
                 onChange={(e) => setEmpathyToolOverride(e.target.value)}
               >
                 <MenuItem value="CARE">CARE Measure</MenuItem>
+                <MenuItem value="CARE_RELAXED">CARE Measure (Relaxed)</MenuItem>
                 <MenuItem value="PRISM">PRISM (SDT-informed)</MenuItem>
+                <MenuItem value="PRISM_RELAXED">PRISM (SDT-informed, Relaxed)</MenuItem>
+                <MenuItem value="NURSE">NURSE Framework</MenuItem>
+                <MenuItem value="NURSE_RELAXED">NURSE Framework (Relaxed)</MenuItem>
               </Select>
             </FormControl>
             <TextField

@@ -27,6 +27,16 @@ const PRISM_CRITERIA_LABELS = {
   master:      'M. Master — Integrated skill delivery',
 };
 
+const NURSE_CRITERIA = ['name', 'understand', 'respect', 'support', 'explore'];
+
+const NURSE_CRITERIA_LABELS = {
+  name:       'N. Name — Recognize and acknowledge patient emotion',
+  understand: 'U. Understand — Validate the emotional response',
+  respect:    'R. Respect — Acknowledge patient strengths and effort',
+  support:    'S. Support — Communicate partnership and support',
+  explore:    'E. Explore — Use open-ended questions to deepen understanding',
+};
+
 function buildCareSummary(empathyData, tool) {
   const criteriaTotals = Object.fromEntries(CARE_CRITERIA.map(k => [k, 0]));
   let validCount = 0;
@@ -103,6 +113,44 @@ function buildPrismSummary(empathyData) {
   };
 }
 
+function buildNurseSummary(empathyData) {
+  const criteriaTotals = Object.fromEntries(NURSE_CRITERIA.map(k => [k, 0]));
+  let validCount = 0;
+  let behaviourGoal = '';
+
+  empathyData.forEach((row) => {
+    const ev = row.empathy_evaluation;
+    if (ev && typeof ev === 'object' && typeof ev.name === 'number') {
+      NURSE_CRITERIA.forEach(k => { criteriaTotals[k] += ev[k] >= 3 ? 1 : 0; });
+      if (ev.feedback?.behaviour_goal && !behaviourGoal) behaviourGoal = ev.feedback.behaviour_goal;
+      validCount++;
+    }
+  });
+
+  const totalCriteriaHits = NURSE_CRITERIA.reduce((sum, k) => sum + criteriaTotals[k], 0);
+  const criteriaByRate = NURSE_CRITERIA
+    .map(k => ({ label: NURSE_CRITERIA_LABELS[k], rate: validCount > 0 ? criteriaTotals[k] / validCount : 0 }))
+    .sort((a, b) => b.rate - a.rate);
+  const topCriteria = criteriaByRate.filter(c => c.rate >= 0.7).map(c => c.label).join(', ');
+  const lowCriteria = criteriaByRate.filter(c => c.rate < 0.3).map(c => c.label).join(', ');
+
+  const summary =
+    `Across ${validCount} evaluated message${validCount !== 1 ? 's' : ''}, this student demonstrated NURSE criteria ${totalCriteriaHits} time${totalCriteriaHits !== 1 ? 's' : ''} in total. ` +
+    (topCriteria ? `Most consistent areas: ${topCriteria}. ` : '') +
+    (lowCriteria ? `Areas to develop: ${lowCriteria}. ` : '') +
+    (behaviourGoal ? `Focus for next session: ${behaviourGoal}.` : '');
+
+  return {
+    overall_score: totalCriteriaHits,
+    total_messages_evaluated: validCount,
+    total_criteria_hits: totalCriteriaHits,
+    empathy_interactions: validCount,
+    empathy_tool: 'NURSE',
+    ...criteriaTotals,
+    summary,
+  };
+}
+
 const EMPTY_SUMMARY = {
   overall_score: 0,
   total_messages_evaluated: 0,
@@ -137,7 +185,8 @@ const routes = {
           SELECT empathy_tool FROM "empathy_prompt_history"
           ORDER BY created_at DESC LIMIT 1;
         `;
-        const empathyTool = toolResult[0]?.empathy_tool || 'CARE';
+        const rawTool = toolResult[0]?.empathy_tool || 'CARE';
+        const empathyTool = rawTool.replace(/_RELAXED$/, '');
 
         const columnCheck = await sqlConnection`
           SELECT column_name FROM information_schema.columns
@@ -203,9 +252,11 @@ const routes = {
           return response;
         }
 
-        const criteriaStats = empathyTool === 'PRISM'
-          ? buildPrismSummary(empathyData)
-          : buildCareSummary(empathyData);
+        const criteriaStats = empathyTool === 'NURSE'
+          ? buildNurseSummary(empathyData)
+          : empathyTool === 'PRISM'
+            ? buildPrismSummary(empathyData)
+            : buildCareSummary(empathyData);
 
         // Get total interactions count
         let totalInteractions;

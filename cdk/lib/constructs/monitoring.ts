@@ -26,29 +26,31 @@ export function createMonitoring(
   const { id, db, vpcStack, dataIngestFn, psycopgLayer, powertoolsLayer, lambdaRole } = props;
 
   // Structured Lambda log groups used by the shared request pipeline.
-  const studentLogGroup = new logs.LogGroup(scope, `${id}-StudentLambdaLogGroup`, {
-    logGroupName: `/aws/lambda/${id}-studentFunction`,
-    retention: logs.RetentionDays.ONE_MONTH,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
+  // Import existing groups to avoid CloudFormation ownership conflicts on stacks
+  // where these log groups were already created by Lambda runtime behavior.
+  const studentLogGroup = logs.LogGroup.fromLogGroupName(
+    scope,
+    `${id}-StudentLambdaLogGroupImport`,
+    `/aws/lambda/${id}-studentFunction`
+  );
 
-  const instructorLogGroup = new logs.LogGroup(scope, `${id}-InstructorLambdaLogGroup`, {
-    logGroupName: `/aws/lambda/${id}-instructorFunction`,
-    retention: logs.RetentionDays.ONE_MONTH,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
+  const instructorLogGroup = logs.LogGroup.fromLogGroupName(
+    scope,
+    `${id}-InstructorLambdaLogGroupImport`,
+    `/aws/lambda/${id}-instructorFunction`
+  );
 
-  const adminLogGroup = new logs.LogGroup(scope, `${id}-AdminLambdaLogGroup`, {
-    logGroupName: `/aws/lambda/${id}-adminFunction`,
-    retention: logs.RetentionDays.ONE_MONTH,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
+  const adminLogGroup = logs.LogGroup.fromLogGroupName(
+    scope,
+    `${id}-AdminLambdaLogGroupImport`,
+    `/aws/lambda/${id}-adminFunction`
+  );
 
-  const textGenLogGroup = new logs.LogGroup(scope, `${id}-TextGenLambdaLogGroup`, {
-    logGroupName: `/aws/lambda/${id}-TextGenLambdaDockerFunction`,
-    retention: logs.RetentionDays.ONE_MONTH,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
+  const textGenLogGroup = logs.LogGroup.fromLogGroupName(
+    scope,
+    `${id}-TextGenLambdaLogGroupImport`,
+    `/aws/lambda/${id}-TextGenLambdaDockerFunction`
+  );
 
   // Create Log Group for dataIngestLambdaDockerFunc
   const logGroup = new logs.LogGroup(scope, `${id}-DataIngestLambdaLogGroup`, {
@@ -188,7 +190,7 @@ export function createMonitoring(
   });
 
   const lambdaErrorRatePercent = new cloudwatch.MathExpression({
-    expression: "100 * errors / MAX([requests, 1])",
+    expression: "100 * errors / IF(requests > 0, requests, 1)",
     usingMetrics: {
       errors: lambdaRequestErrors,
       requests: lambdaRequestCount,
@@ -199,7 +201,7 @@ export function createMonitoring(
 
   // SLO target is 99.0% request success => 1.0% error budget.
   const lambdaErrorBudgetBurn = new cloudwatch.MathExpression({
-    expression: "(100 * errors / MAX([requests, 1])) / 1",
+    expression: "(100 * errors / IF(requests > 0, requests, 1)) / 1",
     usingMetrics: {
       errors: lambdaRequestErrors,
       requests: lambdaRequestCount,

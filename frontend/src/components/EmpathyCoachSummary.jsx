@@ -27,6 +27,14 @@ const PRISM_DIMENSIONS = [
   { key: "master",      label: "M. Master",       max: 5, criteria: "Integrated skill delivery" },
 ];
 
+const NURSE_DIMENSIONS = [
+  { key: "name",       label: "N. Name",        max: 4, criteria: "Recognize and acknowledge patient emotion" },
+  { key: "understand", label: "U. Understand",   max: 4, criteria: "Validate the emotional response" },
+  { key: "respect",    label: "R. Respect",      max: 4, criteria: "Acknowledge patient strengths and effort" },
+  { key: "support",    label: "S. Support",      max: 4, criteria: "Communicate partnership and support" },
+  { key: "explore",    label: "E. Explore",      max: 4, criteria: "Use open-ended questions to deepen understanding" },
+];
+
 // Color based on score normalised to 0-5: green ≥4, yellow ≥3, orange ≥2, red <2
 const getScoreColor = (score) => {
   if (score >= 4) return "#4CAF50";
@@ -83,12 +91,14 @@ const EmpathyCoachSummary = ({ empathyData }) => {
   }
 
   const tool = empathyData.empathy_tool || "CARE";
+  const isNurse = tool === "NURSE";
   const isPrism = tool === "PRISM";
-  const toolLabel = isPrism ? "PRISM Framework" : "CARE Measure";
-  const dimensions = isPrism ? PRISM_DIMENSIONS : CARE_DOMAINS;
+  const toolLabel = isNurse ? "NURSE Framework" : isPrism ? "PRISM Framework" : "CARE Measure";
+  const dimensions = isNurse ? NURSE_DIMENSIONS : isPrism ? PRISM_DIMENSIONS : CARE_DOMAINS;
+  const maxScore = isNurse ? 4 : 5;
 
   const overallScore = empathyData.overall_score || 0;
-  const overallPct = (overallScore / 5) * 100;
+  const overallPct = (overallScore / maxScore) * 100;
   const overallColor = getScoreColor(overallScore);
   const coachAssessment = removeScoreMentionsFromAssessment(empathyData.summary);
 
@@ -103,7 +113,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>Overall Score</Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>{overallScore} / 5.0</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>{overallScore} / {maxScore}.0</Typography>
         </Box>
         <LinearProgress
           variant="determinate"

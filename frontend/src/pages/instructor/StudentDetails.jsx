@@ -368,14 +368,22 @@ const StudentDetails = () => {
               <DialogContent>
                 {empathySummary ? (() => {
                   const tool = empathySummary.empathy_tool || 'CARE';
-                  const toolLabel = tool === 'PRISM' ? 'PRISM Framework' : 'CARE Measure';
-                  const criteriaRows = tool === 'PRISM'
+                  const toolLabel = tool === 'NURSE' ? 'NURSE Framework' : tool === 'PRISM' ? 'PRISM Framework' : 'CARE Measure';
+                  const criteriaRows = tool === 'NURSE'
                     ? [
-                        ['prepare',     'P. Prepare — Orientation & framing'],
-                        ['recognise',   'R. Recognise — Identifying patient cues'],
-                        ['interact',    'I. Interact — Empathic engagement'],
-                        ['self_assess', 'S. Self-Assess — In-conversation monitoring'],
-                        ['master',      'M. Master — Integrated skill delivery'],
+                        ['name',       'N. Name \u2014 Recognize and acknowledge patient emotion'],
+                        ['understand', 'U. Understand \u2014 Validate the emotional response'],
+                        ['respect',    'R. Respect \u2014 Acknowledge patient strengths and effort'],
+                        ['support',    'S. Support \u2014 Communicate partnership and support'],
+                        ['explore',    'E. Explore \u2014 Use open-ended questions to deepen understanding'],
+                      ]
+                    : tool === 'PRISM'
+                    ? [
+                        ['prepare',     'P. Prepare \u2014 Orientation & framing'],
+                        ['recognise',   'R. Recognise \u2014 Identifying patient cues'],
+                        ['interact',    'I. Interact \u2014 Empathic engagement'],
+                        ['self_assess', 'S. Self-Assess \u2014 In-conversation monitoring'],
+                        ['master',      'M. Master \u2014 Integrated skill delivery'],
                       ]
                     : [
                         ['making_feel_at_ease',        'Making you feel at ease'],

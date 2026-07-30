@@ -68,6 +68,8 @@ const CARE_CRITERIA = [
 
 const PRISM_CRITERIA = ["prepare", "recognise", "interact", "self_assess", "master"];
 
+const NURSE_CRITERIA = ["name", "understand", "respect", "support", "explore"];
+
 const asScore = (value, fallback = 0) => {
   const score = Number(value);
   return Number.isFinite(score) ? score : fallback;
@@ -79,10 +81,14 @@ export function normalizeEmpathyData(empathyData = {}) {
     !empathyData.empathy_tool &&
     Object.prototype.hasOwnProperty.call(empathyData, "perspective_taking");
   const tool =
-    empathyData.evaluation_tool === "PRISM" || empathyData.empathy_tool === "PRISM"
-      ? "PRISM"
-      : "CARE";
-  const criteria = tool === "PRISM" ? PRISM_CRITERIA : CARE_CRITERIA;
+    empathyData.evaluation_tool === "NURSE" || empathyData.empathy_tool === "NURSE"
+      ? "NURSE"
+      : empathyData.evaluation_tool === "PRISM" || empathyData.empathy_tool === "PRISM"
+        ? "PRISM"
+        : "CARE";
+  const criteria = tool === "NURSE" ? NURSE_CRITERIA : tool === "PRISM" ? PRISM_CRITERIA : CARE_CRITERIA;
+
+  const midpoint = tool === "NURSE" ? 2 : 3;
   const scores = Object.fromEntries(
     criteria.map((criterion) => [criterion, asScore(empathyData[criterion])])
   );
@@ -96,7 +102,7 @@ export function normalizeEmpathyData(empathyData = {}) {
     : 0;
   const summary = empathyData.summary || {};
   const feedback = empathyData.feedback || {};
-  const legacyScore = (value) => asScore(value, 3) || 3;
+  const legacyScore = (value) => asScore(value, midpoint) || midpoint;
   const overallScore = isLegacyEmpathy
     ? legacyScore(empathyData.empathy_score)
     : asScore(
