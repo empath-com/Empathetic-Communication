@@ -251,6 +251,10 @@ export async function fetchJson(url, { method = "GET", headers = {}, body, timeo
     });
 
     const text = await response.text();
+    const previewMax = 2000;
+    const rawText = text && text.length > previewMax
+      ? `${text.slice(0, previewMax)}... [truncated ${text.length - previewMax} chars]`
+      : text;
     let data;
     try {
       data = text ? JSON.parse(text) : null;
@@ -261,7 +265,16 @@ export async function fetchJson(url, { method = "GET", headers = {}, body, timeo
     return {
       ok: response.ok,
       status: response.status,
+      statusText: response.statusText,
       data,
+      rawText,
+      responseHeaders: {
+        requestId:
+          response.headers.get("x-amzn-requestid") ||
+          response.headers.get("x-request-id") ||
+          response.headers.get("apigw-requestid") ||
+          null,
+      },
     };
   } finally {
     clearTimeout(timeout);

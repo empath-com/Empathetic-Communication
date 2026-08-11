@@ -146,7 +146,19 @@ async function runVirtualUser(userIndex) {
       llm_completion: config.llmCompletion,
     });
 
-    await onceAny(socket, ["voice-started", "nova-started"], config.readyTimeoutMs);
+    const readyEvent = await onceAny(
+      socket,
+      ["voice-started", "nova-started", "nova-error", "disconnect", "connect_error"],
+      config.readyTimeoutMs
+    );
+    if (["nova-error", "disconnect", "connect_error"].includes(readyEvent.event)) {
+      const details =
+        readyEvent.payload?.error ||
+        readyEvent.payload?.message ||
+        (typeof readyEvent.payload === "string" ? readyEvent.payload : "unknown startup failure");
+      throw new Error(`Voice startup failed (${readyEvent.event}): ${details}`);
+    }
+
     record("voice_ready", {
       ok: true,
       userIndex,

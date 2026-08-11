@@ -35,6 +35,21 @@ if (credentials.some((c) => !c.email)) {
 const results = [];
 const startedAt = Date.now();
 
+function extractFailureReason(response) {
+  const data = response?.data;
+  if (typeof data === "string") return data;
+  if (data && typeof data === "object") {
+    return (
+      data.error ||
+      data.message ||
+      data.details ||
+      data.raw ||
+      null
+    );
+  }
+  return null;
+}
+
 function buildStudentUrl(path, queryParams) {
   const url = new URL(`student/${path}`, config.apiBase);
   Object.entries(queryParams).forEach(([key, value]) => {
@@ -50,11 +65,16 @@ async function timedCall(phase, fn, metadata) {
     const response = await fn();
     const latencyMs = Date.now() - start;
     const ok = !!response?.ok;
+    const failureReason = ok ? null : extractFailureReason(response);
     results.push({
       phase,
       ok,
       latencyMs,
       status: response?.status ?? null,
+      statusText: response?.statusText ?? null,
+      requestId: response?.responseHeaders?.requestId ?? null,
+      error: ok ? null : failureReason || "HTTP request failed",
+      responsePreview: ok ? null : response?.rawText || null,
       startedAtMs: start,
       ...metadata,
     });
@@ -66,8 +86,11 @@ async function timedCall(phase, fn, metadata) {
       ok: false,
       latencyMs,
       status: null,
+      statusText: null,
+      requestId: null,
       startedAtMs: start,
       error: error?.message || String(error),
+      errorType: error?.name || "Error",
       ...metadata,
     });
     return null;

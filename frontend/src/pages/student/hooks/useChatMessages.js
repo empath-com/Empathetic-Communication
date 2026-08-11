@@ -428,6 +428,7 @@ export default function useChatMessages({
         patientId: requestPayload.patientId,
         sessionName: requestPayload.sessionName,
         messageId: requestPayload.messageId,
+        messageContent: requestPayload.messageContent,
       });
     } catch (error) {
       console.error("AppSync streaming error:", error);
@@ -510,6 +511,7 @@ export default function useChatMessages({
             patientId: patient.patient_id,
             sessionName: newSessionObj.session_name,
             messageId,
+            messageContent: message,
           },
           newSessionObj.session_id
         );

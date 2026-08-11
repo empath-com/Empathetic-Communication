@@ -95,10 +95,10 @@ export function createStudentChatApi(client) {
       return ensureClient.get("student/get_messages", { session_id: sessionId });
     },
 
-    textGenerationStream({ simulationGroupId, sessionId, patientId, sessionName, messageId }) {
+    textGenerationStream({ simulationGroupId, sessionId, patientId, sessionName, messageId, messageContent }) {
       return ensureClient.post(
         "student/text_generation",
-        undefined,
+        { message_content: messageContent },
         {
           simulation_group_id: simulationGroupId,
           session_id: sessionId,
