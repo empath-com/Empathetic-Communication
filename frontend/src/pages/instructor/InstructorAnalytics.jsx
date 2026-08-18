@@ -1,398 +1,67 @@
-import { useState, useEffect } from "react";
-import { apiGet } from "../../utils/apiClient";
-import {
-  Container,
-  Typography,
-  Box,
-  Tabs,
-  Tab,
-  LinearProgress,
-  Grid,
-  Paper,
-} from "@mui/material";
-import {
-  BarChart,
-  Bar,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
-import { titleCase } from "../../utils/textFormatting";
+import { Alert, Box, Button, Container, Paper, Skeleton, Typography } from "@mui/material";
+import AnalyticsFilters from "./AnalyticsFilters";
+import AnalyticsVisualizations from "./AnalyticsVisualizations";
+import useInstructorAnalytics from "./hooks/useInstructorAnalytics";
 
-const InstructorAnalytics = ({ groupName, simulation_group_id }) => {
-  const [tabValue, setTabValue] = useState(0);
-  const [data, setData] = useState([]);
+function Metric({ label, value, detail }) {
+  return (
+    <Paper elevation={0} sx={{ border: "1px solid #dbe4db", borderRadius: 2, p: 2, minWidth: 145 }}>
+      <Typography variant="body2" sx={{ color: "#61716d" }}>{label}</Typography>
+      <Typography variant="h5" sx={{ color: "#17342e", fontWeight: 700, mt: 0.4 }}>{value}</Typography>
+      <Typography variant="caption" sx={{ color: "#71807c" }}>{detail}</Typography>
+    </Paper>
+  );
+}
 
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      try {
-        const analytics_data = await apiGet("instructor/analytics", {
-          simulation_group_id,
-        });
-        console.log("Analytics data:", analytics_data);
-        setData(analytics_data);
-      } catch (error) {
-        console.error("Error fetching analytics:", error);
-      }
-    };
-
-    fetchAnalytics();
-  }, [simulation_group_id]);
-
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-  };
+export default function InstructorAnalytics({ simulation_group_id: initialSimulationGroupId }) {
+  const { filters, report, loading, error, updateFilter, clearFilters, reload } =
+    useInstructorAnalytics(initialSimulationGroupId);
+  const coverage = report?.coverage || {};
+  const completionRate = coverage.total_attempts
+    ? Math.round((coverage.completed_attempts / coverage.total_attempts) * 100)
+    : 0;
 
   return (
-    <Container
-      sx={{ flexGrow: 1, p: 3, marginTop: 9, width: "100%", overflow: "auto" }}
-    >
-      <Typography
-        color="black"
-        fontStyle="semibold"
-        textAlign="left"
-        variant="h6"
-        gutterBottom
-        sx={{ fontWeight: 600, fontSize: "1.25rem", color: "#111827" }}
-      >
-        {titleCase(groupName)}
-      </Typography>
-
-      {data.length === 0 ? (
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "50vh",
-            textAlign: "center",
-            backgroundColor: "white",
-            borderRadius: "16px",
-            border: "1px solid #e5e7eb",
-            boxShadow:
-              "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
-            px: 6,
-          }}
-        >
-          <Typography
-            variant="h5"
-            color="textSecondary"
-            sx={{ fontWeight: 500 }}
-          >
-            No data to display. Please check back later.
-          </Typography>
+    <Container maxWidth={false} sx={{ flexGrow: 1, p: { xs: 2, md: 3 }, mt: 9, bgcolor: "#f5f8f5", minHeight: "calc(100vh - 72px)" }}>
+      <Box sx={{ maxWidth: 1560, mx: "auto" }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, mb: 2 }}>
+          <Box>
+            <Typography component="h1" variant="h5" sx={{ color: "#17342e", fontWeight: 750 }}>
+              Learning Analytics
+            </Typography>
+            <Typography variant="body2" sx={{ color: "#61716d", mt: 0.5 }}>
+              Cohort patterns from completed simulation attempts and terminal communication analysis.
+            </Typography>
+          </Box>
+          <Button variant="outlined" color="inherit" onClick={reload} disabled={loading}>Refresh</Button>
         </Box>
-      ) : (
-        <>
-          {/* Tabs for Patients */}
-          <Tabs
-            value={tabValue}
-            onChange={handleTabChange}
-            aria-label="patient tabs"
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{
-              mb: 3,
-              "& .MuiTab-root": {
-                textTransform: "none",
-                fontWeight: 500,
-                fontSize: "0.9rem",
-                borderRadius: "10px 10px 0 0",
-                minHeight: "44px",
-              },
-              "& .Mui-selected": {
-                color: "#059669 !important",
-              },
-              "& .MuiTabs-indicator": {
-                backgroundColor: "#10b981",
-                height: "3px",
-                borderRadius: "3px 3px 0 0",
-              },
-            }}
-          >
-            {data.map((patient, index) => (
-              <Tab key={index} label={titleCase(patient.patient_name)} />
-            ))}
-          </Tabs>
 
-          {data.map((patient, index) => (
-            <Box
-              key={index}
-              hidden={tabValue !== index}
-              sx={{ marginTop: 2, paddingTop: 2 }}
-            >
-              <Typography
-                variant="h6"
-                color="textPrimary"
-                gutterBottom
-                sx={{ marginBottom: 2, fontWeight: 600, fontSize: "1.1rem" }}
-              >
-                {titleCase(patient.patient_name)} Overview
-              </Typography>
+        <AnalyticsFilters filters={filters} options={report?.filters || {}} onChange={updateFilter} onClear={clearFilters} />
 
-              {/* Insights Section */}
-              <Box mb={4}>
-                <Paper
-                  sx={{
-                    borderRadius: "16px",
-                    border: "1px solid #e5e7eb",
-                    boxShadow:
-                      "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
-                  }}
-                >
-                  <Grid
-                    container
-                    spacing={2}
-                    alignItems="center"
-                    justifyContent="space-between"
-                    sx={{ padding: 2 }}
-                  >
-                    {/* Instructor Completion Percentage */}
-                    <Grid item xs={12} sm={6}>
-                      <Typography sx={{ fontWeight: 500, color: "#374151" }}>
-                        Instructor Completion Percentage:
-                      </Typography>
-                      <LinearProgress
-                        variant="determinate"
-                        value={patient.instructor_completion_percentage || 0}
-                        sx={{
-                          marginY: 1,
-                          height: 8,
-                          borderRadius: 4,
-                          "& .MuiLinearProgress-bar": {
-                            backgroundColor: "#10b981",
-                          },
-                        }}
-                      />
-                      <Typography
-                        textAlign="right"
-                        sx={{ fontSize: "0.85rem", color: "#6b7280" }}
-                      >
-                        {patient.instructor_completion_percentage.toFixed(2)}%
-                      </Typography>
-                    </Grid>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-                    {/* LLM Completion Percentage: (conditionally displayed) */}
-                    {patient.llm_completion && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography sx={{ fontWeight: 500, color: "#374151" }}>
-                          LLM Completion Percentage:
-                        </Typography>
-                        <LinearProgress
-                          variant="determinate"
-                          value={patient.ai_score_percentage || 0}
-                          sx={{
-                            marginY: 1,
-                            height: 8,
-                            borderRadius: 4,
-                            "& .MuiLinearProgress-bar": {
-                              backgroundColor: "#059669",
-                            },
-                          }}
-                        />
-                        <Typography
-                          textAlign="right"
-                          sx={{ fontSize: "0.85rem", color: "#6b7280" }}
-                        >
-                          {patient.ai_score_percentage.toFixed(2)}%
-                        </Typography>
-                      </Grid>
-                    )}
-
-                    {/* Student and AI Message Counts with Access Count */}
-                    {patient.llm_completion && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          Student Message Count: {patient.student_message_count}
-                        </Typography>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          AI Message Count: {patient.ai_message_count}
-                        </Typography>
-                      </Grid>
-                    )}
-
-                    {patient.llm_completion && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          Student Access Count: {patient.access_count}
-                        </Typography>
-                      </Grid>
-                    )}
-
-                    {!patient.llm_completion && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          Student Message Count: {patient.student_message_count}
-                        </Typography>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          AI Message Count: {patient.ai_message_count}
-                        </Typography>
-                        <Typography
-                          sx={{ fontSize: "0.9rem", color: "#374151" }}
-                        >
-                          Student Access Count: {patient.access_count}
-                        </Typography>
-                      </Grid>
-                    )}
-                  </Grid>
-                </Paper>
-              </Box>
-
-              {/* Message Count Chart */}
-              <Paper
-                sx={{
-                  borderRadius: "16px",
-                  mb: 4,
-                  border: "1px solid #e5e7eb",
-                  boxShadow:
-                    "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
-                }}
-              >
-                <Box mb={4} sx={{ height: 400, paddingBottom: 2 }}>
-                  <Typography
-                    color="black"
-                    textAlign="left"
-                    paddingLeft={2}
-                    padding={2}
-                    sx={{
-                      fontWeight: 600,
-                      fontSize: "0.95rem",
-                      letterSpacing: ".05em",
-                      textTransform: "uppercase",
-                      color: "#374151",
-                    }}
-                  >
-                    Message Count
-                  </Typography>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={[
-                        {
-                          name: "Messages",
-                          StudentMessages:
-                            parseInt(patient.student_message_count, 10) || 0,
-                          AIMessages:
-                            parseInt(patient.ai_message_count, 10) || 0,
-                        },
-                      ]}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
-                      barSize={28}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis
-                        dataKey="name"
-                        tickMargin={10}
-                        tick={{ fill: "#6b7280", fontSize: 12 }}
-                      />
-                      <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar
-                        dataKey="StudentMessages"
-                        fill="#10b981"
-                        name="Student Messages"
-                        radius={[6, 6, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="AIMessages"
-                        fill="#059669"
-                        name="AI Messages"
-                        radius={[6, 6, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-              </Paper>
-
-              {/* Completion Chart */}
-              <Paper
-                sx={{
-                  borderRadius: "16px",
-                  border: "1px solid #e5e7eb",
-                  boxShadow:
-                    "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
-                }}
-              >
-                <Box mb={4} sx={{ height: 400, paddingBottom: 2 }}>
-                  <Typography
-                    color="black"
-                    textAlign="left"
-                    paddingLeft={2}
-                    padding={2}
-                    sx={{
-                      fontWeight: 600,
-                      fontSize: "0.95rem",
-                      letterSpacing: ".05em",
-                      textTransform: "uppercase",
-                      color: "#374151",
-                    }}
-                  >
-                    Completion Overview
-                  </Typography>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={[
-                        {
-                          name: "Completion",
-                          InstructorCompletion:
-                            parseFloat(
-                              patient.instructor_completion_percentage
-                            ) || 0,
-                          LLMCompletion: patient.llm_completion
-                            ? parseFloat(patient.ai_score_percentage) || 0
-                            : null,
-                        },
-                      ]}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
-                      barSize={28}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis
-                        dataKey="name"
-                        tickMargin={10}
-                        tick={{ fill: "#6b7280", fontSize: 12 }}
-                      />
-                      <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar
-                        dataKey="InstructorCompletion"
-                        fill="#f59e0b"
-                        name="Instructor Completion %"
-                        radius={[6, 6, 0, 0]}
-                      />
-                      {patient.llm_completion && (
-                        <Bar
-                          dataKey="LLMCompletion"
-                          fill="#6366f1"
-                          name="LLM Completion %"
-                          radius={[6, 6, 0, 0]}
-                        />
-                      )}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-              </Paper>
+        {loading && !report ? (
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 2 }}>
+            {[1, 2, 3, 4, 5, 6].map((key) => <Skeleton key={key} variant="rounded" height={220} />)}
+          </Box>
+        ) : (
+          <>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 1.5, mb: 2.25 }}>
+              <Metric label="Attempts" value={coverage.total_attempts || 0} detail="Started sessions" />
+              <Metric label="Completion" value={`${completionRate}%`} detail={`${coverage.completed_attempts || 0} completed`} />
+              <Metric label="Analyzed" value={coverage.analyzed_attempts || 0} detail="Terminal rubric snapshots" />
+              <Metric label="Processing" value={coverage.pending_analytics || 0} detail="Pending analytics jobs" />
             </Box>
-          ))}
-        </>
-      )}
+            {coverage.total_attempts === 0 ? (
+              <Paper elevation={0} sx={{ border: "1px solid #dbe4db", borderRadius: 2, p: 6, textAlign: "center", color: "#61716d" }}>
+                No attempts match these filters yet.
+              </Paper>
+            ) : (
+              <AnalyticsVisualizations report={report} />
+            )}
+          </>
+        )}
+      </Box>
     </Container>
   );
-};
-
-export default InstructorAnalytics;
+}

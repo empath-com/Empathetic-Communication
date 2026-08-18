@@ -35,6 +35,7 @@ from voice_text_utils import (
     VoiceTurnTimer,
     SentenceAccumulator,
 )
+from polly_capabilities import describe_voice, fallback_engines
 from shared.completion import finalize_completion_response
 from shared.evaluation_tool_specs import (
     CARE_CRITERIA,
@@ -1847,15 +1848,6 @@ class PollyTranscribeSession(NovaSonic):
     This class keeps the same stdin contract used by server.js.
     """
 
-    # Valid Polly neural voice IDs (subset covering all voices the app may request)
-    _VALID_POLLY_VOICES = {
-        "Amy", "Arthur", "Brian", "Emma", "Joanna", "Joey", "Justin", "Kendra",
-        "Kimberly", "Matthew", "Salli", "Ivy", "Kevin", "Ruth", "Stephen", "Danielle",
-        "Gregory", "Adriano", "Andres", "Aria", "Arlet", "Ayanda", "Camila", "Gabrielle",
-        "Hannah", "Kajal", "Liam", "Lupe", "Niamh", "Olivia", "Pedro", "Sergio",
-        "Maxim", "Tatyana", "Conchita", "Enrique", "Lucia", "Mia", "Miguel", "Penelope",
-        "Marlene", "Vicki", "Hans", "Bianca", "Carla", "Giorgio",
-    }
     _FALLBACK_POLLY_VOICE = "Matthew"
 
     # Seconds of silence after the last final transcript before auto-triggering the AI response.
@@ -1864,8 +1856,6 @@ class PollyTranscribeSession(NovaSonic):
 
     def __init__(self, region=None, voice_id=None, session_id=None):
         super().__init__(model_id="polly-transcribe", region=region, voice_id=voice_id, session_id=session_id)
-        # Polly voice IDs are proper-cased (e.g. "Matthew", not "matthew").
-        # Capitalize to fix frontend sending lowercase names, then validate.
         raw_voice = voice_id or os.getenv("POLLY_VOICE_ID", "")
         candidate = raw_voice.capitalize() if raw_voice else ""
         self.voice_id = candidate or self._FALLBACK_POLLY_VOICE
@@ -1873,6 +1863,8 @@ class PollyTranscribeSession(NovaSonic):
             print(f"⚠️ POLLY: No voice_id provided, defaulting to {self._FALLBACK_POLLY_VOICE!r}", flush=True)
         print(f"🔊 POLLY: Using voice_id={self.voice_id!r} (raw input: {raw_voice!r})", flush=True)
         self.polly_engine = os.getenv("POLLY_ENGINE", "neural")
+        self._polly_engines = fallback_engines(self.polly_engine)
+        self._polly_voice_language_code = "en-US"
         self.language_code = os.getenv("TRANSCRIBE_LANGUAGE_CODE", "en-US")
         self._loop = None
 
@@ -1904,6 +1896,8 @@ class PollyTranscribeSession(NovaSonic):
 
         print(f"🧪 Starting Polly/Transcribe session (session_id={self.session_id}, voice_id={self.voice_id})", flush=True)
 
+        await self._load_polly_capabilities()
+
         session_ok = self._ensure_session_exists(self.session_id)
         if not session_ok:
             logger.warning(f"Session {self.session_id} not in DB - continuing without persistence")
@@ -1913,6 +1907,34 @@ class PollyTranscribeSession(NovaSonic):
         print(json.dumps({"type": "debug", "text": "Polly/Transcribe ready"}), flush=True)
         # Keep compatibility with existing server-side readiness checks.
         print(json.dumps({"type": "debug", "text": "Nova Sonic ready"}), flush=True)
+
+    async def _load_polly_capabilities(self):
+        loop = asyncio.get_running_loop()
+        try:
+            voice = await loop.run_in_executor(
+                None, describe_voice, self._polly_client, self.voice_id
+            )
+        except Exception as error:
+            logger.warning("Polly voice capability lookup failed: %s", error)
+            print("⚠️ POLLY: Voice capability lookup failed; using fallback engines", flush=True)
+            return
+
+        if not voice:
+            print(f"⚠️ POLLY: Voice {self.voice_id!r} was not found; using fallback engines", flush=True)
+            return
+
+        self.voice_id = voice.voice_id
+        self._polly_voice_language_code = voice.language_code
+        self._polly_engines = voice.engines_by_preference or self._polly_engines
+        print(
+            f"🔊 POLLY: Voice capabilities voice={self.voice_id!r} "
+            f"engines={','.join(self._polly_engines)}",
+            flush=True,
+        )
+
+    @property
+    def _uses_generative_streaming(self):
+        return self._polly_engines and self._polly_engines[0] == "generative"
 
     async def _transcribe_preflight_check(self):
         """
@@ -2355,7 +2377,7 @@ class PollyTranscribeSession(NovaSonic):
             # generative engine AND diagnosis completion detection is off (streaming
             # makes it harder to inspect the full output before speaking).
             _bedrock_stream = os.getenv("VOICE_BEDROCK_STREAMING", "false").lower() in ("1", "true", "yes")
-            _use_pipeline = _bedrock_stream and self.voice_id in self._GENERATIVE_VOICES and not self.llm_completion
+            _use_pipeline = _bedrock_stream and self._uses_generative_streaming and not self.llm_completion
 
             if _use_pipeline:
                 tts_mode = "streaming-pipeline"
@@ -2413,11 +2435,11 @@ class PollyTranscribeSession(NovaSonic):
                 # Enable barge-in now that Polly synthesis is about to start.
                 self._is_speaking = True
 
-                tts_mode = "generative-streaming" if self.voice_id in self._GENERATIVE_VOICES else f"ssml-{self.polly_engine}"
+                tts_mode = "generative-streaming" if self._uses_generative_streaming else f"ssml-{self._polly_engines[0]}"
                 print(json.dumps({"type": "debug", "text": f"[POLLY] TTS: voice={self.voice_id}, mode={tts_mode}, chars={len(response_text)}"}), flush=True)
 
                 timer.mark("polly_start")
-                if self.voice_id in self._GENERATIVE_VOICES:
+                if self._uses_generative_streaming:
                     # Bidirectional streaming: first PCM byte arrives well before the
                     # full synthesis completes, and is now emitted immediately.
                     full_reply = await self._synthesize_and_emit_streaming(response_text, generation_id, timer)
@@ -2427,8 +2449,8 @@ class PollyTranscribeSession(NovaSonic):
                     # emitted in chunk order so playback stays sequential.
                     ssml_list = [self._render_ssml(chunk) for chunk in chunks]
                     synthesis_tasks = [
-                        asyncio.create_task(self._synthesize_ssml_to_b64(ssml))
-                        for ssml in ssml_list
+                        asyncio.create_task(self._synthesize_ssml_to_b64(ssml, chunk))
+                        for ssml, chunk in zip(ssml_list, chunks)
                     ]
 
                     for idx, (chunk, task) in enumerate(zip(chunks, synthesis_tasks), start=1):
@@ -2531,47 +2553,8 @@ class PollyTranscribeSession(NovaSonic):
             chunks.append(buf)
         return chunks
 
-    # Voices that support the generative engine. When a voice is in this set
-    # the engine is switched to "generative" automatically, which gives far more
-    # natural, emotionally engaged speech than neural TTS.
-    # Source: AWS Polly generative voice list (2024).
-    _GENERATIVE_VOICES = {
-        "Olivia",                                           # English – Australian
-        "Amy", "Brian",                                     # English – British
-        "Kajal",                                            # English – Indian
-        "Niamh",                                            # English – Irish
-        "Aria",                                             # English – New Zealand
-        "Ayanda",                                           # English – South African
-        "Danielle", "Joanna", "Matthew", "Ruth",            # English – US
-        "Salli", "Stephen", "Tiffany",                      # English – US
-        "Gabrielle", "Liam",                                # French – Canadian
-        "Hannah",                                           # German – Austrian
-        "Vicki",                                            # German – Germany
-        "Bianca",                                           # Italian
-        "Camila",                                           # Portuguese – Brazilian
-        "Lucia", "Sergio",                                  # Spanish – Spain
-        "Lupe", "Pedro",                                    # Spanish – US
-        "Mia",                                              # Spanish – Mexican
-    }
-
-    # Neural-only voices that support <amazon:domain name="conversational">.
-    # Not applied to generative voices — naturalness is already in the model.
-    _CONVERSATIONAL_NEURAL_VOICES = {
-        "Ivy", "Joey", "Justin", "Kendra", "Kimberly",     # English – US (neural only)
-        "Arthur", "Emma",                                   # English – British (neural only)
-    }
-
     def _render_ssml(self, text: str) -> str:
-        """
-        Build SSML for a patient utterance.
-
-        Generative voices: <prosody> + <break> only — amazon:domain and
-        amazon:auto-breaths are Standard/Neural-only tags and cause
-        InvalidSsmlException on the generative engine.
-
-        Neural voices: additionally wrap with <amazon:domain name="conversational">
-        for voices that support it.
-        """
+        """Build SSML from tags supported by every Polly voice engine."""
         clean, _ = strip_vocal_cues(text or "")
         clean = clean.strip() or "..."
 
@@ -2581,50 +2564,42 @@ class PollyTranscribeSession(NovaSonic):
         safe_text = html.escape(clean)
         safe_text = re.sub(r'([.!?])\s+', r'\1<break time="350ms"/> ', safe_text)
 
-        if self.voice_id in self._GENERATIVE_VOICES:
-            # Generative engine: emotional naturalness is built into the model;
-            # only basic SSML is supported.
-            inner = safe_text
-        elif self.voice_id in self._CONVERSATIONAL_NEURAL_VOICES:
-            inner = f'<amazon:domain name="conversational">{safe_text}</amazon:domain>'
-        else:
-            inner = safe_text
-
-        return (
-            "<speak>"
-            "<prosody rate='90%'>"
-            f"{inner}"
-            "</prosody>"
-            "</speak>"
-        )
+        return f"<speak>{safe_text}</speak>"
 
     # PCM sample rate sent to Polly.  Both neural and generative engines support
     # 16000 Hz; the frontend WAV header is hardcoded to match this value.
     POLLY_SAMPLE_RATE = 16000
 
-    async def _synthesize_ssml_to_b64(self, ssml: str, engine_override: str = None):
-        # engine_override lets callers force a specific engine (e.g. "neural" when
-        # the generative engine is unavailable via SynthesizeSpeech in this region).
-        engine = engine_override or (
-            "generative"
-            if self.voice_id in self._GENERATIVE_VOICES
-            else self.polly_engine
-        )
+    async def _synthesize_ssml_to_b64(self, ssml: str, plain_text: str):
         loop = asyncio.get_event_loop()
 
         def _invoke():
-            response = self._polly_client.synthesize_speech(
-                Engine=engine,
-                VoiceId=self.voice_id,
-                OutputFormat="pcm",
-                SampleRate=str(self.POLLY_SAMPLE_RATE),
-                TextType="ssml",
-                Text=ssml,
-            )
-            stream = response.get("AudioStream")
-            if not stream:
-                return None
-            return base64.b64encode(stream.read()).decode("utf-8")
+            clean_text, _ = strip_vocal_cues(plain_text or "")
+            clean_text = clean_text.strip() or "..."
+            for engine in self._polly_engines:
+                for text_type, text in (("ssml", ssml), ("text", clean_text)):
+                    try:
+                        response = self._polly_client.synthesize_speech(
+                            Engine=engine,
+                            VoiceId=self.voice_id,
+                            OutputFormat="pcm",
+                            SampleRate=str(self.POLLY_SAMPLE_RATE),
+                            TextType=text_type,
+                            Text=text,
+                        )
+                        stream = response.get("AudioStream")
+                        if stream:
+                            return base64.b64encode(stream.read()).decode("utf-8")
+                    except botocore.exceptions.ClientError as error:
+                        error_code = error.response.get("Error", {}).get("Code", "Unknown")
+                        logger.warning(
+                            "Polly synthesis fallback voice=%s engine=%s text_type=%s error=%s",
+                            self.voice_id,
+                            engine,
+                            text_type,
+                            error_code,
+                        )
+            return None
 
         try:
             result = await loop.run_in_executor(None, _invoke)
@@ -2638,27 +2613,6 @@ class PollyTranscribeSession(NovaSonic):
             print(f"❌ POLLY: Polly synthesis FAILED: {e}", flush=True)
             print(json.dumps({"type": "debug", "text": f"[POLLY] Polly synthesis error: {e}"}), flush=True)
             return None
-
-    # BCP-47 language code for each generative voice.
-    # Only non-en-US entries are listed; all others default to en-US.
-    _VOICE_LANGUAGE_CODES = {
-        "Olivia":    "en-AU",
-        "Amy":       "en-GB",
-        "Brian":     "en-GB",
-        "Kajal":     "en-IN",
-        "Niamh":     "en-IE",
-        "Aria":      "en-NZ",
-        "Ayanda":    "en-ZA",
-        "Gabrielle": "fr-CA",
-        "Liam":      "fr-CA",
-        "Hannah":    "de-AT",
-        "Vicki":     "de-DE",
-        "Bianca":    "it-IT",
-        "Camila":    "pt-BR",
-        "Lucia":     "es-ES",
-        "Sergio":    "es-ES",
-        "Mia":       "es-MX",
-    }
 
     def _get_polly_streaming_client(self) -> PollyStreamingClient:
         if self._polly_streaming_client is None:
@@ -2725,7 +2679,7 @@ class PollyTranscribeSession(NovaSonic):
         timer.mark("llm_start")
         producer_task = asyncio.create_task(_producer())
 
-        language_code = self._VOICE_LANGUAGE_CODES.get(self.voice_id, "en-US")
+        language_code = self._polly_voice_language_code
         client = self._get_polly_streaming_client()
         emitted_chunks = 0
         sentence_idx = 0
@@ -2825,7 +2779,7 @@ class PollyTranscribeSession(NovaSonic):
                 return clean
             print(json.dumps({"type": "text", "text": chunk}), flush=True)
 
-        language_code = self._VOICE_LANGUAGE_CODES.get(self.voice_id, "en-US")
+        language_code = self._polly_voice_language_code
         client = self._get_polly_streaming_client()
 
         received_chunks = 0
@@ -2906,13 +2860,11 @@ class PollyTranscribeSession(NovaSonic):
             emitted_chunks = 0  # force fallback
 
         # Fallback: streaming either timed out, threw, or returned 0 chunks.
-        # Force neural engine — SynthesizeSpeech with engine="generative" is only
-        # available in select regions, whereas neural works everywhere.
         if emitted_chunks == 0 and generation_id == self._generation_id:
-            print(f"⚠️ POLLY: Streaming delivered 0 chunks — using neural SSML fallback", flush=True)
+            print(f"⚠️ POLLY: Streaming delivered 0 chunks — using compatible Polly fallback", flush=True)
             print(json.dumps({"type": "debug", "text": "[POLLY] Using SSML fallback (0 streaming chunks)"}), flush=True)
             ssml = self._render_ssml(clean)
-            audio_b64 = await self._synthesize_ssml_to_b64(ssml, engine_override="neural")
+            audio_b64 = await self._synthesize_ssml_to_b64(ssml, clean)
             if audio_b64:
                 emitted_chunks = 1
                 self._barge_in_enabled = True

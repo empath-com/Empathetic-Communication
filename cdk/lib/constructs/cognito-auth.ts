@@ -259,7 +259,7 @@ export function createCognitoAuth(
         ),
         // Add Polly permission for Polly/Transcribe voice pipeline
         createPolicyStatement(
-          ["polly:SynthesizeSpeech", "polly:StartSpeechSynthesisStream"],
+          ["polly:DescribeVoices", "polly:SynthesizeSpeech", "polly:StartSpeechSynthesisStream"],
           ["*"]
         ),
         // Add Secrets Manager permissions for Nova Sonic
@@ -459,6 +459,14 @@ export function createCognitoAuth(
       resources: [
         `arn:aws:rds-db:${scope.region}:${scope.account}:dbuser:*/applicationUsername`,
       ],
+    })
+  );
+
+  lambdaRole.addToPolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["polly:DescribeVoices"],
+      resources: ["*"],
     })
   );
 

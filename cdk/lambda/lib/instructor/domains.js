@@ -8,11 +8,11 @@ const accessRoutes = require("./accessRoutes.js");
 const completionRoutes = require("./completionRoutes.js");
 const empathyRoutes = require("./empathyRoutes.js");
 const voiceRoutes = require("./voiceRoutes.js");
+const analyticsRoutes = require("./analyticsRoutes.js");
 
 const groupValidation = {
   "GET /instructor/student_group": ["email"],
   "GET /instructor/groups": ["email"],
-  "GET /instructor/analytics": ["simulation_group_id"],
 };
 
 const studentValidation = {
@@ -39,6 +39,7 @@ const routeDomains = [
   { domain: "completion", routes: createDomainRoutes("completion", completionRoutes) },
   { domain: "empathy", routes: createDomainRoutes("empathy", empathyRoutes, empathyValidation) },
   { domain: "voice", routes: createDomainRoutes("voice", voiceRoutes, voiceValidation) },
+  { domain: "analytics", routes: createDomainRoutes("analytics", analyticsRoutes) },
 ];
 
 module.exports = { routeDomains };

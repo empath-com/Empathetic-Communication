@@ -1761,6 +1761,150 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /student/record_session_activity:
+    options:
+      summary: CORS support
+      description: Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${CorsAllowedOrigin}'"
+            responseTemplates:
+              application/json: |
+                {}
+    post:
+      tags:
+        - Student
+      summary: Record focused active time for an in-progress session
+      operationId: student_record_session_activity_POST
+      parameters:
+        - in: query
+          name: session_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: student_email
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: simulation_group_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - active_seconds
+              properties:
+                active_seconds:
+                  type: integer
+                  minimum: 1
+                  maximum: 120
+      responses:
+        "200":
+          description: Session activity recorded
+        "400":
+          description: Invalid activity duration
+        "404":
+          description: Active session not found
+      security:
+        - studentAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${studentFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
+  /student/complete_session:
+    options:
+      summary: CORS support
+      description: Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${CorsAllowedOrigin}'"
+            responseTemplates:
+              application/json: |
+                {}
+    post:
+      tags:
+        - Student
+      summary: Complete a session and queue its terminal analytics evaluation
+      operationId: student_complete_session_POST
+      parameters:
+        - in: query
+          name: session_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: student_email
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: simulation_group_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - objective_achieved
+              properties:
+                objective_achieved:
+                  type: boolean
+      responses:
+        "200":
+          description: Session completed
+        "400":
+          description: Invalid completion request
+        "404":
+          description: Session not found
+      security:
+        - studentAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${studentFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /student/get_all_files:
     options:
       summary: CORS support
@@ -3021,13 +3165,25 @@ paths:
     get:
       tags:
         - Instructor
-      summary: Get analytics data for a specific group
+      summary: Get aggregate analytics for groups owned by the authenticated instructor
       operationId: instructor_analytics_GET
       parameters:
         - in: query
           name: simulation_group_id
-          required: true
-          description: ID of the group for which analytics are requested
+          required: false
+          description: Optional group filter. The group must belong to the authenticated instructor.
+          schema:
+            type: string
+        - in: query
+          name: patient_id
+          required: false
+          description: Optional patient filter within the instructor's owned groups
+          schema:
+            type: string
+        - in: query
+          name: student_user_id
+          required: false
+          description: Optional student filter within the instructor's owned groups
           schema:
             type: string
       responses:
@@ -3127,6 +3283,30 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /instructor/polly_voices:
+    <<: *commonOptions
+    get:
+      tags:
+        - Instructor
+      summary: List Amazon Polly voices available in the deployment region
+      operationId: instructor_polly_voices_GET
+      responses:
+        "200":
+          description: Available Polly voices
+        "401":
+          description: Unauthorized
+        "429":
+          description: Too Many Requests
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/create_patient:
     options:
       summary: CORS support
@@ -3180,6 +3360,12 @@ paths:
           name: patient_gender
           required: true
           description: Gender of the new patient
+          schema:
+            type: string
+        - in: query
+          name: voice_id
+          required: false
+          description: Amazon Polly voice ID selected for the patient
           schema:
             type: string
         - in: query

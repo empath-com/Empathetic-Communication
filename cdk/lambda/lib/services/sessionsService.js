@@ -29,12 +29,23 @@ async function createSession(sqlConnection, payload) {
   `;
 
   const sessionData = await sqlConnection`
-    INSERT INTO "sessions" (session_id, student_interaction_id, session_name, session_context_embeddings, last_accessed, notes)
+    INSERT INTO "sessions" (
+      session_id,
+      student_interaction_id,
+      session_name,
+      session_context_embeddings,
+      last_accessed,
+      started_at,
+      last_activity_at,
+      notes
+    )
     VALUES (
       uuid_generate_v4(),
       ${studentPatientId},
       ${sessionName},
       ARRAY[]::float[],
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP,
       CURRENT_TIMESTAMP,
       NULL
     )

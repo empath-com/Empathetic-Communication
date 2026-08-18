@@ -136,6 +136,30 @@ export function createStudentChatApi(client) {
       );
     },
 
+    completeSession({ sessionId, studentEmail, simulationGroupId, objectiveAchieved }) {
+      return ensureClient.post(
+        "student/complete_session",
+        { objective_achieved: Boolean(objectiveAchieved) },
+        {
+          session_id: sessionId,
+          student_email: studentEmail,
+          simulation_group_id: simulationGroupId,
+        }
+      );
+    },
+
+    recordSessionActivity({ sessionId, studentEmail, simulationGroupId, activeSeconds }) {
+      return ensureClient.post(
+        "student/record_session_activity",
+        { active_seconds: activeSeconds },
+        {
+          session_id: sessionId,
+          student_email: studentEmail,
+          simulation_group_id: simulationGroupId,
+        }
+      );
+    },
+
     createStudentUserProfile({ userEmail, username, firstName, lastName, preferredName }) {
       return ensureClient.post("student/create_user", undefined, {
         user_email: userEmail,

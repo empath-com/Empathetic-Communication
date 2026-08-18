@@ -9,6 +9,7 @@ from langchain_aws import BedrockEmbeddings
 
 from helpers.vectorstore import get_vectorstore_retriever
 from helpers.chat import get_bedrock_llm, get_initial_student_query, get_student_query, create_dynamodb_history_table, get_response, update_session_name, handle_empathy_evaluation
+from helpers.conversation_analytics import evaluate_completed_conversation
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
@@ -320,6 +321,10 @@ def handler(event, context):
     logger.info("🔧 EMPATHY EVALUATION SYSTEM LOADED")
     logger.info(f"📝 Event headers: {event.get('headers', {})}")
     logger.info(f"🔍 FULL EVENT: {json.dumps(event, default=str)}")
+
+    if event.get("conversationAnalytics"):
+        return handler_conversation_analytics(event)
+
     initialize_constants()
     
     # Determine which endpoint is being called
@@ -333,6 +338,139 @@ def handler(event, context):
     else:
         logger.info("💬 ROUTING TO TEXT GENERATION ENDPOINT")
         return handler_text_generation(event, context)
+
+
+def handler_conversation_analytics(event):
+    """Analyze one completed session and persist its aggregate-only analytics snapshot."""
+    session_id = event.get("session_id")
+    if not session_id:
+        raise ValueError("conversation analytics event requires session_id")
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE conversation_analytics_jobs
+                SET status = 'processing', attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = %s AND status IN ('pending', 'processing')
+                RETURNING session_id
+                """,
+                (session_id,),
+            )
+            if not cursor.fetchone():
+                logger.info("Analytics job is already complete or unavailable: %s", session_id)
+                return {"statusCode": 200, "body": json.dumps({"session_id": session_id, "status": "skipped"})}
+
+            cursor.execute(
+                """
+                SELECT
+                    s.active_duration_seconds,
+                    COUNT(m.message_id) FILTER (WHERE m.student_sent) AS dialogue_turn_count,
+                    EXTRACT(EPOCH FROM (MAX(m.time_sent) - MIN(m.time_sent)))::integer AS message_span_seconds,
+                    json_agg(json_build_object(
+                        'student_sent', m.student_sent,
+                        'message_content', m.message_content
+                    ) ORDER BY m.time_sent ASC) AS messages
+                FROM sessions s
+                LEFT JOIN messages m ON m.session_id = s.session_id
+                WHERE s.session_id = %s AND s.completion_status = 'completed'
+                GROUP BY s.session_id, s.active_duration_seconds
+                """,
+                (session_id,),
+            )
+            session_data = cursor.fetchone()
+
+        if not session_data or not session_data[3]:
+            raise ValueError("Completed session has no persisted messages")
+
+        active_duration_seconds, dialogue_turn_count, message_span_seconds, messages = session_data
+        transcript = "\n".join(
+            f"{'Practitioner' if message['student_sent'] else 'Patient'}: {message['message_content']}"
+            for message in messages
+            if message["message_content"]
+        )
+        evaluation = evaluate_completed_conversation(
+            transcript,
+            {"client": bedrock_runtime, "model_id": "amazon.nova-lite-v1:0"},
+        )
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO conversation_analytics_snapshots (
+                    session_id,
+                    rubric_version,
+                    dialogue_turn_count,
+                    message_span_seconds,
+                    active_duration_seconds,
+                    communication_score,
+                    objective_achieved,
+                    analysis_payload
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (session_id) DO UPDATE SET
+                    rubric_version = EXCLUDED.rubric_version,
+                    evaluated_at = CURRENT_TIMESTAMP,
+                    dialogue_turn_count = EXCLUDED.dialogue_turn_count,
+                    message_span_seconds = EXCLUDED.message_span_seconds,
+                    active_duration_seconds = EXCLUDED.active_duration_seconds,
+                    communication_score = EXCLUDED.communication_score,
+                    objective_achieved = EXCLUDED.objective_achieved,
+                    analysis_payload = EXCLUDED.analysis_payload
+                """,
+                (
+                    session_id,
+                    evaluation["rubric_version"],
+                    dialogue_turn_count or 0,
+                    message_span_seconds,
+                    active_duration_seconds or 0,
+                    evaluation["communication_score"],
+                    evaluation["objective_achieved"],
+                    json.dumps({"rubric_version": evaluation["rubric_version"]}),
+                ),
+            )
+            for metric_key, metric_count in evaluation["metrics"].items():
+                cursor.execute(
+                    """
+                    INSERT INTO conversation_metric_counts (session_id, metric_key, metric_count)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (session_id, metric_key) DO UPDATE SET metric_count = EXCLUDED.metric_count
+                    """,
+                    (session_id, metric_key, metric_count),
+                )
+            cursor.execute("DELETE FROM conversation_recommendation_topics WHERE session_id = %s", (session_id,))
+            for topic_key in evaluation["recommendation_topics"]:
+                cursor.execute(
+                    "INSERT INTO conversation_recommendation_topics (session_id, topic_key) VALUES (%s, %s)",
+                    (session_id, topic_key),
+                )
+            cursor.execute(
+                """
+                UPDATE conversation_analytics_jobs
+                SET status = 'completed', last_error = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = %s
+                """,
+                (session_id,),
+            )
+
+        logger.info("Completed terminal conversation analytics for session %s", session_id)
+        return {"statusCode": 200, "body": json.dumps({"session_id": session_id, "status": "completed"})}
+    except Exception as error:
+        logger.exception("Conversation analytics failed for session %s", session_id)
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE conversation_analytics_jobs
+                    SET status = 'pending', last_error = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = %s
+                    """,
+                    (str(error)[:2000], session_id),
+                )
+        except Exception:
+            logger.exception("Could not restore analytics job to pending state for session %s", session_id)
+        raise
 
 def handler_empathy_evaluation(event, context):
     """Handler for the /student/empathy_evaluation endpoint"""

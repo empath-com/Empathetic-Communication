@@ -62,6 +62,25 @@ NURSE_CRITERIA_LABELS = {
     "explore": "E. Explore — Use open-ended questions to deepen understanding",
 }
 
+CONVERSATION_ANALYTICS_METRICS = [
+    "empathy_statements",
+    "open_ended_questions",
+    "affirmations",
+    "missed_empathy_opportunities",
+    "interruptions",
+    "patient_centered_language",
+    "jargon_usage",
+]
+
+CONVERSATION_RECOMMENDATION_TOPICS = [
+    "empathy",
+    "open_ended_questions",
+    "affirmations",
+    "patient_centered_language",
+    "plain_language",
+    "shared_decision_making",
+]
+
 
 def resolve_schema_variant(schema_variant: str | None = None) -> str:
     normalized = (schema_variant or os.getenv("EMPATHY_TOOL_SCHEMA_VARIANT", SCHEMA_VARIANT_STRICT)).strip().lower()
@@ -310,3 +329,40 @@ def get_nurse_tool_spec(schema_variant: str | None = None) -> dict:
         else f"NURSE empathic communication scoring schema for {_pro}."
     )
     return {"toolSpec": {"name": tool_name, "description": description, "inputSchema": {"json": schema}}}
+
+
+def get_conversation_analytics_tool_spec() -> dict:
+    metric_properties = {
+        key: {"type": "integer", "minimum": 0, "maximum": 1000}
+        for key in CONVERSATION_ANALYTICS_METRICS
+    }
+    return {
+        "toolSpec": {
+            "name": "submit_conversation_analytics",
+            "description": "Return the fixed terminal analytics counts for a completed healthcare conversation.",
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "metrics": {
+                            "type": "object",
+                            "properties": metric_properties,
+                            "required": CONVERSATION_ANALYTICS_METRICS,
+                        },
+                        "recommendation_topics": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": CONVERSATION_RECOMMENDATION_TOPICS},
+                        },
+                        "communication_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                        "objective_achieved": {"type": "boolean"},
+                    },
+                    "required": [
+                        "metrics",
+                        "recommendation_topics",
+                        "communication_score",
+                        "objective_achieved",
+                    ],
+                }
+            },
+        }
+    }

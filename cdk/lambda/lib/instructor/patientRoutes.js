@@ -44,7 +44,7 @@ const routes = {
           return response;
         }
 
-        feminine_voices = [
+        const feminine_voices = [
           "tiffany",
           "amy",
           "ambre",
@@ -52,7 +52,7 @@ const routes = {
           "greta",
           "lupe",
         ];
-        masculine_voices = [
+        const masculine_voices = [
           "matthew",
           "florian",
           "lorenzo",
@@ -64,20 +64,11 @@ const routes = {
           return voices[Math.floor(Math.random() * voices.length)];
         }
 
-        // If a voice_id is provided and valid against gender set, use it; else random
-        let voice_id;
-        if (provided_voice_id) {
-          const allVoices = [...feminine_voices, ...masculine_voices];
-          if (allVoices.includes(provided_voice_id)) {
-            voice_id = provided_voice_id;
-          }
-        }
-        if (!voice_id) {
-          voice_id =
-            patient_gender.toLowerCase() === "female"
-              ? getRandomVoice(feminine_voices)
-              : getRandomVoice(masculine_voices);
-        }
+        const voice_id = provided_voice_id?.trim() || (
+          patient_gender.toLowerCase() === "female"
+            ? getRandomVoice(feminine_voices)
+            : getRandomVoice(masculine_voices)
+        );
 
         // Insert new patient into the "patients" table with age and gender
         const newPatient = await sqlConnection`

@@ -23,6 +23,12 @@ import {
 } from "@mui/material";
 import PageContainer from "../Container";
 import FileManagement from "../../components/FileManagement";
+import {
+  filterPollyVoices,
+  formatPollyVoice,
+  selectPollyVoice,
+  usePollyVoices,
+} from "./usePollyVoices";
 
 export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPatientCreated, showSuccessToast }) => {
   const [files, setFiles] = useState([]); // For LLM Upload
@@ -53,59 +59,8 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const [patientAge, setPatientAge] = useState("");
   const [patientGender, setPatientGender] = useState("");
   const [patientPrompt, setPatientPrompt] = useState("");
-  // Voice selection state — Polly neural-only voice IDs (proper-cased).
-  // Excluded: Ivy/Kevin (child voices — high-pitched, unsuitable for adult patients),
-  // and standard-engine-only voices (Marlene, Hans, Carla, Giorgio, Conchita, Enrique,
-  // Penelope, Miguel, Tatyana, Maxim) which fail when backend runs POLLY_ENGINE=neural.
-  const feminineVoices = [
-    "Amy", "Emma",                                      // English - British
-    "Aria",                                             // English - New Zealand
-    "Ayanda",                                           // English - South African
-    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli", // English - US
-    "Kajal",                                            // English - Indian
-    "Niamh",                                            // English - Irish
-    "Olivia",                                           // English - Australian
-    "Gabrielle",                                        // French - Canadian
-    "Hannah", "Vicki",                                  // German
-    "Bianca",                                           // Italian
-    "Camila",                                           // Portuguese - Brazilian
-    "Lucia",                                            // Spanish - Castilian
-    "Lupe",                                             // Spanish - US
-    "Mia",                                              // Spanish - Mexican
-    "Arlet",                                            // Catalan
-  ];
-  const masculineVoices = [
-    "Arthur", "Brian",                                  // English - British
-    "Gregory", "Joey", "Justin", "Matthew", "Stephen",  // English - US
-    "Liam",                                             // French - Canadian
-    "Sergio",                                           // Italian
-    "Adriano",                                          // Portuguese - Brazilian
-    "Andres",                                           // Spanish - Colombian
-    "Pedro",                                            // Spanish - US
-  ];
-  const voiceLabels = {
-    Amy: "English - British", Emma: "English - British",
-    Arthur: "English - British", Brian: "English - British",
-    Aria: "English - New Zealand",
-    Ayanda: "English - South African",
-    Danielle: "English - US", Joanna: "English - US", Kendra: "English - US",
-    Kimberly: "English - US", Ruth: "English - US", Salli: "English - US",
-    Gregory: "English - US", Joey: "English - US", Justin: "English - US",
-    Matthew: "English - US", Stephen: "English - US",
-    Kajal: "English - Indian",
-    Niamh: "English - Irish",
-    Olivia: "English - Australian",
-    Gabrielle: "French - Canadian", Liam: "French - Canadian",
-    Hannah: "German", Vicki: "German",
-    Bianca: "Italian", Sergio: "Italian",
-    Camila: "Portuguese - Brazilian", Adriano: "Portuguese - Brazilian",
-    Lucia: "Spanish - Castilian",
-    Lupe: "Spanish - US", Pedro: "Spanish - US",
-    Mia: "Spanish - Mexican",
-    Andres: "Spanish - Colombian",
-    Arlet: "Catalan",
-  };
-  const [availableVoices, setAvailableVoices] = useState([]);
+  const { voices, loading: voicesLoading, error: voicesError } = usePollyVoices();
+  const availableVoices = filterPollyVoices(voices, patientGender);
   const [selectedVoice, setSelectedVoice] = useState("");
   const [nextPatientNumber, setNextPatientNumber] = useState(data.length + 1);
 
@@ -351,6 +306,15 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
       return;
     }
 
+    if (voicesLoading || voicesError || !selectedVoice) {
+      toast.error("A supported Polly voice must be selected.", {
+        position: "top-center",
+        autoClose: 1000,
+        theme: "colored",
+      });
+      return;
+    }
+
     if (!patientPrompt) {
       toast.error("Patient Prompt is required.", {
         position: "top-center",
@@ -470,20 +434,10 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   };
 
   useEffect(() => {
-    // Update voices when gender changes
-    if (patientGender.toLowerCase() === "female") {
-      setAvailableVoices(feminineVoices);
-      setSelectedVoice(prev => (feminineVoices.includes(prev) ? prev : feminineVoices[0]));
-    } else if (patientGender.toLowerCase() === "male") {
-      setAvailableVoices(masculineVoices);
-      setSelectedVoice(prev => (masculineVoices.includes(prev) ? prev : masculineVoices[0]));
-    } else {
-      setAvailableVoices([...feminineVoices, ...masculineVoices]);
-      setSelectedVoice("");
+    if (!voicesLoading && voices.length) {
+      setSelectedVoice((current) => selectPollyVoice(voices, patientGender, current));
     }
-  // Voice lists are fixed for the lifetime of this component.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientGender]);
+  }, [patientGender, voices, voicesLoading]);
 
   return (
     <PageContainer>
@@ -561,9 +515,10 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
               value={selectedVoice}
               label="Voice"
               onChange={e => setSelectedVoice(e.target.value)}
+              disabled={voicesLoading || Boolean(voicesError)}
             >
               {availableVoices.map(v => (
-                <MenuItem key={v} value={v}>{v} — {voiceLabels[v] || v}</MenuItem>
+                <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
               ))}
             </Select>
           </FormControl>

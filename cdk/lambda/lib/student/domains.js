@@ -35,6 +35,11 @@ const empathyValidation = {
   "GET /student/empathy_enabled": ["simulation_group_id"],
 };
 
+const progressValidation = {
+  "POST /student/record_session_activity": ["session_id", "student_email", "simulation_group_id"],
+  "POST /student/complete_session": ["session_id", "student_email", "simulation_group_id"],
+};
+
 const voiceValidation = {
   "GET /student/voice_enabled": ["simulation_group_id"],
 };
@@ -46,7 +51,7 @@ const routeDomains = [
   { domain: "sessions", routes: createDomainRoutes("sessions", sessionRoutes, sessionValidation) },
   { domain: "messages", routes: createDomainRoutes("messages", messageRoutes) },
   { domain: "enrollments", routes: createDomainRoutes("enrollments", enrollmentRoutes) },
-  { domain: "progress", routes: createDomainRoutes("progress", progressRoutes) },
+  { domain: "progress", routes: createDomainRoutes("progress", progressRoutes, progressValidation) },
   { domain: "notes", routes: createDomainRoutes("notes", notesRoutes) },
   { domain: "empathy", routes: createDomainRoutes("empathy", empathyRoutes, empathyValidation) },
   { domain: "voice", routes: createDomainRoutes("voice", voiceRoutes, voiceValidation) },

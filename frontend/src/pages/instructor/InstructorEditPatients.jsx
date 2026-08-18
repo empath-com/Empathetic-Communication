@@ -22,6 +22,12 @@ import {
 } from "@mui/material";
 import PageContainer from "../Container";
 import FileManagement from "../../components/FileManagement";
+import {
+  filterPollyVoices,
+  formatPollyVoice,
+  selectPollyVoice,
+  usePollyVoices,
+} from "./usePollyVoices";
 
 import Avatar from '@mui/material/Avatar'; // for profile picture preview
 import IconButton from '@mui/material/IconButton'; // for upload button
@@ -63,55 +69,8 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
   const [profilePicturePreview, setProfilePicturePreview] = useState(null);
   const [profilePictureForCrop, setProfilePictureForCrop] = useState(null);
 
-  const feminineVoices = [
-    "Amy", "Emma",
-    "Aria",
-    "Ayanda",
-    "Danielle", "Joanna", "Kendra", "Kimberly", "Ruth", "Salli",
-    "Kajal",
-    "Niamh",
-    "Olivia",
-    "Gabrielle",
-    "Hannah", "Vicki",
-    "Bianca",
-    "Camila",
-    "Lucia",
-    "Lupe",
-    "Mia",
-    "Arlet",
-  ];
-  const masculineVoices = [
-    "Arthur", "Brian",
-    "Gregory", "Joey", "Justin", "Matthew", "Stephen",
-    "Liam",
-    "Sergio",
-    "Adriano",
-    "Andres",
-    "Pedro",
-  ];
-  const voiceLabels = {
-    Amy: "English - British", Emma: "English - British",
-    Arthur: "English - British", Brian: "English - British",
-    Aria: "English - New Zealand",
-    Ayanda: "English - South African",
-    Danielle: "English - US", Joanna: "English - US", Kendra: "English - US",
-    Kimberly: "English - US", Ruth: "English - US", Salli: "English - US",
-    Gregory: "English - US", Joey: "English - US", Justin: "English - US",
-    Matthew: "English - US", Stephen: "English - US",
-    Kajal: "English - Indian",
-    Niamh: "English - Irish",
-    Olivia: "English - Australian",
-    Gabrielle: "French - Canadian", Liam: "French - Canadian",
-    Hannah: "German", Vicki: "German",
-    Bianca: "Italian", Sergio: "Italian",
-    Camila: "Portuguese - Brazilian", Adriano: "Portuguese - Brazilian",
-    Lucia: "Spanish - Castilian",
-    Lupe: "Spanish - US", Pedro: "Spanish - US",
-    Mia: "Spanish - Mexican",
-    Andres: "Spanish - Colombian",
-    Arlet: "Catalan",
-  };
-  const [availableVoices, setAvailableVoices] = useState([]);
+  const { voices, loading: voicesLoading, error: voicesError } = usePollyVoices();
+  const availableVoices = filterPollyVoices(voices, patientGender);
   const [selectedVoice, setSelectedVoice] = useState("");
 
   const handleProfilePictureChange = (e) => {
@@ -269,32 +228,15 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       setPatientAge(patientData.patient_age);
       setPatientGender(patientData.patient_gender);
       setPatientPrompt(patientData.patient_prompt);
-      const allVoices = [...feminineVoices, ...masculineVoices];
-      const normalizedVoice = patientData.voice_id
-        ? (allVoices.find(v => v.toLowerCase() === patientData.voice_id.toLowerCase()) || patientData.voice_id)
-        : "";
-      setSelectedVoice(normalizedVoice);
+      setSelectedVoice(patientData.voice_id || "");
     }
-  // Voice lists are fixed for the lifetime of this component.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientData]);
 
   useEffect(() => {
-    if (!patientGender) return;
-    if (patientGender.toLowerCase() === "female") {
-      setAvailableVoices(feminineVoices);
-      setSelectedVoice(prev => feminineVoices.includes(prev) ? prev : feminineVoices[0]);
-    } else if (patientGender.toLowerCase() === "male") {
-      setAvailableVoices(masculineVoices);
-      setSelectedVoice(prev => masculineVoices.includes(prev) ? prev : masculineVoices[0]);
-    } else {
-      const all = [...feminineVoices, ...masculineVoices];
-      setAvailableVoices(all);
-      setSelectedVoice(prev => all.includes(prev) ? prev : all[0]);
+    if (!voicesLoading && voices.length) {
+      setSelectedVoice((current) => selectPollyVoice(voices, patientGender, current));
     }
-  // Voice lists are fixed for the lifetime of this component.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientGender]);
+  }, [patientGender, voices, voicesLoading]);
 
   useEffect(() => {
     if (patient) {
@@ -758,9 +700,10 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
               value={selectedVoice}
               label="Voice"
               onChange={(e) => setSelectedVoice(e.target.value)}
+              disabled={voicesLoading || Boolean(voicesError)}
             >
               {availableVoices.map(v => (
-                <MenuItem key={v} value={v}>{v} — {voiceLabels[v] || v}</MenuItem>
+                <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
               ))}
             </Select>
           </FormControl>

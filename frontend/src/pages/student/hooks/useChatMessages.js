@@ -8,6 +8,7 @@ import {
   normalizeEmpathyData,
 } from "./chatMessageUtils";
 import useVoiceSocketMessages from "./useVoiceSocketMessages";
+import useSessionActivity from "./useSessionActivity";
 
 const gqlClient = generateClient();
 
@@ -69,6 +70,8 @@ export default function useChatMessages({
   isAItyping,
   setIsAItyping,
 }) {
+  useSessionActivity({ session, group, getAuth, studentApi });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newMessage, setNewMessage] = useState(null);
   const [messageInput, setMessageInput] = useState("");
@@ -135,6 +138,24 @@ export default function useChatMessages({
     [getAuth, studentApi]
   );
 
+  const completeSession = useCallback(
+    async (objectiveAchieved) => {
+      if (!sessionRef.current || !groupRef.current) return;
+      try {
+        const { email } = await getAuth();
+        await studentApi.completeSession({
+          sessionId: sessionRef.current.session_id,
+          studentEmail: email,
+          simulationGroupId: groupRef.current.simulation_group_id,
+          objectiveAchieved,
+        });
+      } catch (e) {
+        console.error("Failed to complete session:", e);
+      }
+    },
+    [getAuth, studentApi]
+  );
+
   const applyCompletionEffects = useCallback(async () => {
     if (diagnosisCompletedRef.current) return;
     if (!hasAtLeastOneFullTurn()) return;
@@ -142,10 +163,10 @@ export default function useChatMessages({
     diagnosisCompletedRef.current = true;
     pendingDiagnosisCompleteRef.current = null;
 
-    await updatePatientScore(true);
+    await completeSession(true);
 
     alert("Session completed successfully!");
-  }, [hasAtLeastOneFullTurn, updatePatientScore]);
+  }, [completeSession, hasAtLeastOneFullTurn]);
 
   const scheduleCompletionCheck = useCallback(() => {
     if (diagnosisCompletedRef.current || !pendingDiagnosisCompleteRef.current) return;
@@ -368,7 +389,11 @@ export default function useChatMessages({
 
               if (streamData.llm_verdict !== undefined) {
                 try {
-                  await updatePatientScore(streamData.llm_verdict);
+                  if (streamData.llm_verdict) {
+                    await completeSession(true);
+                  } else {
+                    await updatePatientScore(false);
+                  }
                 } catch (e) {
                   console.error("Failed to update patient score:", e);
                 }

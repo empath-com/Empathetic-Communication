@@ -32,6 +32,7 @@ flowchart LR
         RDS["RDS PostgreSQL + pgvector\nvia RDS Proxy"]
         Dynamo["DynamoDB\nconversation history"]
         Bedrock["Amazon Bedrock\nLlama 3 / Titan Embeddings / Nova Sonic"]
+        Polly["Amazon Polly\nvoice capabilities + speech synthesis"]
     end
 
     SPA <-->|Sign-in / JWT| Cognito
@@ -62,6 +63,7 @@ flowchart LR
     SPA <-->|Socket.IO / WSS| SocketLb
     SocketLb <-->|HTTP/WebSocket forwarding| Socket
     Socket -->|Voice runtime + empathy| Bedrock
+    Socket -->|Describe voices + synthesize speech| Polly
     Socket -->|Conversation history| Dynamo
     Socket -->|Session / message persistence| RDS
 ```
@@ -185,7 +187,15 @@ This control-plane view covers key CDK-managed components that are intentionally
 6. Student text chat calls the text-generation Lambda container, which combines RDS/pgvector retrieval with Amazon Bedrock Llama 3 inference.
 7. Conversation history is maintained in DynamoDB for LangChain chat memory, while relational application data such as sessions and messages remains in PostgreSQL.
 8. Generated text is streamed back to the frontend through AWS AppSync subscriptions.
-9. Realtime voice conversations use ALB/NLB load balancers in front of the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, DynamoDB-backed history, and RDS-backed session persistence.
+9. Realtime voice conversations use ALB/NLB load balancers in front of the Socket.IO server running on ECS Fargate, which coordinates Bedrock Nova Sonic, Amazon Polly, DynamoDB-backed history, and RDS-backed session persistence. At session start, the voice runtime resolves the selected Polly voice's regional supported engines, prefers generative synthesis, and retries the same voice with universal SSML or plain text when Polly rejects a feature.
+
+## Session Analytics Lifecycle
+
+Each newly created `sessions` row is one learner attempt. The student client records only visible, focused activity in bounded heartbeat increments through `POST /student/record_session_activity`; message timestamps independently provide a first-to-last-message duration.
+
+When the simulation completion signal is received, `POST /student/complete_session` verifies that the authenticated student owns the session, records the immutable terminal lifecycle fields, preserves the existing patient-score behavior, and upserts one pending `conversation_analytics_jobs` row. The student Lambda invokes the text-generation Lambda asynchronously with only the session ID. The worker builds the transcript from RDS, uses the fixed `conversation-analytics-v1` Bedrock tool schema, and writes one versioned snapshot plus normalized metric-count and recommendation-topic rows. Failures restore the job to `pending` and rethrow so Lambda asynchronous retry can process it. Repeated completion calls reuse the same attempt and restart a pending job without reanalyzing completed work.
+
+`GET /instructor/analytics` derives instructor-owned groups from the authenticated identity, rejects an out-of-scope group filter, and returns aggregate-only chart data plus scoped group, patient, and student filter options. It does not return transcript text or model rationales.
 
 ## Backend Request Pipeline (Phase 1 Refactor)
 
@@ -220,6 +230,10 @@ erDiagram
     STUDENT_INTERACTIONS ||--o{ SESSIONS : groups
     SESSIONS ||--o{ MESSAGES : contains
     SESSIONS ||--o{ FEEDBACK : summarizes
+    SESSIONS ||--|| CONVERSATION_ANALYTICS_JOBS : queues
+    SESSIONS ||--|| CONVERSATION_ANALYTICS_SNAPSHOTS : summarizes
+    SESSIONS ||--o{ CONVERSATION_METRIC_COUNTS : measures
+    SESSIONS ||--o{ CONVERSATION_RECOMMENDATION_TOPICS : recommends
     USERS ||--o{ USER_ENGAGEMENT_LOG : generates
     SIMULATION_GROUPS ||--o{ USER_ENGAGEMENT_LOG : scopes
     PATIENTS ||--o{ USER_ENGAGEMENT_LOG : references
@@ -280,6 +294,10 @@ erDiagram
         uuid session_id PK
         uuid student_interaction_id FK
         string session_name
+        timestamp started_at
+        timestamp completed_at
+        string completion_status
+        int active_duration_seconds
         text notes
     }
 
@@ -296,6 +314,34 @@ erDiagram
         uuid session_id FK
         int score
         text analysis
+    }
+
+    CONVERSATION_ANALYTICS_JOBS {
+        uuid session_id PK
+        string status
+        int attempts
+    }
+
+    CONVERSATION_ANALYTICS_SNAPSHOTS {
+        uuid session_id PK
+        string rubric_version
+        timestamp evaluated_at
+        int dialogue_turn_count
+        int message_span_seconds
+        int active_duration_seconds
+        decimal communication_score
+        bool objective_achieved
+    }
+
+    CONVERSATION_METRIC_COUNTS {
+        uuid session_id FK
+        string metric_key
+        int metric_count
+    }
+
+    CONVERSATION_RECOMMENDATION_TOPICS {
+        uuid session_id FK
+        string topic_key
     }
 
     USER_ENGAGEMENT_LOG {
@@ -442,6 +488,12 @@ Standalone tables such as `system_prompt_history` and `empathy_prompt_history` a
 | `session_name`               | The name of the session                                                      |
 | `session_context_embeddings` | A float array representing the session context embeddings (currently unused) |
 | `last_accessed`              | The timestamp of the last time the session was accessed                      |
+| `started_at`                 | The time the learner started this attempt                                    |
+| `last_activity_at`           | The latest recorded focused activity                                         |
+| `active_duration_seconds`    | Accumulated visible and focused browser time                                 |
+| `completed_at`               | The time this attempt was completed                                          |
+| `completion_status`          | Whether the attempt is in progress, completed, or abandoned                  |
+| `completion_reason`          | The terminal completion reason when supplied                                 |
 | `notes`                      | The notes a student can take per session when talking to a patient           |
 
 ### `messages` table
@@ -466,6 +518,10 @@ Standalone tables such as `system_prompt_history` and `empathy_prompt_history` a
 | `timestamp`           | The timestamp of the engagement event         |
 | `engagement_type`     | The type of engagement (e.g., patient access) |
 | `engagement_details`  | The text describing the engagement            |
+
+### Conversation Analytics Tables
+
+`conversation_analytics_jobs` records one durable terminal-analysis job per session. `conversation_analytics_snapshots` stores the versioned outcome of that analysis. `conversation_metric_counts` stores the fixed publication-oriented communication measures, and `conversation_recommendation_topics` stores controlled coaching-topic keys. These tables contain aggregate-ready keys and counts; instructor reporting must not use transcript text or unaggregated model rationales.
 
 ## S3 Bucket Structure
 

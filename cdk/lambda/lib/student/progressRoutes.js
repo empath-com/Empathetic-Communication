@@ -1,3 +1,7 @@
+const { LambdaClient, InvokeCommand } = require("@aws-sdk/client-lambda");
+
+const lambdaClient = new LambdaClient({});
+
 const routes = {
   "POST /student/update_patient_score": async ({ event, sqlConnection, response }) => {
     if (
@@ -138,6 +142,144 @@ const routes = {
       response.body = JSON.stringify({
         error: "student_email and simulation_group_id are required",
       });
+    }
+    return response;
+  },
+
+  "POST /student/record_session_activity": async ({ event, sqlConnection, response }) => {
+    const { session_id, student_email, simulation_group_id } =
+      event.queryStringParameters || {};
+    const { active_seconds } = JSON.parse(event.body || "{}");
+    const activeSeconds = Number(active_seconds);
+
+    if (!Number.isInteger(activeSeconds) || activeSeconds < 1 || activeSeconds > 120) {
+      response.statusCode = 400;
+      response.body = JSON.stringify({ error: "active_seconds must be an integer from 1 to 120" });
+      return response;
+    }
+
+    try {
+      const updatedSession = await sqlConnection`
+        UPDATE sessions s
+        SET active_duration_seconds = s.active_duration_seconds + ${activeSeconds},
+            last_activity_at = CURRENT_TIMESTAMP,
+            last_accessed = CURRENT_TIMESTAMP
+        FROM student_interactions si
+        JOIN enrolments e ON si.enrolment_id = e.enrolment_id
+        JOIN users u ON e.user_id = u.user_id
+        WHERE s.session_id = ${session_id}
+          AND s.student_interaction_id = si.student_interaction_id
+          AND u.user_email = ${student_email}
+          AND e.simulation_group_id = ${simulation_group_id}
+          AND s.completion_status = 'in_progress'
+        RETURNING s.session_id, s.active_duration_seconds, s.last_activity_at;
+      `;
+
+      if (!updatedSession.length) {
+        response.statusCode = 404;
+        response.body = JSON.stringify({ error: "Active session not found" });
+        return response;
+      }
+
+      response.statusCode = 200;
+      response.body = JSON.stringify(updatedSession[0]);
+    } catch (err) {
+      response.statusCode = 500;
+      console.error(err);
+      response.body = JSON.stringify({ error: "Internal server error" });
+    }
+    return response;
+  },
+
+  "POST /student/complete_session": async ({ event, sqlConnection, response }) => {
+    const { session_id, student_email, simulation_group_id } =
+      event.queryStringParameters || {};
+    const { objective_achieved } = JSON.parse(event.body || "{}");
+
+    if (typeof objective_achieved !== "boolean") {
+      response.statusCode = 400;
+      response.body = JSON.stringify({ error: "objective_achieved must be a boolean" });
+      return response;
+    }
+
+    try {
+      const completedSession = await sqlConnection`
+        WITH owned_session AS (
+          SELECT s.session_id, si.student_interaction_id
+          FROM sessions s
+          JOIN student_interactions si ON s.student_interaction_id = si.student_interaction_id
+          JOIN enrolments e ON si.enrolment_id = e.enrolment_id
+          JOIN users u ON e.user_id = u.user_id
+          WHERE s.session_id = ${session_id}
+            AND u.user_email = ${student_email}
+            AND e.simulation_group_id = ${simulation_group_id}
+        ), updated_session AS (
+          UPDATE sessions s
+          SET completion_status = 'completed',
+              completed_at = COALESCE(s.completed_at, CURRENT_TIMESTAMP),
+              last_activity_at = CURRENT_TIMESTAMP,
+              last_accessed = CURRENT_TIMESTAMP
+          FROM owned_session os
+          WHERE s.session_id = os.session_id
+          RETURNING s.session_id, os.student_interaction_id, s.completed_at
+        ), updated_interaction AS (
+          UPDATE student_interactions si
+          SET patient_score = CASE
+            WHEN ${objective_achieved} THEN 100
+            ELSE si.patient_score
+          END
+          FROM updated_session us
+          WHERE si.student_interaction_id = us.student_interaction_id
+        ), analytics_job AS (
+          INSERT INTO conversation_analytics_jobs (session_id, status)
+          SELECT session_id, 'pending' FROM updated_session
+          ON CONFLICT (session_id) DO NOTHING
+        )
+        SELECT
+          session_id,
+          completed_at
+        FROM updated_session;
+      `;
+
+      if (!completedSession.length) {
+        response.statusCode = 404;
+        response.body = JSON.stringify({ error: "Session not found" });
+        return response;
+      }
+
+      const analyticsJob = await sqlConnection`
+        SELECT status FROM conversation_analytics_jobs WHERE session_id = ${session_id};
+      `;
+      const analyticsStatus = analyticsJob[0]?.status || "pending";
+
+      if (analyticsStatus === "pending" && process.env.TEXT_GEN_FUNCTION_NAME) {
+        try {
+          await lambdaClient.send(
+            new InvokeCommand({
+              FunctionName: process.env.TEXT_GEN_FUNCTION_NAME,
+              InvocationType: "Event",
+              Payload: Buffer.from(JSON.stringify({
+                conversationAnalytics: true,
+                session_id,
+              })),
+            })
+          );
+        } catch (error) {
+          console.error("Failed to start conversation analytics:", error);
+        }
+      }
+
+      response.statusCode = 200;
+      response.body = JSON.stringify({
+        session_id: completedSession[0].session_id,
+        completed_at: completedSession[0].completed_at,
+        objective_achieved,
+        analytics_status: analyticsStatus,
+      });
+    } catch (err) {
+      response.statusCode = 500;
+      console.error(err);
+      response.body = JSON.stringify({ error: "Internal server error" });
     }
     return response;
   },
