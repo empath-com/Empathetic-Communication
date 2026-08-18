@@ -1,7 +1,6 @@
 import {
   App,
   BasicAuth,
-  GitHubSourceCodeProvider,
   RedirectStatus,
 } from "@aws-cdk/aws-amplify-alpha";
 import * as cdk from "aws-cdk-lib";
@@ -69,16 +68,17 @@ export class AmplifyStack extends cdk.Stack {
 
     const amplifyApp = new App(this, `${id}-amplifyApp`, {
       appName: `${id}-amplify`,
-      sourceCodeProvider: new GitHubSourceCodeProvider({
-        owner: username,
-        repository: githubRepoName,
-        oauthToken: cdk.SecretValue.secretsManager(
-          "github-personal-access-token",
-          {
-            jsonField: "my-github-token",
-          }
-        ),
-      }),
+      sourceCodeProvider: {
+        bind: () => ({
+          repository: `https://github.com/${username}/${githubRepoName}`,
+          accessToken: cdk.SecretValue.secretsManager(
+            "github-personal-access-token",
+            {
+              jsonField: "my-github-token",
+            }
+          ),
+        }),
+      },
       environmentVariables: {
         VITE_AWS_REGION: this.region,
         VITE_COGNITO_USER_POOL_ID: apiStack.getUserPoolId(),

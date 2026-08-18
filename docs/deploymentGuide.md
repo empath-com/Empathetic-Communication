@@ -7,6 +7,7 @@
   - [Package Management](#package-management)
   - [Pre-Deployment](#pre-deployment)
     - [Create GitHub Personal Access Token](#create-github-personal-access-token)
+    - [Connect Amplify to the GitHub App](#connect-amplify-to-the-github-app)
     - [Enable Models in Bedrock](#enable-models-in-bedrock)
   - [Deployment](#deployment)
     - [Step 1: Fork \& Clone The Repository](#step-1-fork--clone-the-repository)
@@ -189,13 +190,25 @@ npm install
 - If you later add more subnets for additional AZs, update `vpc-stack.ts` with their IDs and route tables, then redeploy.
 ## Pre-Deployment
 ### Create GitHub Personal Access Token
-To deploy this solution, you will need to generate a GitHub personal access token. Please visit [here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) for detailed instruction to create a personal access token.
+To deploy this solution, you will need to generate a classic GitHub personal access token. Please visit [here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) for detailed instructions.
 
-*Note: when selecting the scopes to grant the token (step 8 of the instruction), make sure you select `repo` scope.*
+*Note: select the `admin:repo_hook` scope. Amplify uses this token to configure the GitHub App webhook; it does not store the token.*
 
 **Once you create a token, please note down its value as you will use it later in the deployment process.**
 
 Docker must also be running for the deployment to work.
+
+### Connect Amplify to the GitHub App
+
+The CDK stack configures Amplify with CloudFormation's `AccessToken` property, which uses the Amplify GitHub App rather than the legacy OAuth connection. Before deploying, install the region-specific Amplify GitHub App and grant it access to this repository:
+
+1. Open [the Amplify GitHub App installation page for ca-central-1](https://github.com/apps/aws-amplify-ca-central-1/installations/new).
+2. Select the repository owner or organization and grant access to this repository.
+3. Store the `admin:repo_hook` token in the existing `github-personal-access-token` Secrets Manager secret, under the `my-github-token` JSON key shown in Step 2 below.
+
+For an existing Amplify app connected through OAuth, migration itself cannot be performed by CDK or CloudFormation. In the Amplify console, open the app, choose **Start migration** from the **Migrate to our GitHub App** banner, authorize the GitHub App, and choose **Complete installation**. This replaces the OAuth webhook. Complete this console migration and update the secret before the next CDK deployment so the stack does not continue to declare the legacy OAuth connection.
+
+The separate `CICDStack` GitHub integration uses AWS CodeConnections and is not changed by this Amplify migration.
 
 ### Enable Models in Bedrock
 

@@ -58,7 +58,7 @@ Before using these workflows, you must complete the following AWS setup:
    Run these commands with your AWS CLI:
 
    ```bash
-   # GitHub Personal Access Token
+   # Amplify GitHub App access token (classic PAT with admin:repo_hook)
    aws secretsmanager create-secret \
        --name github-personal-access-token \
        --secret-string '{"my-github-token": "<YOUR-GITHUB-TOKEN>"}' \

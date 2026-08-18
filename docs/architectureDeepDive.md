@@ -107,7 +107,7 @@ flowchart TD
     end
 
     subgraph Config["Configuration and secret stores"]
-        Sm["AWS Secrets Manager\nVCISecrets, Cognito/app secrets"]
+        Sm["AWS Secrets Manager\nVCISecrets, Cognito/app secrets,\nAmplify GitHub access token"]
         Ssm["AWS SSM Parameter Store\n/vci-owner-name, /VCI/AllowedEmailDomains"]
     end
 
@@ -121,6 +121,7 @@ flowchart TD
 
     subgraph SourceControl["Delivery control plane"]
         Gh["GitHub repository"]
+        AmplifyGitHub["Amplify GitHub App\nrepo read + webhook"]
         Conn["CodeConnections\nGitHub connection"]
         Pipeline["CodePipeline"]
         Builder["CodeBuild projects"]
@@ -147,6 +148,7 @@ flowchart TD
     Sm --> DbStack
     Sm --> DbFlow
     Ssm --> AmplifyStack
+    Sm --> AmplifyStack
     Ssm --> ApiStack
     Ssm --> Cicd
 
@@ -157,6 +159,8 @@ flowchart TD
     Evb --> TimeoutFn
     DbStack --> TimeoutFn
 
+    Gh --> AmplifyGitHub
+    AmplifyGitHub --> AmplifyStack
     Gh --> Conn
     Conn --> Pipeline
     Pipeline --> Builder
