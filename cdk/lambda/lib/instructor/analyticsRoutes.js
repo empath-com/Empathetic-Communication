@@ -194,37 +194,56 @@ const routes = {
           (
             SELECT COUNT(*) FROM user_engagement_log uel
             WHERE uel.user_id = u.user_id
-              AND uel.simulation_group_id = e.simulation_group_id
               AND uel.engagement_type = 'login'
+              AND uel.simulation_group_id IN (
+                SELECT ie.simulation_group_id FROM enrolments ie JOIN users iu ON ie.user_id = iu.user_id
+                WHERE iu.user_email = ${scope[0]} AND ie.enrolment_type = 'instructor'
+              )
+              AND (${scope[1]}::uuid IS NULL OR uel.simulation_group_id = ${scope[1]})
           ) AS login_count,
           (
             SELECT COUNT(DISTINCT si.patient_id)
             FROM student_interactions si
             JOIN sessions s ON s.student_interaction_id = si.student_interaction_id
-            WHERE si.enrolment_id = e.enrolment_id
+            JOIN enrolments se ON si.enrolment_id = se.enrolment_id
+            WHERE se.user_id = u.user_id
               AND s.completion_status = 'completed'
+              AND se.simulation_group_id IN (
+                SELECT ie.simulation_group_id FROM enrolments ie JOIN users iu ON ie.user_id = iu.user_id
+                WHERE iu.user_email = ${scope[0]} AND ie.enrolment_type = 'instructor'
+              )
+              AND (${scope[1]}::uuid IS NULL OR se.simulation_group_id = ${scope[1]})
               AND (${scope[2]}::uuid IS NULL OR si.patient_id = ${scope[2]})
           ) AS cases_completed,
           (
             SELECT COALESCE(SUM(s.active_duration_seconds), 0)
             FROM student_interactions si
             JOIN sessions s ON s.student_interaction_id = si.student_interaction_id
-            WHERE si.enrolment_id = e.enrolment_id
+            JOIN enrolments se ON si.enrolment_id = se.enrolment_id
+            WHERE se.user_id = u.user_id
+              AND se.simulation_group_id IN (
+                SELECT ie.simulation_group_id FROM enrolments ie JOIN users iu ON ie.user_id = iu.user_id
+                WHERE iu.user_email = ${scope[0]} AND ie.enrolment_type = 'instructor'
+              )
+              AND (${scope[1]}::uuid IS NULL OR se.simulation_group_id = ${scope[1]})
               AND (${scope[2]}::uuid IS NULL OR si.patient_id = ${scope[2]})
           ) AS active_duration_seconds
         FROM users u
-        JOIN enrolments e ON u.user_id = e.user_id
         WHERE 'student' = ANY(u.roles)
-          AND e.simulation_group_id IN (
-            SELECT ie.simulation_group_id FROM enrolments ie JOIN users iu ON ie.user_id = iu.user_id
-            WHERE iu.user_email = ${scope[0]} AND ie.enrolment_type = 'instructor'
-          )
-          AND (${scope[1]}::uuid IS NULL OR e.simulation_group_id = ${scope[1]})
           AND (${scope[3]}::uuid IS NULL OR u.user_id = ${scope[3]})
-          AND (${scope[2]}::uuid IS NULL OR EXISTS (
-            SELECT 1 FROM student_interactions psi WHERE psi.enrolment_id = e.enrolment_id AND psi.patient_id = ${scope[2]}
-          ))
-        GROUP BY u.user_id, u.first_name, u.last_name, u.user_email
+          AND EXISTS (
+            SELECT 1 FROM enrolments se
+            WHERE se.user_id = u.user_id
+              AND se.simulation_group_id IN (
+                SELECT ie.simulation_group_id FROM enrolments ie JOIN users iu ON ie.user_id = iu.user_id
+                WHERE iu.user_email = ${scope[0]} AND ie.enrolment_type = 'instructor'
+              )
+              AND (${scope[1]}::uuid IS NULL OR se.simulation_group_id = ${scope[1]})
+              AND (${scope[2]}::uuid IS NULL OR EXISTS (
+                SELECT 1 FROM student_interactions psi
+                WHERE psi.enrolment_id = se.enrolment_id AND psi.patient_id = ${scope[2]}
+              ))
+          )
         ORDER BY student_name, student_user_id;
       `,
       sqlConnection`

@@ -184,6 +184,8 @@ const AdminAIAnalytics = () => {
     return coerceChartType(window.localStorage.getItem(CHART_TYPE_STORAGE_KEY));
   });
   const [exportingChart, setExportingChart] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillStatus, setBackfillStatus] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -215,6 +217,23 @@ const AdminAIAnalytics = () => {
       setError(err.message || "Failed to run analytics query");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runConversationAnalyticsBackfill = async () => {
+    setBackfilling(true);
+    setBackfillStatus("");
+    setError("");
+
+    try {
+      const data = await apiPost("admin/backfill_conversation_analytics");
+      setBackfillStatus(
+        `${data.dispatched || 0} of ${data.queued || 0} completed sessions queued for analytics processing.`
+      );
+    } catch (err) {
+      setError(err.message || "Failed to queue conversation analytics backfill");
+    } finally {
+      setBackfilling(false);
     }
   };
 
@@ -278,6 +297,30 @@ const AdminAIAnalytics = () => {
         Ask plain-language questions. The assistant generates a schema-aware read-only SQL query, runs it,
         and returns plotted graphs and a result table.
       </Typography>
+
+      <Card sx={{ borderRadius: 3, border: "1px solid #dbe4db", mb: 3, backgroundColor: "#f7fbf8" }}>
+        <CardContent>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="space-between" alignItems={{ sm: "center" }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#17342e" }}>
+                Conversation Analytics Backfill
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#4b5563" }}>
+                Queue terminal analytics for completed simulations that do not yet have an analytics snapshot.
+              </Typography>
+              {backfillStatus && <Typography variant="body2" sx={{ color: "#047857", mt: 1 }}>{backfillStatus}</Typography>}
+            </Box>
+            <Button
+              variant="contained"
+              color="success"
+              onClick={runConversationAnalyticsBackfill}
+              disabled={backfilling}
+            >
+              {backfilling ? <CircularProgress size={20} sx={{ color: "white" }} /> : "Backfill Analytics"}
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
 
       <Card sx={{ borderRadius: 3, border: "1px solid #e5e7eb", mb: 3 }}>
         <CardContent>

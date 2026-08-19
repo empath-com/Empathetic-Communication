@@ -399,6 +399,10 @@ export function createBusinessLambdas(
     "TEXT_GEN_FUNCTION_NAME",
     textGenLambdaDockerFunc.functionName
   );
+  lambdaAdminFunction.addEnvironment(
+    "TEXT_GEN_FUNCTION_NAME",
+    textGenLambdaDockerFunc.functionName
+  );
 
   // Generate PreSigned URL Lambda
   const generatePreSignedURL = new lambda.Function(

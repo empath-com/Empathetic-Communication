@@ -1537,6 +1537,39 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /admin/backfill_conversation_analytics:
+    <<: *commonOptions
+    post:
+      tags:
+        - Admin
+      summary: Queue terminal conversation analytics for completed sessions without a snapshot
+      operationId: admin_backfill_conversation_analytics_POST
+      responses:
+        "202":
+          description: Backfill jobs queued for asynchronous processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queued:
+                    type: integer
+                  dispatched:
+                    type: integer
+                  message:
+                    type: string
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /student/patient_voice_id:
     options:
       summary: CORS support

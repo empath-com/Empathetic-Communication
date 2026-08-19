@@ -353,7 +353,7 @@ def handler_conversation_analytics(event):
                 """
                 UPDATE conversation_analytics_jobs
                 SET status = 'processing', attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE session_id = %s AND status IN ('pending', 'processing')
+                WHERE session_id = %s AND status = 'pending'
                 RETURNING session_id
                 """,
                 (session_id,),
