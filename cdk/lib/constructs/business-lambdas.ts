@@ -268,6 +268,8 @@ export function createBusinessLambdas(
       "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
       "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
       "arn:aws:bedrock:" + scope.region + "::foundation-model/amazon.nova-lite-v1:0",
+      "arn:aws:bedrock:ca-west-1::foundation-model/amazon.nova-lite-v1:0",
+      `arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/ca.amazon.nova-lite-v1:0`,
       `arn:aws:bedrock:${scope.region}:${scope.account}:guardrail/*`,
     ],
   });
@@ -301,6 +303,7 @@ export function createBusinessLambdas(
         APPSYNC_GRAPHQL_URL: appSyncApi.graphqlUrl,
         APPSYNC_API_ID: appSyncApi.apiId,
         BEDROCK_TIMEOUT_SECONDS: "90",
+        CONVERSATION_ANALYTICS_MODEL_ID: "ca.amazon.nova-lite-v1:0",
         SIMULATED_ROLE: simulatedRole,
         PRACTITIONER_ROLE: practitionerRole,
       },

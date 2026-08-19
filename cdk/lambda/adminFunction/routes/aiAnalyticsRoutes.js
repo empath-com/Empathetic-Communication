@@ -71,12 +71,28 @@ module.exports = {
 
     try {
       await sqlConnection`
+        WITH eligible_sessions AS (
+          SELECT s.session_id
+          FROM sessions s
+          JOIN student_interactions si ON si.student_interaction_id = s.student_interaction_id
+          LEFT JOIN conversation_analytics_snapshots snapshot ON snapshot.session_id = s.session_id
+          WHERE snapshot.session_id IS NULL
+            AND (
+              s.completion_status = 'completed'
+              OR si.is_completed = TRUE
+              OR si.patient_score = 100
+            )
+        ), normalized_sessions AS (
+          UPDATE sessions s
+          SET completion_status = 'completed',
+              completed_at = COALESCE(s.completed_at, s.last_accessed, s.started_at, CURRENT_TIMESTAMP)
+          FROM eligible_sessions eligible
+          WHERE s.session_id = eligible.session_id
+          RETURNING s.session_id
+        )
         INSERT INTO conversation_analytics_jobs (session_id, status, last_error, updated_at)
-        SELECT s.session_id, 'pending', NULL, CURRENT_TIMESTAMP
-        FROM sessions s
-        LEFT JOIN conversation_analytics_snapshots snapshot ON snapshot.session_id = s.session_id
-        WHERE s.completion_status = 'completed'
-          AND snapshot.session_id IS NULL
+        SELECT session_id, 'pending', NULL, CURRENT_TIMESTAMP
+        FROM normalized_sessions
         ON CONFLICT (session_id) DO UPDATE SET
           status = 'pending',
           last_error = NULL,
@@ -109,6 +125,36 @@ module.exports = {
       response.statusCode = 500;
       console.error("[backfill_conversation_analytics] Error:", err);
       response.body = JSON.stringify({ error: "Failed to queue conversation analytics backfill" });
+    }
+  },
+
+  "GET /admin/conversation_analytics_backfill_status": async ({ sqlConnection, response }) => {
+    try {
+      const [counts, failures] = await Promise.all([
+        sqlConnection`
+          SELECT status, COUNT(*) AS count
+          FROM conversation_analytics_jobs
+          GROUP BY status
+          ORDER BY status;
+        `,
+        sqlConnection`
+          SELECT job.session_id, job.attempts, job.last_error, job.updated_at
+          FROM conversation_analytics_jobs job
+          WHERE job.status = 'failed'
+          ORDER BY job.updated_at DESC
+          LIMIT 5;
+        `,
+      ]);
+
+      response.statusCode = 200;
+      response.body = JSON.stringify({
+        counts: Object.fromEntries(counts.map((row) => [row.status, Number(row.count)])),
+        failures,
+      });
+    } catch (err) {
+      response.statusCode = 500;
+      console.error("[conversation_analytics_backfill_status] Error:", err);
+      response.body = JSON.stringify({ error: "Failed to retrieve conversation analytics status" });
     }
   },
 };

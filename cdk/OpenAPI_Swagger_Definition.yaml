@@ -1570,6 +1570,41 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /admin/conversation_analytics_backfill_status:
+    <<: *commonOptions
+    get:
+      tags:
+        - Admin
+      summary: Get conversation analytics backfill progress and recent failures
+      operationId: admin_conversation_analytics_backfill_status_GET
+      responses:
+        "200":
+          description: Analytics backfill job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  failures:
+                    type: array
+                    items:
+                      type: object
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal Server Error
+      security:
+        - adminAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${adminFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /student/patient_voice_id:
     options:
       summary: CORS support

@@ -1,0 +1,47 @@
+{
+    "queryLanguage": "CWLI",
+    "results": [
+        [
+            {
+                "field": "@timestamp",
+                "value": "2026-08-19 17:49:58.725"
+            },
+            {
+                "field": "@message",
+                "value": "START RequestId: 6e84d71d-9d5e-4e63-a098-84a9f86fc75e Version: $LATEST\n"
+            },
+            {
+                "field": "@logStream",
+                "value": "2026/08/19/[$LATEST]3e475e926f324f41866c8398a3c5c078"
+            },
+            {
+                "field": "@ptr",
+                "value": "CsQBCoQBCkE1MjE2MTA3NDkxMjU6L2F3cy9sYW1iZGEvRW1wYXRoQUktQXBpLVRleHRHZW5MYW1iZGFEb2NrZXJGdW5jdGlvbhAAGiQyNmI5MDRmYS05YjRlLTRkMmUtOTZiMS03NWVhMjk4YWMxMDUiDgjAuobTgTQQp+uN2oE0QP7Eo9DGM0gAEjkaGAIGo4q0IAAAAAOPm7BbAAaoXsrwAAAHAiABKL7Pk9mBNDCb9pfZgTQ4sw9Aj8YTSPLJAVCIvAEgAhDyAxgB"
+            }
+        ],
+        [
+            {
+                "field": "@timestamp",
+                "value": "2026-08-19 17:49:58.726"
+            },
+            {
+                "field": "@message",
+                "value": "START RequestId: fdee4c4a-a8d8-487d-87a1-cd08a5060641 Version: $LATEST\n"
+            },
+            {
+                "field": "@logStream",
+                "value": "2026/08/19/[$LATEST]0d4ed03f3d0b4c5f87cb9740f7ba5dfc"
+            },
+            {
+                "field": "@ptr",
+                "value": "CsMBCoQBCkE1MjE2MTA3NDkxMjU6L2F3cy9sYW1iZGEvRW1wYXRoQUktQXBpLVRleHRHZW5MYW1iZGFEb2NrZXJGdW5jdGlvbhAAGiQyNmI5MDRmYS05YjRlLTRkMmUtOTZiMS03NWVhMjk4YWMxMDUiDgjAuobTgTQQp+uN2oE0QP7Eo9DGM0gAEjgaGAIGpO8ZRAAAAABMVLjOAAaoXscgAAAGQiABKLfPk9mBNDCs4pPZgTQ4+AdA4P4JSMWEAVDediACEKsCGAE="
+            }
+        ],
+        [
+            {
+                "field": "@timestamp",
+                "value": "2026-08-19 17:49:58.726"
+            },
+            {
+                "field": "@message",
+                "value": 

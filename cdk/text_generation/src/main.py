@@ -24,6 +24,10 @@ BEDROCK_LLM_PARAM = os.environ["BEDROCK_LLM_PARAM"]
 EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 TABLE_NAME_PARAM = os.environ["TABLE_NAME_PARAM"]
 APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
+CONVERSATION_ANALYTICS_MODEL_ID = os.environ.get(
+    "CONVERSATION_ANALYTICS_MODEL_ID",
+    "ca.amazon.nova-lite-v1:0",
+)
 
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
@@ -392,7 +396,7 @@ def handler_conversation_analytics(event):
         )
         evaluation = evaluate_completed_conversation(
             transcript,
-            {"client": bedrock_runtime, "model_id": "amazon.nova-lite-v1:0"},
+            {"client": bedrock_runtime, "model_id": CONVERSATION_ANALYTICS_MODEL_ID},
         )
 
         with conn.cursor() as cursor:
@@ -463,7 +467,9 @@ def handler_conversation_analytics(event):
                 cursor.execute(
                     """
                     UPDATE conversation_analytics_jobs
-                    SET status = 'pending', last_error = %s, updated_at = CURRENT_TIMESTAMP
+                    SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END,
+                        last_error = %s,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE session_id = %s
                     """,
                     (str(error)[:2000], session_id),

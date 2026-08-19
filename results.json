@@ -1,0 +1,29 @@
+{
+    "queryLanguage": "CWLI",
+    "results": [
+        [
+            {
+                "field": "@timestamp",
+                "value": "2026-08-19 18:17:31.349"
+            },
+            {
+                "field": "@message",
+                "value": "START RequestId: 6ad8aef0-a298-4a0f-8647-3c73c9817ae5 Version: $LATEST\n"
+            },
+            {
+                "field": "@logStream",
+                "value": "2026/08/19/[$LATEST]0bc93e8d657741febd65c7155c625c31"
+            },
+            {
+                "field": "@ptr",
+                "value": "CsQBCoQBCkE1MjE2MTA3NDkxMjU6L2F3cy9sYW1iZGEvRW1wYXRoQUktQXBpLVRleHRHZW5MYW1iZGFEb2NrZXJGdW5jdGlvbhAAGiQyNmI5MDRmYS05YjRlLTRkMmUtOTZiMS03NWVhMjk4YWMxMDUiDgiIzYHQgTQQ74Ko2oE0QP7Eo9DGM0gAEjkaGAIGqCBohwAAAAI3cD3sAAaoXy3QAAAEciABKJmu+NmBNDCDyPjZgTQ4lQpAh/ANSNqZAVDyiwEgAhDwAhgB"
+            }
+        ],
+        [
+            {
+                "field": "@timestamp",
+                "value": "2026-08-19 18:17:31.349"
+            },
+            {
+                "field": "@message",
+                "value": 

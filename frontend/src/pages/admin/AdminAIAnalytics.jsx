@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { apiPost } from "../../utils/apiClient";
+import { apiGet, apiPost } from "../../utils/apiClient";
 import html2canvas from "html2canvas";
 import {
   ResponsiveContainer,
@@ -186,6 +186,7 @@ const AdminAIAnalytics = () => {
   const [exportingChart, setExportingChart] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillStatus, setBackfillStatus] = useState("");
+  const [backfillDetails, setBackfillDetails] = useState(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -230,10 +231,22 @@ const AdminAIAnalytics = () => {
       setBackfillStatus(
         `${data.dispatched || 0} of ${data.queued || 0} completed sessions queued for analytics processing.`
       );
+      const status = await apiGet("admin/conversation_analytics_backfill_status");
+      setBackfillDetails(status);
     } catch (err) {
       setError(err.message || "Failed to queue conversation analytics backfill");
     } finally {
       setBackfilling(false);
+    }
+  };
+
+  const refreshConversationAnalyticsStatus = async () => {
+    setError("");
+    try {
+      const status = await apiGet("admin/conversation_analytics_backfill_status");
+      setBackfillDetails(status);
+    } catch (err) {
+      setError(err.message || "Failed to retrieve conversation analytics status");
     }
   };
 
@@ -309,15 +322,32 @@ const AdminAIAnalytics = () => {
                 Queue terminal analytics for completed simulations that do not yet have an analytics snapshot.
               </Typography>
               {backfillStatus && <Typography variant="body2" sx={{ color: "#047857", mt: 1 }}>{backfillStatus}</Typography>}
+              {backfillDetails && (
+                <Box sx={{ mt: 1.25 }}>
+                  <Typography variant="caption" sx={{ color: "#4b5563" }}>
+                    Pending: {backfillDetails.counts?.pending || 0} | Processing: {backfillDetails.counts?.processing || 0} | Completed: {backfillDetails.counts?.completed || 0} | Failed: {backfillDetails.counts?.failed || 0}
+                  </Typography>
+                  {backfillDetails.failures?.map((failure) => (
+                    <Typography key={failure.session_id} variant="caption" sx={{ display: "block", color: "#b91c1c", mt: 0.5 }}>
+                      Session {failure.session_id}: {failure.last_error || "Unknown worker error"}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
             </Box>
-            <Button
-              variant="contained"
-              color="success"
-              onClick={runConversationAnalyticsBackfill}
-              disabled={backfilling}
-            >
-              {backfilling ? <CircularProgress size={20} sx={{ color: "white" }} /> : "Backfill Analytics"}
-            </Button>
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" color="inherit" onClick={refreshConversationAnalyticsStatus} disabled={backfilling}>
+                Refresh status
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                onClick={runConversationAnalyticsBackfill}
+                disabled={backfilling}
+              >
+                {backfilling ? <CircularProgress size={20} sx={{ color: "white" }} /> : "Backfill Analytics"}
+              </Button>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>

@@ -195,6 +195,8 @@ Each newly created `sessions` row is one learner attempt. The student client rec
 
 When the simulation completion signal is received, `POST /student/complete_session` verifies that the authenticated student owns the session, records the immutable terminal lifecycle fields, preserves the existing patient-score behavior, and upserts one pending `conversation_analytics_jobs` row. The student Lambda invokes the text-generation Lambda asynchronously with only the session ID. The worker builds the transcript from RDS, uses the fixed `conversation-analytics-v1` Bedrock tool schema, and writes one versioned snapshot plus normalized metric-count and recommendation-topic rows. Failures restore the job to `pending` and rethrow so Lambda asynchronous retry can process it. Repeated completion calls reuse the same attempt and restart a pending job without reanalyzing completed work.
 
+The terminal worker invokes Nova Lite through the regional `ca.amazon.nova-lite-v1:0` Bedrock inference profile, rather than unsupported on-demand model throughput in `ca-central-1`. Its IAM policy includes both routed foundation-model ARNs (`ca-central-1` and `ca-west-1`).
+
 Administrators can invoke `POST /admin/backfill_conversation_analytics` to queue completed sessions that do not yet have a snapshot. The endpoint skips completed snapshots, retries failed jobs, dispatches pending jobs asynchronously in bounded batches, and is safe to invoke repeatedly.
 
 `GET /instructor/analytics` derives instructor-owned groups from the authenticated identity, rejects an out-of-scope group filter, and returns aggregate-only chart data plus scoped group, patient, and student filter options. It does not return transcript text or model rationales.

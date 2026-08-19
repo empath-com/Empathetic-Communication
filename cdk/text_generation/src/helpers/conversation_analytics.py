@@ -37,7 +37,7 @@ TRANSCRIPT_END"""
     }
 
     response = bedrock_client["client"].invoke_model(
-        modelId="amazon.nova-lite-v1:0",
+        modelId=bedrock_client["model_id"],
         contentType="application/json",
         accept="application/json",
         body=json.dumps(body),

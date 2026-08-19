@@ -22,7 +22,20 @@ export default function InstructorAnalytics({ simulation_group_id: initialSimula
     : 0;
 
   return (
-    <Container maxWidth={false} sx={{ flexGrow: 1, p: { xs: 2, md: 3 }, mt: 9, bgcolor: "#f5f8f5", minHeight: "calc(100vh - 72px)" }}>
+    <Container
+      maxWidth={false}
+      sx={{
+        flexGrow: 1,
+        minWidth: 0,
+        minHeight: 0,
+        height: "calc(100vh - 72px)",
+        overflowY: "auto",
+        overflowX: "hidden",
+        p: { xs: 2, md: 3 },
+        mt: 9,
+        bgcolor: "#f5f8f5",
+      }}
+    >
       <Box sx={{ maxWidth: 1560, mx: "auto" }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, mb: 2 }}>
           <Box>
