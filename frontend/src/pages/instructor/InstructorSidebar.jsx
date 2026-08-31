@@ -11,6 +11,11 @@ import {
   Typography,
   IconButton,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import PsychologyIcon from "@mui/icons-material/Psychology";
@@ -28,6 +33,7 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
   );
   const [accessCode, setAccessCode] = useState("Loading...");
   const [copied, setCopied] = useState(false);
+  const [isGenerateCodeDialogOpen, setIsGenerateCodeDialogOpen] = useState(false);
 
   useEffect(() => {
     if (activeExternal) setActiveRoute(activeExternal);
@@ -96,6 +102,11 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
     } catch (err) {
       console.error("Failed to generate code:", err);
     }
+  };
+
+  const handleConfirmGenerateNewCode = async () => {
+    setIsGenerateCodeDialogOpen(false);
+    await handleGenerateNewCode();
   };
 
   return (
@@ -271,7 +282,7 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
             <Button
               variant="contained"
               size="small"
-              onClick={handleGenerateNewCode}
+              onClick={() => setIsGenerateCodeDialogOpen(true)}
               sx={{
                 mt: 1,
                 backgroundColor: "#10b981",
@@ -286,6 +297,25 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
           </Box>
         </Box>
       </Drawer>
+      <Dialog
+        open={isGenerateCodeDialogOpen}
+        onClose={() => setIsGenerateCodeDialogOpen(false)}
+        aria-labelledby="regenerate-access-code-title"
+        aria-describedby="regenerate-access-code-description"
+      >
+        <DialogTitle id="regenerate-access-code-title">Regenerate access code?</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="regenerate-access-code-description">
+            Regenerating will invalidate the current access code and issue a new code for everyone who relies on it. The current code will stop working immediately.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsGenerateCodeDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleConfirmGenerateNewCode}>
+            Regenerate
+          </Button>
+        </DialogActions>
+      </Dialog>
       <div
         onMouseDown={startResizing}
         className="w-1 bg-gray-200 hover:bg-emerald-300 cursor-col-resize transition-colors duration-200"
