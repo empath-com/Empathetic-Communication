@@ -30,9 +30,16 @@ const empathyValidation = {
   "GET /instructor/empathy_summary": ["student_email", "simulation_group_id"],
 };
 
+const patientValidation = {
+  "POST /instructor/duplicate_patient": [
+    "source_patient_id",
+    "destination_simulation_group_id",
+  ],
+};
+
 const routeDomains = [
   { domain: "groups", routes: createDomainRoutes("groups", groupRoutes, groupValidation) },
-  { domain: "patients", routes: createDomainRoutes("patients", patientRoutes) },
+  { domain: "patients", routes: createDomainRoutes("patients", patientRoutes, patientValidation) },
   { domain: "students", routes: createDomainRoutes("students", studentRoutes, studentValidation) },
   { domain: "prompts", routes: createDomainRoutes("prompts", promptRoutes) },
   { domain: "access", routes: createDomainRoutes("access", accessRoutes) },

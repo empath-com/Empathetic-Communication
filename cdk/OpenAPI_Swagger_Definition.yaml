@@ -3477,6 +3477,59 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /instructor/duplicate_patient:
+    <<: *commonOptions
+    post:
+      tags:
+        - Instructor
+      summary: Duplicate a patient into an instructor-owned simulation group
+      operationId: instructor_duplicate_patient_POST
+      parameters:
+        - in: query
+          name: source_patient_id
+          required: true
+          description: ID of the patient to duplicate
+          schema:
+            type: string
+        - in: query
+          name: destination_simulation_group_id
+          required: true
+          description: ID of an instructor-owned simulation group for the duplicate
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                patient_name:
+                  type: string
+                  description: Optional editable name for the duplicate
+      responses:
+        "201":
+          description: Patient duplicated successfully
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden
+        "404":
+          description: Patient not found
+        "429":
+          description: Too Many Requests
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/edit_patient:
     options:
       summary: CORS support

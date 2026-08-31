@@ -11,13 +11,18 @@ import {
   Switch,
   Tooltip,
   Avatar,
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
 } from "@mui/material";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { apiGet, apiPost, apiPut } from "../../utils/apiClient";
@@ -51,7 +56,13 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
   const [data, setData] = useState([]);
   const [openNewPatientDialog, setOpenNewPatientDialog] = useState(false);
   const [openEditPatientDialog, setOpenEditPatientDialog] = useState(false);
+  const [openDuplicatePatientDialog, setOpenDuplicatePatientDialog] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [duplicatePatient, setDuplicatePatient] = useState(null);
+  const [duplicatePatientName, setDuplicatePatientName] = useState("");
+  const [duplicateDestinationGroupId, setDuplicateDestinationGroupId] = useState("");
+  const [instructorGroups, setInstructorGroups] = useState([]);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [profilePictures, setProfilePictures] = useState({});
   const [expandedPatient, setExpandedPatient] = useState(null);
   const [ingestionStatus, setIngestionStatus] = useState({});
@@ -171,19 +182,35 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
         accessorKey: "actions",
         header: "Actions",
         Cell: ({ row }) => (
-          <Button
-            variant="contained"
-            onClick={() => handleEditClick(row.original)}
-            sx={{
-              backgroundColor: "#10b981",
-              textTransform: "none",
-              fontWeight: 600,
-              borderRadius: "10px",
-              "&:hover": { backgroundColor: "#059669" },
-            }}
-          >
-            Edit
-          </Button>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button
+              variant="contained"
+              onClick={() => handleEditClick(row.original)}
+              sx={{
+                backgroundColor: "#10b981",
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: "10px",
+                "&:hover": { backgroundColor: "#059669" },
+              }}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={() => handleDuplicateClick(row.original)}
+              sx={{
+                color: "#047857",
+                borderColor: "#10b981",
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: "10px",
+                "&:hover": { borderColor: "#059669", backgroundColor: "#f0fdf4" },
+              }}
+            >
+              Duplicate
+            </Button>
+          </Box>
         ),
       },
       {
@@ -391,6 +418,67 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
     fetchPatientsAndProfilePictures(); // Refresh data after edit
   };
 
+  const handleDuplicateClick = async (patientData) => {
+    setDuplicatePatient(patientData);
+    setDuplicatePatientName(`Copy of ${patientData.patient_name}`);
+    setDuplicateDestinationGroupId(simulation_group_id);
+    setOpenDuplicatePatientDialog(true);
+
+    try {
+      const { email } = await fetchUserAttributes();
+      const groups = await apiGet("instructor/groups", { email });
+      setInstructorGroups(groups);
+    } catch (error) {
+      console.error("Error fetching instructor groups:", error);
+      toast.error("Failed to load simulation groups");
+    }
+  };
+
+  const handleCloseDuplicatePatientDialog = () => {
+    if (isDuplicating) return;
+    setOpenDuplicatePatientDialog(false);
+    setDuplicatePatient(null);
+    setDuplicatePatientName("");
+    setDuplicateDestinationGroupId("");
+  };
+
+  const handleDuplicatePatient = async () => {
+    if (!duplicatePatient || !duplicateDestinationGroupId || !duplicatePatientName.trim()) {
+      return;
+    }
+
+    setIsDuplicating(true);
+    try {
+      const duplicatedPatient = await apiPost(
+        "instructor/duplicate_patient",
+        { patient_name: duplicatePatientName.trim() },
+        {
+          source_patient_id: duplicatePatient.patient_id,
+          destination_simulation_group_id: duplicateDestinationGroupId,
+        }
+      );
+      const destinationGroup = instructorGroups.find(
+        (group) => group.simulation_group_id === duplicateDestinationGroupId
+      );
+
+      setOpenDuplicatePatientDialog(false);
+      setDuplicatePatient(null);
+      setDuplicatePatientName("");
+      setDuplicateDestinationGroupId("");
+      toast.success(
+        `${duplicatedPatient.patient_name} duplicated to ${destinationGroup?.group_name || groupName}`
+      );
+      if (duplicateDestinationGroupId === simulation_group_id) {
+        await fetchPatientsAndProfilePictures();
+      }
+    } catch (error) {
+      console.error("Error duplicating patient:", error);
+      toast.error(error.message || "Failed to duplicate patient");
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
   const handleOpenNewPatientDialog = () => setOpenNewPatientDialog(true);
   const handleCloseNewPatientDialog = () => setOpenNewPatientDialog(false);
 
@@ -594,6 +682,62 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
             Cancel
           </Button>
         </DialogActions> */}
+      </Dialog>
+
+      <Dialog
+        open={openDuplicatePatientDialog}
+        onClose={handleCloseDuplicatePatientDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Duplicate Patient</DialogTitle>
+        <DialogContent sx={{ display: "grid", gap: 2, pt: "16px !important" }}>
+          <TextField
+            autoFocus
+            label="Patient Name"
+            value={duplicatePatientName}
+            onChange={(event) => setDuplicatePatientName(event.target.value)}
+            disabled={isDuplicating}
+            fullWidth
+          />
+          <FormControl fullWidth disabled={isDuplicating}>
+            <InputLabel id="duplicate-destination-group-label">Simulation Group</InputLabel>
+            <Select
+              labelId="duplicate-destination-group-label"
+              label="Simulation Group"
+              value={duplicateDestinationGroupId}
+              onChange={(event) => setDuplicateDestinationGroupId(event.target.value)}
+            >
+              {instructorGroups.map((group) => (
+                <MenuItem key={group.simulation_group_id} value={group.simulation_group_id}>
+                  {groupTitleCase(group.group_name)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+            <Button onClick={handleCloseDuplicatePatientDialog} disabled={isDuplicating}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleDuplicatePatient}
+              disabled={
+                isDuplicating ||
+                !duplicateDestinationGroupId ||
+                !duplicatePatientName.trim()
+              }
+              sx={{
+                backgroundColor: "#10b981",
+                textTransform: "none",
+                fontWeight: 600,
+                "&:hover": { backgroundColor: "#059669" },
+              }}
+            >
+              {isDuplicating ? "Duplicating..." : "Duplicate"}
+            </Button>
+          </Box>
+        </DialogContent>
       </Dialog>
 
       <ToastContainer

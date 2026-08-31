@@ -47,6 +47,7 @@ flowchart LR
     AdminFn --> RDS
     InstructorFn --> RDS
     StudentFn --> RDS
+    InstructorFn -->|Duplicate patient assets| S3
 
     SPA -->|Pre-signed upload flow| S3
     S3 -->|Object-created event| Ingest
@@ -176,6 +177,10 @@ This control-plane view covers key CDK-managed components that are intentionally
 3. Automated operations wiring (CloudWatch + EventBridge + timeout handler).
 4. Database migration bootstrap path (DBFlow trigger Lambda).
 5. Image build and delivery path for Docker Lambdas (CodePipeline/CodeBuild/ECR).
+
+## Patient Duplication Flow
+
+When an instructor duplicates a patient, the instructor Lambda verifies access to both simulation groups, creates an independent patient record and destination-group student interactions, then copies the patient-specific S3 objects into a new prefix. The copied prefix covers documents, patient information, answer keys, and profile pictures. S3 object-created events invoke data ingestion for the new paths, so duplicated documents receive their own RAG ingestion and do not share source-patient vectors.
 
 ## Description
 

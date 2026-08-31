@@ -150,6 +150,7 @@ export function createBusinessLambdas(
       environment: {
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+        BUCKET: dataIngestionBucket.bucketName,
         USER_POOL: "", // Will be set by orchestrator
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         LOG_LEVEL: nodeLogLevel.valueAsString,
@@ -205,6 +206,7 @@ export function createBusinessLambdas(
   const cfnLambda_Instructor = lambdaInstructorFunction.node
     .defaultChild as lambda.CfnFunction;
   cfnLambda_Instructor.overrideLogicalId("instructorFunction");
+  dataIngestionBucket.grantReadWrite(lambdaInstructorFunction);
 
   // Admin Lambda
   const lambdaAdminFunction = new lambda.Function(
