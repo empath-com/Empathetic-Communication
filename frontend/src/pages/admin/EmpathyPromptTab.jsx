@@ -50,6 +50,11 @@ const EmpathyPromptTab = ({
   DEFAULT_EMPATHY_PROMPT,
   formatDate,
 }) => {
+  const historyEntry = empathyPromptHistory[empathyHistoryIndex];
+  const schemaLabel = historyEntry?.schema_identifier
+    ? `${historyEntry.schema_identifier} (${historyEntry.schema_variant || "unknown variant"}, v${historyEntry.schema_version || "unknown"})`
+    : "Unknown (not recorded for this version)";
+
   return (
     <>
       {/* ===== EMPATHY PROMPT EDITOR ===== */}
@@ -169,23 +174,28 @@ const EmpathyPromptTab = ({
                 color="text.secondary"
                 sx={{ display: "block", mb: 2, textAlign: "center" }}
               >
-                Saved: {formatDate(empathyPromptHistory[empathyHistoryIndex]?.created_at)}
+                Saved: {formatDate(historyEntry?.created_at)}
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ display: "block", mb: 2, textAlign: "center" }}
+              >
+                Schema: {schemaLabel}
               </Typography>
               <TextField
                 fullWidth
                 multiline
                 minRows={8}
                 maxRows={12}
-                value={empathyPromptHistory[empathyHistoryIndex]?.prompt_content || ""}
+                value={historyEntry?.prompt_content || ""}
                 InputProps={{ readOnly: true }}
                 variant="outlined"
                 sx={{ mb: 2 }}
               />
               <Button
                 startIcon={<RestoreIcon />}
-                onClick={() =>
-                  restoreEmpathyPrompt(empathyPromptHistory[empathyHistoryIndex].history_id)
-                }
+                onClick={() => restoreEmpathyPrompt(historyEntry.history_id)}
                 disabled={loading}
                 variant="contained"
                 fullWidth

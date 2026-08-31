@@ -6,6 +6,17 @@
 
 const VALID_EMPATHY_TOOLS = ["CARE", "CARE_RELAXED", "PRISM", "PRISM_RELAXED", "NURSE", "NURSE_RELAXED"];
 
+const EMPATHY_SCHEMA_SNAPSHOTS = {
+  CARE: { identifier: "submit_empathy_evaluation", variant: "strict", version: "1" },
+  CARE_RELAXED: { identifier: "submit_empathy_evaluation_relaxed", variant: "relaxed", version: "1" },
+  PRISM: { identifier: "submit_prism_evaluation", variant: "strict", version: "1" },
+  PRISM_RELAXED: { identifier: "submit_prism_evaluation_relaxed", variant: "relaxed", version: "1" },
+  NURSE: { identifier: "submit_nurse_evaluation", variant: "strict", version: "1" },
+  NURSE_RELAXED: { identifier: "submit_nurse_evaluation_relaxed", variant: "relaxed", version: "1" },
+};
+
+const getSchemaSnapshot = (empathyTool) => EMPATHY_SCHEMA_SNAPSHOTS[empathyTool] || EMPATHY_SCHEMA_SNAPSHOTS.CARE;
+
 module.exports = {
   "GET /admin/system_prompts": async ({ sqlConnection, response }) => {
     try {
@@ -102,13 +113,13 @@ module.exports = {
   "GET /admin/empathy_prompts": async ({ sqlConnection, response }) => {
     try {
       const latestPrompt = await sqlConnection`
-        SELECT prompt_content, empathy_tool, created_at
+        SELECT prompt_content, empathy_tool, schema_identifier, schema_variant, schema_version, created_at
         FROM "empathy_prompt_history"
         ORDER BY created_at DESC
         LIMIT 1;
       `;
       const promptHistory = await sqlConnection`
-        SELECT history_id, prompt_content, empathy_tool, created_at
+        SELECT history_id, prompt_content, empathy_tool, schema_identifier, schema_variant, schema_version, created_at
         FROM "empathy_prompt_history"
         ORDER BY created_at DESC
         OFFSET 1;
@@ -139,8 +150,10 @@ module.exports = {
         return;
       }
       const resolvedTool = VALID_EMPATHY_TOOLS.includes(bodyTool) ? bodyTool : "CARE";
+      const schemaSnapshot = getSchemaSnapshot(resolvedTool);
       await sqlConnection`
-        INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool) VALUES (${prompt_content}, ${resolvedTool});
+        INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool, schema_identifier, schema_variant, schema_version)
+        VALUES (${prompt_content}, ${resolvedTool}, ${schemaSnapshot.identifier}, ${schemaSnapshot.variant}, ${schemaSnapshot.version});
       `;
       response.body = JSON.stringify({ message: "Empathy prompt updated successfully" });
     } catch (err) {
@@ -165,22 +178,27 @@ module.exports = {
           return;
         }
         const restoredTool = VALID_EMPATHY_TOOLS.includes(rows[0]?.empathy_tool) ? rows[0].empathy_tool : "CARE";
+        const schemaSnapshot = getSchemaSnapshot(restoredTool);
         await sqlConnection`
-          INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool) VALUES (${fromHistory}, ${restoredTool});
+          INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool, schema_identifier, schema_variant, schema_version)
+          VALUES (${fromHistory}, ${restoredTool}, ${schemaSnapshot.identifier}, ${schemaSnapshot.variant}, ${schemaSnapshot.version});
         `;
         response.body = JSON.stringify({ message: "Empathy prompt restored successfully" });
         return;
       }
 
       if (event.body) {
-        const { prompt_content } = JSON.parse(event.body);
+        const { prompt_content, empathy_tool: bodyTool } = JSON.parse(event.body);
         if (!prompt_content || !prompt_content.trim()) {
           response.statusCode = 400;
           response.body = "prompt_content is required";
           return;
         }
+        const resolvedTool = VALID_EMPATHY_TOOLS.includes(bodyTool) ? bodyTool : "CARE";
+        const schemaSnapshot = getSchemaSnapshot(resolvedTool);
         await sqlConnection`
-          INSERT INTO "empathy_prompt_history" (prompt_content) VALUES (${prompt_content});
+          INSERT INTO "empathy_prompt_history" (prompt_content, empathy_tool, schema_identifier, schema_variant, schema_version)
+          VALUES (${prompt_content}, ${resolvedTool}, ${schemaSnapshot.identifier}, ${schemaSnapshot.variant}, ${schemaSnapshot.version});
         `;
         response.body = JSON.stringify({ message: "Empathy prompt restored successfully" });
       } else {

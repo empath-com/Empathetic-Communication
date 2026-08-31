@@ -367,6 +367,9 @@ erDiagram
         uuid history_id PK
         text prompt_content
         string empathy_tool
+        string schema_identifier
+        string schema_variant
+        string schema_version
         timestamp created_at
     }
 
