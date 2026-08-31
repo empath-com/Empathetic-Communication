@@ -2697,19 +2697,21 @@ class PollyTranscribeSession(NovaSonic):
                 if sentence_idx == 1:
                     timer.mark("polly_start")
 
-                clean_sentence, _ = strip_vocal_cues(sentence)
-                clean_sentence = clean_sentence.strip()
-                if not clean_sentence:
-                    continue
+                display_text = sentence.strip()
+                speech_text, _ = strip_vocal_cues(display_text)
+                speech_text = speech_text.strip()
 
-                # Emit transcript text immediately
-                print(json.dumps({"type": "text", "text": clean_sentence}), flush=True)
+                # Preserve vocal cues in the chat transcript, but never send them to Polly.
+                if display_text:
+                    print(json.dumps({"type": "text", "text": display_text}), flush=True)
+                if not speech_text:
+                    continue
 
                 # Stream this sentence through Polly bidirectional streaming
                 try:
                     async with asyncio.timeout(8.0):
                         async for pcm_chunk in client.start_speech_synthesis_stream(
-                            text=clean_sentence,
+                            text=speech_text,
                             voice_id=self.voice_id,
                             engine="generative",
                             language_code=language_code,
@@ -2768,16 +2770,21 @@ class PollyTranscribeSession(NovaSonic):
         chunks without discontinuities (verified via pcm-playback-processor.js).
         Returns the cleaned text that was emitted (for DB persistence).
         """
-        clean, _ = strip_vocal_cues(response_text)
-        clean = clean.strip()
-        if not clean:
+        display_text = (response_text or "").strip()
+        if not display_text:
             return ""
 
+        speech_text, _ = strip_vocal_cues(display_text)
+        speech_text = speech_text.strip()
+
         # Emit all text chunks so the transcript updates immediately.
-        for chunk in self._semantic_chunks(clean):
+        for chunk in self._semantic_chunks(display_text):
             if generation_id != self._generation_id:
-                return clean
+                return display_text
             print(json.dumps({"type": "text", "text": chunk}), flush=True)
+
+        if not speech_text:
+            return display_text
 
         language_code = self._polly_voice_language_code
         client = self._get_polly_streaming_client()
@@ -2788,13 +2795,13 @@ class PollyTranscribeSession(NovaSonic):
         carry = bytearray()
         print(
             f"🔊 POLLY: Starting bidirectional stream "
-            f"(voice={self.voice_id}, lang={language_code}, chars={len(clean)})",
+            f"(voice={self.voice_id}, lang={language_code}, chars={len(speech_text)})",
             flush=True,
         )
         try:
             async with asyncio.timeout(10.0):
                 async for pcm_chunk in client.start_speech_synthesis_stream(
-                    text=clean,
+                    text=speech_text,
                     voice_id=self.voice_id,
                     engine="generative",
                     language_code=language_code,
@@ -2863,8 +2870,8 @@ class PollyTranscribeSession(NovaSonic):
         if emitted_chunks == 0 and generation_id == self._generation_id:
             print(f"⚠️ POLLY: Streaming delivered 0 chunks — using compatible Polly fallback", flush=True)
             print(json.dumps({"type": "debug", "text": "[POLLY] Using SSML fallback (0 streaming chunks)"}), flush=True)
-            ssml = self._render_ssml(clean)
-            audio_b64 = await self._synthesize_ssml_to_b64(ssml, clean)
+            ssml = self._render_ssml(speech_text)
+            audio_b64 = await self._synthesize_ssml_to_b64(ssml, speech_text)
             if audio_b64:
                 emitted_chunks = 1
                 self._barge_in_enabled = True
@@ -2880,7 +2887,7 @@ class PollyTranscribeSession(NovaSonic):
 
         print(json.dumps({"type": "debug", "text": f"[POLLY] Audio complete: {received_chunks} Polly chunks → {emitted_chunks} emitted"}), flush=True)
         print(f"🔊 POLLY: Streaming complete ({received_chunks} received, {emitted_chunks} emitted)", flush=True)
-        return clean
+        return display_text
 
     def _is_speech_frame(self, audio_bytes: bytes) -> bool:
         if not audio_bytes:
