@@ -3,6 +3,10 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
 import VolumeUp from "@mui/icons-material/VolumeUp";
+import HistoryIcon from "@mui/icons-material/History";
+import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
+import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
+import RestoreIcon from "@mui/icons-material/Restore";
 
 import {
   TextField,
@@ -67,6 +71,8 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
   const [patientAge, setPatientAge] = useState("");
   const [patientGender, setPatientGender] = useState("");
   const [patientPrompt, setPatientPrompt] = useState("");
+  const [previousPatientPrompts, setPreviousPatientPrompts] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const [profilePicture, setProfilePicture] = useState(null);
@@ -242,6 +248,45 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       setSelectedVoice(patientData.voice_id || "");
     }
   }, [patientData]);
+
+  const fetchPatientPromptHistory = async () => {
+    if (!patientData?.patient_id) {
+      return;
+    }
+
+    try {
+      const { token, email } = await getAuthSessionAndEmail();
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}instructor/patient_prompt_history?patient_id=${encodeURIComponent(
+          patientData.patient_id
+        )}&simulation_group_id=${encodeURIComponent(
+          simulation_group_id
+        )}&instructor_email=${encodeURIComponent(email)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch patient prompt history");
+      }
+
+      setPreviousPatientPrompts(await response.json());
+      setHistoryIndex(0);
+    } catch (error) {
+      console.error("Error fetching patient prompt history:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPatientPromptHistory();
+  // Patient history is refreshed when the selected patient changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientData, simulation_group_id]);
 
   useEffect(() => {
     if (!voicesLoading && voices.length) {
@@ -549,6 +594,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       };
 
       await updatePatient();
+      await fetchPatientPromptHistory();
 
       // Update patient information in the parent component
       onPatientUpdated(updatedPatientData);
@@ -744,6 +790,83 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
           rows={4}
         />
 
+        <Box sx={{ mt: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}>
+            <HistoryIcon color="action" fontSize="small" />
+            <Typography variant="subtitle2">Previous Patient Prompts</Typography>
+          </Box>
+          {previousPatientPrompts.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No previous prompts saved yet.
+            </Typography>
+          ) : (
+            <>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 1,
+                  mb: 1,
+                }}
+              >
+                <Tooltip title="Previous prompt">
+                  <span>
+                    <IconButton
+                      aria-label="Previous prompt"
+                      size="small"
+                      onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}
+                      disabled={historyIndex === 0}
+                    >
+                      <ArrowBackIosNewIcon fontSize="inherit" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Typography variant="caption">
+                  Version {historyIndex + 1} of {previousPatientPrompts.length}
+                </Typography>
+                <Tooltip title="Next prompt">
+                  <span>
+                    <IconButton
+                      aria-label="Next prompt"
+                      size="small"
+                      onClick={() =>
+                        setHistoryIndex((index) =>
+                          Math.min(previousPatientPrompts.length - 1, index + 1)
+                        )
+                      }
+                      disabled={historyIndex >= previousPatientPrompts.length - 1}
+                    >
+                      <ArrowForwardIosIcon fontSize="inherit" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Saved: {new Date(previousPatientPrompts[historyIndex]?.created_at).toLocaleString()}
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                minRows={4}
+                maxRows={8}
+                value={previousPatientPrompts[historyIndex]?.prompt_content || ""}
+                InputProps={{ readOnly: true }}
+                sx={{ mb: 1 }}
+              />
+              <Button
+                startIcon={<RestoreIcon />}
+                variant="outlined"
+                onClick={() =>
+                  setPatientPrompt(previousPatientPrompts[historyIndex]?.prompt_content || "")
+                }
+              >
+                Use This Version
+              </Button>
+            </>
+          )}
+        </Box>
+
         {/* LLM Upload Section */}
         <Typography variant="h6" style={{ marginTop: 20 }}>
           LLM Upload
@@ -798,39 +921,28 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
           isDocument={false}
         />
 
-        <Grid container spacing={2} style={{ marginTop: 16 }}>
-          <Grid item xs={4}>
-            <Box display="flex" gap={6}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={onClose}
-                sx={{ width: "100%" }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="contained"
-                color="error"
-                onClick={handleDeleteConfirmation}
-                sx={{ width: "100%" }}
-              >
-                Delete Patient
-              </Button>
-            </Box>
-          </Grid>
-          <Grid item xs={4}></Grid>
-          <Grid item xs={4} style={{ textAlign: "right" }}>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleSave}
-              style={{ width: "50%" }}
-            >
-              Save Patient
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 1,
+            mt: 2,
+          }}
+        >
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+            <Button variant="contained" color="primary" onClick={onClose}>
+              Cancel
             </Button>
-          </Grid>
-        </Grid>
+            <Button variant="contained" color="error" onClick={handleDeleteConfirmation}>
+              Delete Patient
+            </Button>
+          </Box>
+          <Button variant="contained" color="primary" onClick={handleSave}>
+            Save Patient
+          </Button>
+        </Box>
       </Paper>
       <ToastContainer
         position="top-center"

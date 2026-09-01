@@ -393,7 +393,7 @@ erDiagram
     }
 ```
 
-Standalone tables such as `system_prompt_history` and `empathy_prompt_history` are configuration history stores rather than part of the main relational workflow chain. `langchain_pg_collection` and `langchain_pg_embedding` are the pgvector-backed retrieval tables used by document ingestion and RAG.
+Standalone tables such as `system_prompt_history`, `empathy_prompt_history`, and `patient_prompt_history` are configuration history stores rather than part of the main relational workflow chain. `patient_prompt_history` retains earlier prompt versions per patient when an instructor changes the active prompt. `langchain_pg_collection` and `langchain_pg_embedding` are the pgvector-backed retrieval tables used by document ingestion and RAG.
 
 ### RDS Langchain Tables
 

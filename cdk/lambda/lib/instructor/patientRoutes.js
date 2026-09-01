@@ -316,6 +316,13 @@ const routes = {
             return response;
           }
 
+          const currentPatient = await sqlConnection`
+                    SELECT patient_prompt
+                    FROM "patients"
+                    WHERE patient_id = ${patient_id}
+                      AND simulation_group_id = ${simulation_group_id};
+                `;
+
           // Update the patient details in the patients table
           await sqlConnection`
                     UPDATE "patients"
@@ -327,6 +334,16 @@ const routes = {
                         voice_id = COALESCE(${voice_id ?? null}, voice_id)
                     WHERE patient_id = ${patient_id};
                 `;
+
+          if (
+            currentPatient[0] &&
+            currentPatient[0].patient_prompt !== patient_prompt
+          ) {
+            await sqlConnection`
+                      INSERT INTO "patient_prompt_history" (patient_id, prompt_content)
+                      VALUES (${patient_id}, ${currentPatient[0].patient_prompt});
+                  `;
+          }
 
           // Insert into User Engagement Log
           await sqlConnection`
@@ -374,6 +391,48 @@ const routes = {
           "patient_id or instructor_email is missing in query string parameters",
       });
     }
+    return response;
+  },
+
+  "GET /instructor/patient_prompt_history": async ({
+    event,
+    sqlConnection,
+    response,
+  }) => {
+    const { patient_id, simulation_group_id, instructor_email } =
+      event.queryStringParameters || {};
+
+    if (!patient_id || !simulation_group_id || !instructor_email) {
+      response.statusCode = 400;
+      response.body = JSON.stringify({
+        error:
+          "patient_id, simulation_group_id, and instructor_email query parameters are required",
+      });
+      return response;
+    }
+
+    try {
+      const promptHistory = await sqlConnection`
+        SELECT history_id, prompt_content, created_at
+        FROM "patient_prompt_history"
+        WHERE patient_id = ${patient_id}
+          AND EXISTS (
+            SELECT 1
+            FROM "patients"
+            WHERE patient_id = ${patient_id}
+              AND simulation_group_id = ${simulation_group_id}
+          )
+        ORDER BY created_at DESC;
+      `;
+
+      response.statusCode = 200;
+      response.body = JSON.stringify(promptHistory);
+    } catch (err) {
+      response.statusCode = 500;
+      console.error(err);
+      response.body = JSON.stringify({ error: "Internal server error" });
+    }
+
     return response;
   },
 

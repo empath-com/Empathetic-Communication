@@ -3656,6 +3656,88 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /instructor/patient_prompt_history:
+    options:
+      summary: CORS support
+      description: |
+        Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${CorsAllowedOrigin}'"
+            responseTemplates:
+              application/json: |
+                {}
+    get:
+      tags:
+        - Instructor
+      summary: Retrieve previous prompt versions for a patient
+      operationId: instructor_get_patient_prompt_history
+      parameters:
+        - in: query
+          name: patient_id
+          required: true
+          schema:
+            type: string
+          description: ID of the patient
+        - in: query
+          name: simulation_group_id
+          required: true
+          schema:
+            type: string
+          description: ID of the group containing the patient
+        - in: query
+          name: instructor_email
+          required: true
+          schema:
+            type: string
+          description: Email of the instructor
+      responses:
+        "200":
+          description: Successfully retrieved patient prompt history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    history_id:
+                      type: string
+                    prompt_content:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "429":
+          description: Too Many Requests
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/previous_prompts:
     options:
       summary: CORS support

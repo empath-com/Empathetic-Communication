@@ -118,6 +118,7 @@ Patient-specific prompts provide the most granular level of customization, allow
 - **Multi-line Text Editor**: Supports detailed patient characterization
 - **Integration with Patient Data**: Works alongside patient demographics and files
 - **Required Field**: Patient prompt is mandatory for patient creation
+- **Previous Prompt History**: View earlier versions and load one into the editor before saving
 
 ### Usage Instructions
 
@@ -135,7 +136,8 @@ Patient-specific prompts provide the most granular level of customization, allow
 1. Navigate to Instructor Dashboard → [Group Name] → Patients
 2. Select the patient to edit
 3. Modify the "Patient Prompt" field as needed
-4. Click "Save Patient" to apply changes
+4. Use "Previous Patient Prompts" to browse earlier versions and select "Use This Version" when needed
+5. Click "Save Patient" to apply changes
 
 ### Patient Prompt Guidelines
 
