@@ -19,8 +19,12 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import AddCircleIcon from "@mui/icons-material/AddCircle";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import SettingsIcon from "@mui/icons-material/Settings";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
 import GroupDetails from "./GroupDetails";
 
@@ -89,6 +93,14 @@ export const AdminSimulationGroups = () => {
   const handleGroupClick = (group) => {
     setSelectedGroup(group);
     setOpenDetailsDialog(true);
+  };
+
+  const handleCopyAccessCode = async (accessCode) => {
+    try {
+      await navigator.clipboard.writeText(accessCode);
+    } catch (error) {
+      console.error("Error copying access code:", error);
+    }
   };
 
   const handleCloseDetailsDialog = () => {
@@ -261,6 +273,20 @@ export const AdminSimulationGroups = () => {
                     >
                       Empathy Config
                     </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        width: 72,
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        letterSpacing: ".05em",
+                        textTransform: "uppercase",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                      }}
+                    >
+                      Settings
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -269,9 +295,7 @@ export const AdminSimulationGroups = () => {
                     .map((row, index) => (
                       <TableRow
                         key={index}
-                        onClick={() => handleGroupClick(row)}
                         sx={{
-                          cursor: "pointer",
                           transition: "background-color .15s, box-shadow .2s",
                           "&:hover": { backgroundColor: "#f0fdf4" },
                         }}
@@ -293,7 +317,33 @@ export const AdminSimulationGroups = () => {
                               'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
                           }}
                         >
-                          {row.accessCode}
+                          <Box
+                            sx={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 0.5,
+                              "& .copy-access-code": { opacity: 0 },
+                              "&:hover .copy-access-code, &:focus-within .copy-access-code": {
+                                opacity: 1,
+                              },
+                            }}
+                          >
+                            <span>{row.accessCode}</span>
+                            <Tooltip title="Copy access code">
+                              <IconButton
+                                aria-label={`Copy access code ${row.accessCode}`}
+                                className="copy-access-code"
+                                size="small"
+                                onClick={() => handleCopyAccessCode(row.accessCode)}
+                                sx={{
+                                  color: "#059669",
+                                  transition: "opacity .15s",
+                                }}
+                              >
+                                <ContentCopyIcon fontSize="inherit" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
                         </TableCell>
                         <TableCell>
                           <span
@@ -324,6 +374,18 @@ export const AdminSimulationGroups = () => {
                         >
                           {row.empathyMode}
                         </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Open group settings">
+                            <IconButton
+                              aria-label={`Open settings for ${row.groupName}`}
+                              onClick={() => handleGroupClick(row)}
+                              size="small"
+                              sx={{ color: "#4b5563" }}
+                            >
+                              <SettingsIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>
@@ -332,7 +394,7 @@ export const AdminSimulationGroups = () => {
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     sx={{
                       py: 8,
                       textAlign: "center",
