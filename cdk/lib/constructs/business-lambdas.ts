@@ -150,7 +150,6 @@ export function createBusinessLambdas(
       environment: {
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        BUCKET: dataIngestionBucket.bucketName,
         USER_POOL: "", // Will be set by orchestrator
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         LOG_LEVEL: nodeLogLevel.valueAsString,
@@ -186,6 +185,7 @@ export function createBusinessLambdas(
       environment: {
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+        BUCKET: dataIngestionBucket.bucketName,
         USER_POOL: "", // Will be set by orchestrator
         CORS_ALLOWED_ORIGIN: corsAllowedOrigin.valueAsString,
         LOG_LEVEL: nodeLogLevel.valueAsString,
