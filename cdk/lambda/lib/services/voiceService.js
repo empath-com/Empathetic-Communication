@@ -1,8 +1,13 @@
 const { getSimulationGroupVoiceConfig } = require("./groupsService");
-const { NotFoundError } = require("../shared/errors");
-const { DescribeVoicesCommand, PollyClient } = require("@aws-sdk/client-polly");
+const { BadRequestError, NotFoundError } = require("../shared/errors");
+const {
+  DescribeVoicesCommand,
+  PollyClient,
+  SynthesizeSpeechCommand,
+} = require("@aws-sdk/client-polly");
 
 const ENGINE_PREFERENCE = ["generative", "long-form", "neural", "standard"];
+const VOICE_SAMPLE_TEXT = "Hello, I am here to talk about how I am feeling today.";
 
 async function getStudentVoiceEnabledConfig(sqlConnection, simulationGroupId) {
   return getSimulationGroupVoiceConfig(sqlConnection, simulationGroupId);
@@ -62,8 +67,51 @@ async function getPollyVoices() {
     });
 }
 
+async function streamToBuffer(stream) {
+  if (!stream) {
+    throw new Error("Polly did not return audio data");
+  }
+
+  if (typeof stream.transformToByteArray === "function") {
+    return Buffer.from(await stream.transformToByteArray());
+  }
+
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function synthesizeVoiceSample(voiceId) {
+  if (!voiceId) {
+    throw new BadRequestError("voice_id is required");
+  }
+
+  const voice = (await getPollyVoices()).find((item) => item.id === voiceId);
+  if (!voice) {
+    throw new BadRequestError("Selected voice is not available");
+  }
+
+  const client = new PollyClient({ region: process.env.AWS_REGION });
+  const response = await client.send(
+    new SynthesizeSpeechCommand({
+      Engine: voice.preferredEngine,
+      OutputFormat: "mp3",
+      Text: VOICE_SAMPLE_TEXT,
+      TextType: "text",
+      VoiceId: voice.id,
+    })
+  );
+
+  return {
+    audio: (await streamToBuffer(response.AudioStream)).toString("base64"),
+  };
+}
+
 module.exports = {
   getStudentVoiceEnabledConfig,
   updateInstructorVoiceSetting,
   getPollyVoices,
+  synthesizeVoiceSample,
 };

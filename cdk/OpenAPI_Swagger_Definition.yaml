@@ -3375,6 +3375,44 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /instructor/voice_sample:
+    <<: *commonOptions
+    post:
+      tags:
+        - Instructor
+      summary: Synthesize a short preview for an Amazon Polly voice
+      operationId: instructor_voice_sample_POST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - voice_id
+              properties:
+                voice_id:
+                  type: string
+                  description: Amazon Polly voice ID to preview
+      responses:
+        "200":
+          description: Base64-encoded MP3 voice sample
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "429":
+          description: Too Many Requests
+        "500":
+          description: Internal Server Error
+      security:
+        - instructorAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${instructorFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
   /instructor/create_patient:
     options:
       summary: CORS support

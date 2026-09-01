@@ -4,6 +4,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import PhotoCamera from '@mui/icons-material/PhotoCamera'; // Icon for profile picture upload
+import VolumeUp from "@mui/icons-material/VolumeUp";
 
 import PatientImageCropper from "./PatientImageCropper";
 
@@ -19,6 +20,8 @@ import {
   Select,
   MenuItem,
   IconButton,
+  CircularProgress,
+  Tooltip,
   Avatar, // pfp
 } from "@mui/material";
 import PageContainer from "../Container";
@@ -29,6 +32,7 @@ import {
   selectPollyVoice,
   usePollyVoices,
 } from "./usePollyVoices";
+import { useVoiceSample } from "./useVoiceSample";
 
 export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPatientCreated, showSuccessToast }) => {
   const [files, setFiles] = useState([]); // For LLM Upload
@@ -62,10 +66,19 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
   const { voices, loading: voicesLoading, error: voicesError } = usePollyVoices();
   const availableVoices = filterPollyVoices(voices, patientGender);
   const [selectedVoice, setSelectedVoice] = useState("");
+  const { isPlaying: isVoiceSamplePlaying, playSample } = useVoiceSample();
   const [nextPatientNumber, setNextPatientNumber] = useState(data.length + 1);
 
   const cleanFileName = (fileName) => {
     return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  };
+
+  const handleVoiceSample = async () => {
+    try {
+      await playSample(selectedVoice);
+    } catch {
+      toast.error("Unable to play the selected voice sample.", { position: "top-center" });
+    }
   };
 
 
@@ -161,10 +174,8 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
     const newFilePromises = newFiles.map((file) => {
       const fileType = file.name.split('.').pop();
       const fileName = cleanFileName(file.name.replace(/\.[^/.]+$/, ""));
-
       return fetch(
-        `${import.meta.env.VITE_API_ENDPOINT
-        }instructor/generate_presigned_url?simulation_group_id=${encodeURIComponent(
+        `${import.meta.env.VITE_API_ENDPOINT}instructor/generate_presigned_url?simulation_group_id=${encodeURIComponent(
           simulation_group_id
         )}&patient_id=${encodeURIComponent(
           patientId
@@ -509,19 +520,33 @@ export const InstructorNewPatient = ({ data, simulation_group_id, onClose, onPat
         </FormControl>
 
         {patientGender && (
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Voice</InputLabel>
-            <Select
-              value={selectedVoice}
-              label="Voice"
-              onChange={e => setSelectedVoice(e.target.value)}
-              disabled={voicesLoading || Boolean(voicesError)}
-            >
-              {availableVoices.map(v => (
-                <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Voice</InputLabel>
+              <Select
+                value={selectedVoice}
+                label="Voice"
+                onChange={e => setSelectedVoice(e.target.value)}
+                disabled={voicesLoading || Boolean(voicesError)}
+              >
+                {availableVoices.map(v => (
+                  <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Tooltip title="Play selected voice sample">
+              <span>
+                <IconButton
+                  aria-label="Play selected voice sample"
+                  disabled={!selectedVoice || voicesLoading || Boolean(voicesError) || isVoiceSamplePlaying}
+                  onClick={handleVoiceSample}
+                  size="small"
+                >
+                  {isVoiceSamplePlaying ? <CircularProgress size={20} /> : <VolumeUp />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         )}
         <TextField
           label="Patient Prompt"

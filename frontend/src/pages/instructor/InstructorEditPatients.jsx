@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession, fetchUserAttributes } from "aws-amplify/auth";
+import VolumeUp from "@mui/icons-material/VolumeUp";
 
 import {
   TextField,
@@ -14,6 +15,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  CircularProgress,
+  Tooltip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -28,6 +31,7 @@ import {
   selectPollyVoice,
   usePollyVoices,
 } from "./usePollyVoices";
+import { useVoiceSample } from "./useVoiceSample";
 
 import Avatar from '@mui/material/Avatar'; // for profile picture preview
 import IconButton from '@mui/material/IconButton'; // for upload button
@@ -72,6 +76,15 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
   const { voices, loading: voicesLoading, error: voicesError } = usePollyVoices();
   const availableVoices = filterPollyVoices(voices, patientGender);
   const [selectedVoice, setSelectedVoice] = useState("");
+  const { isPlaying: isVoiceSamplePlaying, playSample } = useVoiceSample();
+
+  const handleVoiceSample = async () => {
+    try {
+      await playSample(selectedVoice);
+    } catch {
+      toast.error("Unable to play the selected voice sample.", { position: "top-center" });
+    }
+  };
 
   const handleProfilePictureChange = (e) => {
     const file = e.target.files[0];
@@ -191,9 +204,7 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
       const response = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT}instructor/get_all_files?simulation_group_id=${encodeURIComponent(
           simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&patient_name=${encodeURIComponent(patientName)}`,
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}&patient_name=${encodeURIComponent(patientName)}`,
         {
           method: "GET",
           headers: {
@@ -694,19 +705,33 @@ const InstructorEditPatients = ({ patientData, simulation_group_id, onClose, onP
         </FormControl>
 
         {patientGender && (
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Voice</InputLabel>
-            <Select
-              value={selectedVoice}
-              label="Voice"
-              onChange={(e) => setSelectedVoice(e.target.value)}
-              disabled={voicesLoading || Boolean(voicesError)}
-            >
-              {availableVoices.map(v => (
-                <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Voice</InputLabel>
+              <Select
+                value={selectedVoice}
+                label="Voice"
+                onChange={(e) => setSelectedVoice(e.target.value)}
+                disabled={voicesLoading || Boolean(voicesError)}
+              >
+                {availableVoices.map(v => (
+                  <MenuItem key={v.id} value={v.id}>{formatPollyVoice(v)}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Tooltip title="Play selected voice sample">
+              <span>
+                <IconButton
+                  aria-label="Play selected voice sample"
+                  disabled={!selectedVoice || voicesLoading || Boolean(voicesError) || isVoiceSamplePlaying}
+                  onClick={handleVoiceSample}
+                  size="small"
+                >
+                  {isVoiceSamplePlaying ? <CircularProgress size={20} /> : <VolumeUp />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         )}
 
         <TextField

@@ -465,7 +465,7 @@ export function createCognitoAuth(
   lambdaRole.addToPolicy(
     new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
-      actions: ["polly:DescribeVoices"],
+      actions: ["polly:DescribeVoices", "polly:SynthesizeSpeech"],
       resources: ["*"],
     })
   );

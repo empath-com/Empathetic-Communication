@@ -48,6 +48,7 @@ flowchart LR
     InstructorFn --> RDS
     StudentFn --> RDS
     InstructorFn -->|Duplicate patient assets| S3
+    InstructorFn -->|List voices + synthesize patient previews| Polly
 
     SPA -->|Pre-signed upload flow| S3
     S3 -->|Object-created event| Ingest

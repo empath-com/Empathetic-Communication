@@ -1,9 +1,20 @@
-const { getPollyVoices, updateInstructorVoiceSetting } = require("../services/voiceService");
+const {
+  getPollyVoices,
+  synthesizeVoiceSample,
+  updateInstructorVoiceSetting,
+} = require("../services/voiceService");
 
 const routes = {
   "GET /instructor/polly_voices": async ({ response }) => {
     response.statusCode = 200;
     response.body = JSON.stringify({ voices: await getPollyVoices() });
+    return response;
+  },
+
+  "POST /instructor/voice_sample": async ({ event, response }) => {
+    const { voice_id: voiceId } = JSON.parse(event.body || "{}");
+    response.statusCode = 200;
+    response.body = JSON.stringify(await synthesizeVoiceSample(voiceId));
     return response;
   },
 
