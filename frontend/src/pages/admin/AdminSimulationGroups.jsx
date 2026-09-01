@@ -28,22 +28,49 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
 import GroupDetails from "./GroupDetails";
 
-const createData = (groupName, accessCode, status, id, empathyMode) => {
-  return { groupName, accessCode, status, id, empathyMode };
+const createData = (
+  groupName,
+  accessCode,
+  status,
+  id,
+  empathyMode,
+  evaluationFramework
+) => {
+  return {
+    groupName,
+    accessCode,
+    status,
+    id,
+    empathyMode,
+    evaluationFramework,
+  };
+};
+
+const evaluationFrameworkLabels = {
+  CARE: "CARE Measure",
+  CARE_RELAXED: "CARE Measure (Relaxed)",
+  PRISM: "PRISM (SDT-informed)",
+  PRISM_RELAXED: "PRISM (SDT-informed, Relaxed)",
+  NURSE: "NURSE Framework",
+  NURSE_RELAXED: "NURSE Framework (Relaxed)",
 };
 
 function getSimulationGroupInfo(groupsArray) {
-  return groupsArray.map((group) =>
-    createData(
+  return groupsArray.map((group) => {
+    const hasEmpathyOverride =
+      group.empathy_prompt_override || group.empathy_tool_override;
+
+    return createData(
       `${group.group_name}`,
       `${group.group_access_code}`,
       `${group.group_student_access}`,
       `${group.simulation_group_id}`,
-      group.empathy_prompt_override || group.empathy_tool_override
-        ? "Override"
-        : "Default"
-    )
-  );
+      hasEmpathyOverride ? "Override" : "Default",
+      hasEmpathyOverride
+        ? evaluationFrameworkLabels[group.empathy_tool_override] || "Not set"
+        : "Global default"
+    );
+  });
 }
 
 export const AdminSimulationGroups = () => {
@@ -274,6 +301,18 @@ export const AdminSimulationGroups = () => {
                       Empathy Config
                     </TableCell>
                     <TableCell
+                      sx={{
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        letterSpacing: ".05em",
+                        textTransform: "uppercase",
+                        color: "#374151",
+                        borderBottom: "2px solid #e5e7eb",
+                      }}
+                    >
+                      Evaluation Framework
+                    </TableCell>
+                    <TableCell
                       align="right"
                       sx={{
                         width: 72,
@@ -374,6 +413,15 @@ export const AdminSimulationGroups = () => {
                         >
                           {row.empathyMode}
                         </TableCell>
+                        <TableCell
+                          sx={{
+                            fontSize: "0.85rem",
+                            color: "#374151",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {row.evaluationFramework}
+                        </TableCell>
                         <TableCell align="right">
                           <Tooltip title="Open group settings">
                             <IconButton
@@ -394,7 +442,7 @@ export const AdminSimulationGroups = () => {
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     sx={{
                       py: 8,
                       textAlign: "center",
